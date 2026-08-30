@@ -1,0 +1,247 @@
+<h1 id="markview-showcase">MarkView Showcase</h1>
+<p>このファイルは <strong>MarkView が対応するすべての Markdown 記法</strong>を 1 枚に集めたものです（BR-053）。
+用途は 2 つあります。</p>
+<ol>
+<li><code>renderer</code> のゴールデンテスト（UT-214）で、意図しない描画変化を機械的に検出する。</li>
+<li>GitHub 上の表示と MarkView の表示を目視で並べて比較する（MD-002）。</li>
+</ol>
+<p>そのため <strong>GitHub でもそのまま読める内容</strong>にしてあります。</p>
+<hr>
+<h2 id="見出し（md-020）">見出し（MD-020）</h2>
+<h3 id="レベル-3">レベル 3</h3>
+<h4 id="レベル-4">レベル 4</h4>
+<h5 id="レベル-5">レベル 5</h5>
+<h6 id="レベル-6">レベル 6</h6>
+<h1 id="setext-形式の見出し">Setext 形式の見出し</h1>
+<h2 id="setext-形式のレベル-2">Setext 形式のレベル 2</h2>
+<h2 id="アンカー（md-021）">アンカー（MD-021）</h2>
+<p>見出しのアンカーは GitHub 互換の規則で作ります。</p>
+<h2 id="アンカー（md-021）-1">アンカー（MD-021）</h2>
+<p>同じ見出しが 2 回現れた場合、2 つ目には連番が付きます。</p>
+<h3 id="whats-new">What&#39;s New?</h3>
+<h3 id="1-はじめに">1. はじめに</h3>
+<h3 id="foo_bar-baz">foo_bar-baz</h3>
+<h2 id="リスト（md-022）">リスト（MD-022）</h2>
+<ul>
+<li>順序なしリスト</li>
+<li>2 つ目の項目
+<ul>
+<li>入れ子の項目
+<ul>
+<li>さらに入れ子</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>3 つ目の項目</li>
+</ul>
+<ol>
+<li>順序付きリスト</li>
+<li>2 つ目
+<ol>
+<li>入れ子の順序付き</li>
+<li>その 2</li>
+</ol>
+</li>
+<li>3 つ目</li>
+</ol>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 完了したタスク</li>
+<li><input disabled="" type="checkbox"> 未完了のタスク</li>
+<li><input disabled="" type="checkbox"> チェックボックスは読み取り専用</li>
+</ul>
+<p>用語
+: 定義リストは CommonMark の範囲外のため、対応しません。</p>
+<h2 id="引用（md-023）">引用（MD-023）</h2>
+<blockquote>
+<p>引用です。</p>
+<p>段落を分けた引用。</p>
+</blockquote>
+<blockquote>
+<p>引用の中の入れ子</p>
+<blockquote>
+<p>さらに内側の引用</p>
+</blockquote>
+</blockquote>
+<blockquote>
+<p>引用の中のリスト</p>
+<ul>
+<li>項目 1</li>
+<li>項目 2</li>
+</ul>
+</blockquote>
+<h2 id="表（md-024）">表（MD-024）</h2>
+<table>
+<thead>
+<tr>
+<th align="left">左寄せ</th>
+<th align="center">中央寄せ</th>
+<th align="right">右寄せ</th>
+<th>既定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">a</td>
+<td align="center">b</td>
+<td align="right">c</td>
+<td>d</td>
+</tr>
+<tr>
+<td align="left"><code>code</code></td>
+<td align="center"><strong>強調</strong></td>
+<td align="right"><a href="https://example.com">リンク</a></td>
+<td>100</td>
+</tr>
+<tr>
+<td align="left">セル内の |</td>
+<td align="center"><del>打消し</del></td>
+<td align="right"><em>斜体</em></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2 id="水平線・段落・改行（md-025）">水平線・段落・改行（MD-025）</h2>
+<p>段落は空行で区切ります。</p>
+<p>行末に空白を 2 つ置くと<br>
+その位置で改行します。</p>
+<p>バックスラッシュでも<br>
+改行できます。</p>
+<hr>
+<hr>
+<h2 id="折りたたみ（md-026）">折りたたみ（MD-026）</h2>
+<details>
+<summary>クリックで開く</summary>
+<p>折りたたみの中にも Markdown を書けます。</p>
+<ul>
+<li>項目 1</li>
+<li>項目 2</li>
+</ul>
+</details>
+<h2 id="コードブロック（md-030-md-031-md-032）">コードブロック（MD-030, MD-031, MD-032）</h2>
+<div class="code-block" data-lang="go"><pre class="chroma"><code><span class="line"><span class="cl"><span class="kn">package</span> <span class="nx">main</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kn">import</span> <span class="s">&#34;fmt&#34;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">fmt</span><span class="p">.</span><span class="nf">Println</span><span class="p">(</span><span class="s">&#34;hello&#34;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div>
+<div class="code-block" data-lang="python"><pre class="chroma"><code><span class="line"><span class="cl"><span class="k">def</span> <span class="nf">greet</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&#34;hello, </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#34;</span><span class="p">)</span>
+</span></span></code></pre></div>
+<div class="code-block" data-lang="diff"><pre class="chroma"><code><span class="line"><span class="cl"><span class="gd">- 削除された行
+</span></span></span><span class="line"><span class="cl"><span class="gd"></span><span class="gi">+ 追加された行
+</span></span></span><span class="line"><span class="cl"><span class="gi"></span>  変わらない行
+</span></span></code></pre></div>
+<div class="code-block"><pre><code>言語指定のないコードブロック
+ハイライトは適用されません
+</code></pre></div>
+<div class="code-block" data-lang="nosuchlanguage"><pre><code>未知の言語もエラーにせず、ハイライトなしで表示します
+</code></pre></div>
+<div class="code-block"><pre><code>インデント形式のコードブロック
+4 スペースで始めます
+</code></pre></div>
+<div class="code-block"><pre><code>チルダ 3 つのフェンスも使えます
+</code></pre></div>
+<p>インラインコードは <code>fmt.Println(&#34;x&#34;)</code> のように書きます（MD-033）。
+バッククォートを含む場合は <code>`</code> のように囲みを増やします。</p>
+<h2 id="github-alerts（md-040）">GitHub Alerts（MD-040）</h2>
+<div class="markdown-alert markdown-alert-note">
+<p class="markdown-alert-title">Note</p>
+<p>補足情報です。</p>
+</div>
+<div class="markdown-alert markdown-alert-tip">
+<p class="markdown-alert-title">Tip</p>
+<p>知っていると役立つ情報です。</p>
+</div>
+<div class="markdown-alert markdown-alert-important">
+<p class="markdown-alert-title">Important</p>
+<p>見落とすと困る情報です。</p>
+</div>
+<div class="markdown-alert markdown-alert-warning">
+<p class="markdown-alert-title">Warning</p>
+<p>注意が必要な情報です。</p>
+</div>
+<div class="markdown-alert markdown-alert-caution">
+<p class="markdown-alert-title">Caution</p>
+<p>危険を伴う情報です。</p>
+</div>
+<blockquote>
+<p>[!SOMETHING]
+種別として認識できない場合は、通常の引用として描画します。</p>
+</blockquote>
+<h2 id="脚注（md-050）">脚注（MD-050）</h2>
+<p>脚注への参照です<sup id="fnref:1"><a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a></sup>。もう 1 つ<sup id="fnref:2"><a href="#fn:2" class="footnote-ref" role="doc-noteref">2</a></sup>。</p>
+<h2 id="絵文字（md-051）">絵文字（MD-051）</h2>
+<p>ショートコードは ✨ 🚀 ⚠️ のように書きます。
+絵文字そのもの 🎉 も表示できます。</p>
+<h2 id="数式（md-060）">数式（MD-060）</h2>
+<p>インライン数式は <span class="math-inline">E = mc^2</span> のように書きます。
+下付き文字を含む <span class="math-inline">x_1 + x_2 = y</span> も、強調として解釈されません。</p>
+<p>通貨表記の $100 と $200 は数式になりません。</p>
+<p>ブロック数式:</p>
+<div class="math-block">\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}</div>
+<p>コードブロック形式のブロック数式:</p>
+<div class="math-block">\sum_{i=1}^{n} i = \frac{n(n+1)}{2}</div>
+<h2 id="リンク（md-070）">リンク（MD-070）</h2>
+<ul>
+<li>インラインリンク: <a href="https://github.com">GitHub</a></li>
+<li>タイトル付き: <a href="https://github.com" title="GitHub のトップページ">GitHub</a></li>
+<li>参照リンク: <a href="https://example.com" title="参照リンクの定義">参照形式</a></li>
+<li>自動リンク: <a href="https://example.com">https://example.com</a></li>
+<li>山括弧の自動リンク: <a href="https://example.com">https://example.com</a></li>
+<li>メールアドレス: <a href="mailto:someone@example.com">someone@example.com</a></li>
+<li>相対リンク: <a href="./other.md">同じディレクトリの文書</a></li>
+<li>アンカーリンク: <a href="#foo_bar-baz">foo_bar-baz の節へ</a></li>
+</ul>
+<h2 id="画像（md-071）">画像（MD-071）</h2>
+<p>ローカル画像（1x1 の透明 PNG のため、ほぼ見えません）:</p>
+<p><img src="/__local/%2Fshowcase%2Fimages%2Fsample.png" alt="ローカル画像"></p>
+<p>リモート画像（存在しない URL のため、代替テキストが表示されます）:</p>
+<p><img src="https://example.com/nosuch.png" alt="リモート画像の代替テキスト"></p>
+<p>画像をリンクで囲んだもの:</p>
+<p><a href="https://example.com"><img src="/__local/%2Fshowcase%2Fimages%2Fsample.png" alt="リンクされた画像"></a></p>
+<h2 id="生-html（md-072）">生 HTML（MD-072）</h2>
+<p>キーボード操作は <kbd>Ctrl</kbd> + <kbd>C</kbd> のように書きます。</p>
+<p>化学式 H<sub>2</sub>O、指数 x<sup>2</sup>、<mark>ハイライト</mark>、<ins>挿入</ins>、<abbr title="HyperText Markup Language">HTML</abbr>。</p>
+<table>
+<thead><tr><th>生 HTML の表</th><th>2 列目</th></tr></thead>
+<tbody><tr><td>a</td><td>b</td></tr></tbody>
+</table>
+
+<div>
+許可されていないクラス・style 属性・イベントハンドラは除去されます。
+</div>
+<h2 id="mermaid（md-080）">Mermaid（MD-080）</h2>
+<div class="code-block" data-lang="mermaid" data-mermaid="1" data-source="flowchart TD
+    A[&#34;開く&#34;] --&gt; B{&#34;Markdown か&#34;}
+    B --&gt;|Yes| C[&#34;変換して表示&#34;]
+    B --&gt;|No| D[&#34;既定のアプリへ委譲&#34;]">
+<pre class="mermaid-source">flowchart TD
+    A[&#34;開く&#34;] --&gt; B{&#34;Markdown か&#34;}
+    B --&gt;|Yes| C[&#34;変換して表示&#34;]
+    B --&gt;|No| D[&#34;既定のアプリへ委譲&#34;]</pre>
+</div>
+<div class="code-block" data-lang="mermaid" data-mermaid="1" data-source="sequenceDiagram
+    利用者-&gt;&gt;MarkView: ファイルを開く
+    MarkView-&gt;&gt;renderer: 変換を依頼
+    renderer--&gt;&gt;MarkView: HTML
+    MarkView--&gt;&gt;利用者: 表示">
+<pre class="mermaid-source">sequenceDiagram
+    利用者-&gt;&gt;MarkView: ファイルを開く
+    MarkView-&gt;&gt;renderer: 変換を依頼
+    renderer--&gt;&gt;MarkView: HTML
+    MarkView--&gt;&gt;利用者: 表示</pre>
+</div>
+<div class="footnotes" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn:1">
+<p>1 つ目の脚注。 <a href="#fnref:1" class="footnote-backref" role="doc-backlink">↩︎</a></p>
+</li>
+<li id="fn:2">
+<p>名前付きの脚注。<strong>強調</strong>も使えます。 <a href="#fnref:2" class="footnote-backref" role="doc-backlink">↩︎</a></p>
+</li>
+</ol>
+</div>

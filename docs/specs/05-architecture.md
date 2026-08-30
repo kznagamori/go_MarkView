@@ -89,9 +89,9 @@ go_MarkView/
 ├── wails.json                 Wails のプロジェクト設定
 ├── internal/
 │   ├── mdfile/                Markdown 拡張子の判定（IMP-105。依存なしの葉）
+│   ├── localurl/              /__local/ URL の組み立てと解読（AR-040。依存なしの葉）
 │   ├── document/              Markdown の読み込みと変換
 │   │   ├── document.go
-│   │   ├── outline.go         見出し抽出（FR-040）
 │   │   └── encoding.go        BOM・改行コードの処理（FR-021）
 │   ├── renderer/              goldmark パイプライン
 │   │   ├── renderer.go
@@ -227,6 +227,14 @@ sequenceDiagram
 ### AR-033: chroma のサイズ最適化 **SHOULD**
 
 chroma はすべての言語定義を含めると数 MB のサイズ寄与となる。MD-031 に列挙した言語に限定して登録することでサイズを削減してよい。その場合、未登録の言語が指定されたときはハイライトなしで表示する（MD-030 の規定どおり）。
+
+> [!NOTE]
+> **実装時の判断（2026-08-31）: 限定しない。** 実測でのサイズ寄与は 3.7 MB であり、NFR-021 の上限（実行ファイル 25 MB）に対して余裕がある。加えて、限定には次の 2 つの障害がある。
+> 
+> - IMP-114 が採用する `goldmark-highlighting` は `lexers.Get`（chroma のグローバル登録簿）を直接呼ぶ。自前の登録簿に差し替える手段がなく、限定するにはこのライブラリを使わない構成が必要になる。
+> - chroma v2 は 257 個の言語定義を 1 つの `embed.FS` に持つ。限定は XML の複製と chroma 更新への追随を意味し、「エイリアス解決は chroma の機能に委ねる」（IMP-114）とも両立しない。
+> 
+> P6 で配布物を実測し、上限を超える場合に再検討する。
 
 ## 5.5 ローカルファイルの配信（AR-040 系）
 

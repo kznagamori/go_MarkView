@@ -42,10 +42,12 @@ go_MarkView/
 │   ├── mdfile/                 IMP-105（依存を持たない葉パッケージ）
 │   │   ├── mdfile.go           Markdown 拡張子の判定
 │   │   └── mdfile_test.go
+│   ├── localurl/               AR-040（依存を持たない葉パッケージ）
+│   │   ├── localurl.go         /__local/ URL の組み立てと解読
+│   │   └── localurl_test.go
 │   ├── document/               IMP-100 系
-│   │   ├── document.go         Document 型、Load / Reload
-│   │   ├── encoding.go         BOM・改行・UTF-8 検証
-│   │   ├── outline.go          見出し抽出
+│   │   ├── document.go         Document 型、Load、サイズ判定、番兵エラー
+│   │   ├── encoding.go         BOM・改行・UTF-8 検証、行数
 │   │   └── document_test.go
 │   ├── renderer/               IMP-110 系
 │   │   ├── renderer.go         goldmark パイプラインの構築と実行
@@ -121,10 +123,13 @@ flowchart TD
     TREE --> MDF
     SESS --> MDF
     ASSET --> BI
+    REND --> LURL["localurl"]
+    ASSET --> LURL
 ```
 
-- `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
+- `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile` / `localurl`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
 - `mdfile`（IMP-105）を例外としているのは、Markdown の拡張子判定を `filetree`（IMP-132）と `session`（IMP-193）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、両者が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
+- `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
 - `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼ぶのは `main.go` と `app.go` のみとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。
 - **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に置き、`app.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
@@ -260,7 +265,7 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 
 | パッケージ | 主なテスト対象 | 対応要求 |
 | --- | --- | --- |
-| `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、見出し抽出 | FR-021, FR-016, FR-040 |
+| `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類 | FR-021, FR-016, FR-110 |
 | `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・サニタイズ・アンカー生成 | MD-020〜MD-082 |
 | `filetree` | フィルタ規則、除外ディレクトリ、並び順、件数上限 | FR-031, FR-032 |
 | `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め | UI-112, UI-113 |

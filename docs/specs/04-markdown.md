@@ -204,10 +204,13 @@ Markdown 中に直接記述された HTML は、**サニタイズしたうえで
 
 - `script`, `style`, `iframe`, `object`, `embed`, `form`, `input`, `button`, `link`, `meta`, `base`, `svg`（インライン SVG）, `math`
 - すべてのイベントハンドラ属性（`onclick`, `onerror`, `onload` 等、`on` で始まる属性）
-- `javascript:`, `vbscript:`, `data:`（`data:image/*` を除く）で始まる URL
+- `javascript:`, `vbscript:`, `data:`（`data:image/gif` `jpeg` `png` `webp` を除く）で始まる URL。**`data:image/svg+xml` は除去する。** 上の一覧が `svg` 要素を除去対象としており、data URI 経由で SVG を持ち込めるのは同じ規定の抜け道になるため
 - `style` 属性（**MAY**: 色・配置に限定して許可してもよいが、既定では除去する）
 
 除去した要素・属性は黙って取り除き、エラーとしない。
+
+> [!NOTE]
+> 上の許可要素の一覧に `input` は含まれないが、**タスクリスト（MD-022）の描画には必要**である。実装では `type="checkbox"` と `checked` / `disabled` に限って許可する（IMP-116）。読み取り専用であり、スクリプトを伴わない。`type` を持たない `input` や `type="text"` は通さない。
 
 > [!IMPORTANT]
 > サニタイズは、任意の第三者から受け取った Markdown を開くという利用形態を前提とした必須の安全対策である（NFR-030）。許可リストは実装時にハードコードし、設定で緩められないようにする。

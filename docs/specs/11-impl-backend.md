@@ -182,7 +182,14 @@ func (r *Renderer) Render(source []byte, baseDir string) (Result, error)
 ```go
 goldmark.New(
     goldmark.WithExtensions(
-        extension.GFM,          // 表・打消し線・タスクリスト・自動リンク（MD-022, MD-024）
+        // GFM の内訳を個別に登録する。表の桁揃えを style 属性ではなく align 属性で
+        // 出させ、出力から style を一掃するため（MD-024, MD-072, IMP-116）。
+        extension.NewTable(
+            extension.WithTableCellAlignMethod(extension.TableCellAlignAttribute),
+        ),
+        extension.Strikethrough, // 打消し線（MD-024）
+        extension.TaskList,      // タスクリスト（MD-022）
+        extension.Linkify,       // 裸の URL の自動リンク（MD-070）
         extension.Footnote,     // 脚注（MD-050）
         emoji.Emoji,            // 絵文字ショートコード（MD-051）
         meta.Meta,              // Front Matter（MD-073）
@@ -192,7 +199,10 @@ goldmark.New(
         &mermaidExtension{},    // Mermaid ブロックの取り出し（IMP-115）
     ),
     goldmark.WithParserOptions(
-        parser.WithAutoHeadingID(),  // 後述の理由により使用せず、独自の ID 生成を用いる
+        // parser.WithAutoHeadingID() は使用しない（理由は後述）。
+        parser.WithASTTransformers(
+            util.Prioritized(headingTransformer{}, 100), // 見出し ID と一覧（IMP-117）
+        ),
     ),
     goldmark.WithRendererOptions(
         html.WithUnsafe(),      // 生 HTML を通し、後段の bluemonday で除去する
@@ -201,7 +211,7 @@ goldmark.New(
 ```
 
 - **`html.WithUnsafe()` を有効にする。** 生 HTML を goldmark 段階で落とすと、`<details>` 等の許可要素（MD-072）まで失われるため。安全性の担保は後段のサニタイズ（IMP-116）に一元化する。この 2 つは必ず対で実装する。
-- **見出し ID は goldmark の `WithAutoHeadingID` を使わない。** GitHub 互換のスラッグ規則（MD-021）と生成結果が異なるため、独自の AST 変換で付与する（IMP-117）。
+- **見出し ID は goldmark の `WithAutoHeadingID` を使わない。** GitHub 互換のスラッグ規則（MD-021）と生成結果が異なるため、独自の AST 変換で付与する（IMP-117）。上のコードブロックが `parser.WithASTTransformers` を渡しているのはこのためであり、`WithAutoHeadingID` を併用してはならない（後から付与される ID に上書きされる）。
 - TOML の Front Matter（`+++`）は `meta.Meta` が扱わないため、`Render` の前段で文字列として除去する。
 
 ### IMP-112: GitHub Alerts 拡張 **MUST**
@@ -282,6 +292,7 @@ highlighting.NewHighlighting(
 
 - **`WithClasses(true)` を必ず指定し、インラインスタイルを出力させない。** chroma がインラインの `style` 属性で色を書き込むと、テーマ切り替え（FR-070）のたびに Markdown の再変換が必要になり、「ちらつきなく即座に切り替える」（UI-105）が満たせなくなる。クラス名のみを出力し、配色は CSS 側で Light / Dark を切り替える（DSP-250）。
 - chroma のスタイル定義から生成した CSS（`github` / `github-dark` 相当）を、ビルド時ではなく**あらかじめ生成して `frontend/css/` に置く**。実行時に chroma のスタイルを走査しない。
+- **`WithLineNumbers(false)` だけでは足りない。** goldmark-highlighting は info string の属性（```` ```go {linenos=table} ````）から行番号を有効にできる。文書側から MD-032 を破れてしまうため、`WithCodeBlockOptions` で `WithLineNumbers(false)` を返し、属性由来の設定を打ち消す（属性より後に適用される）。
 - 登録する言語は MD-031 の一覧に限定してよい（AR-033）。限定する場合、`lexers.Get` が nil を返した言語はハイライトなしで出力する。
 - 言語名のエイリアス解決は chroma の機能に委ねる。
 
@@ -293,7 +304,7 @@ FR-060 / MD-080 を実装する。すべてのコードブロックを共通の�
 
 ```html
 <div class="code-block" data-lang="go">
-  <pre><code class="chroma">…ハイライト済み…</code></pre>
+  <pre class="chroma"><code>…ハイライト済み…</code></pre>
 </div>
 
 <div class="code-block" data-lang="mermaid" data-mermaid="1"
@@ -304,8 +315,9 @@ FR-060 / MD-080 を実装する。すべてのコードブロックを共通の�
 ```
 
 - **Mermaid ブロックにのみ `data-source` 属性を付け、原文を重複して持たせる。** Mermaid は描画後に `<pre>` が SVG へ置き換わり、DOM から原文が失われる。これがないと、描画後にコピーボタン（FR-060）がソースを取得できず、テーマ切り替え時の再描画（IMP-231）もできない。
-- `data-source` の値は HTML 属性としてエスケープする（改行は `&#10;`）。Base64 等の追加のエンコードは行わない。デバッグ時に目視できる形を保つため。
+- `data-source` の値は HTML 属性としてエスケープする（改行は `&#10;`）。Base64 等の追加のエンコードは行わない。デバッグ時に目視できる形を保つため。ただし最後段のサニタイズ（IMP-116）が数値文字参照を実体へ戻すため、**最終的な出力では改行がそのまま現れる**。要求は「値として改行が保たれること」であり、表記の形ではない。
 - 通常のコードブロックには `data-source` を付けない。原文は `pre code` の `textContent` から取得できる（IMP-221）。
+- ラッパが出すのは `<div class="code-block">` だけであり、内側の `<pre>` / `<code>` は chroma が出力する。ハイライトできない場合（言語指定なし・未知の言語）は chroma を通らないため、ラッパ側で `<pre><code>` を補う。`chroma` クラスが付くのは `<pre>` であり、ハイライトされたブロックに限る。
 - `mermaid` ブロックを 1 つ以上出力した場合、`Result.NeedsMermaid = true` とする。
 - `math` 言語のコードブロックは Mermaid ではなく数式として扱う（IMP-113）。
 
@@ -322,9 +334,15 @@ func Policy() *bluemonday.Policy
 
 - 許可要素は MD-072 の一覧をハードコードする。設定で緩められるようにしない。
 - `img` には `src` / `alt` / `title` / `width` / `height` を許可する。`src` は `http`, `https`, および内部アセットサーバのパス（`/__local/`）のみ許可する。
+- `abbr` には `title` を許可する。これがないと許可要素として意味を持たない。
 - `a` には `href` / `title` を許可する。`href` は `http`, `https`, `mailto`, 相対パス、`#` アンカーのみ許可する。`javascript:` 等は除去する。
 - コードブロックとハイライトのために、`span` / `code` / `pre` / `div` の `class` 属性を許可する。ただし許可する値は接頭辞で制限する（`chroma`, `code-block`, `markdown-alert`, `math-` など）。任意のクラス名を通さない。
-- `data-lang` / `data-mermaid` / `data-source` / `id`（見出しアンカー）を許可する。
+- `data-lang` / `data-mermaid` / `data-source` / `id`（見出しアンカーと脚注）を許可する。
+- 表の桁揃えのため `th` / `td` の `align`（`left` / `center` / `right`）を許可する。goldmark に align 属性で出力させることで、`style` 属性を許可せずに MD-024 を満たす（IMP-111）。
+- タスクリスト（MD-022）のため `input` の `type="checkbox"` / `checked` / `disabled` を許可する。MD-072 の許可要素に `input` はないが、これがないとタスクリストが描画されない。**bluemonday では属性を許可した要素が許可要素になる**ため、要素の一覧には足さず、この属性指定だけで例外を閉じ込める。
+- 脚注の `role`（`doc-*`）を許可する。
+- **chroma のトークンクラス（`k` `s2` `nf` など）は接頭辞を持たない。** 値を書き写すと chroma の更新で取りこぼし、コードが無色になる。`chroma.StandardTypes` から許可リストを組み立て、一覧の維持を不要にする。
+- **`data:` の判定に bluemonday の `AllowDataURIImages` を使わない。** あれは `image/svg+xml` を許可する（MD-072 参照）。許可する種別を自前で `gif` / `jpeg` / `png` / `webp` に限る。
 - サニタイズ後に、想定したクラスや属性が失われていないことをユニットテストで確認する（IMP-040）。
 
 > [!IMPORTANT]
@@ -366,7 +384,9 @@ FR-022 / AR-040 / AR-042 を実装する。
 func rewriteImageURL(src, baseDir string) string
 ```
 
-- 相対パスは `baseDir` を基準に `filepath.Join` して絶対化する。
+- 相対パスは `baseDir` を基準に `filepath.Join` して絶対化する。先頭が `/` のパスは、OS を問わず絶対パスとして扱う（Markdown の URL は POSIX 形式で書かれるが、Windows の `filepath.IsAbs` はドライブレターを要求するため）。
+- URL の組み立ては `internal/localurl` の `Encode` を使う（IMP-012）。**接頭辞とエスケープ規則を `renderer` 側に書かない。**解く側（IMP-161）と規則が食い違えば、ローカル画像がすべて 404 になる。
+- 宛先は URL であるため、`%20` のような百分率エンコードを解いてからパスとして解決する。
 - リンク（`a href`）は書き換えない。クリック時にフロントエンドが捕捉して Go 側へ渡すため（AR-060）、元の値のまま保持する。
 
 ## 11.4 filetree パッケージ（IMP-130 系）
@@ -585,8 +605,10 @@ func New(embedded fs.FS, appIcon []byte) *Handler
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 
-// LocalURL は絶対パスから配信用 URL を組み立てる（IMP-118 が使用）。
-func LocalURL(absPath string) string
+// URL の組み立てと解読は internal/localurl が持つ（IMP-012）。
+//   localurl.Prefix                  = "/__local/"
+//   localurl.Encode(absPath) string  // IMP-118 が使用
+//   localurl.Decode(urlPath) (string, bool)  // 本パッケージが使用
 ```
 
 配信するパスは以下の 3 系統に限る。
@@ -601,7 +623,7 @@ func LocalURL(absPath string) string
 
 `/__local/` へのリクエストは、以下の順で検査する。1 つでも失敗したら 404 を返し、理由を本文に含めない。
 
-1. URL からパスをデコードする。
+1. `localurl.Decode` でパスを取り出す（`r.URL.Path` ではなく `r.URL.EscapedPath()` を渡す）。失敗したら 404。
 2. `filepath.Clean` と `filepath.Abs` で正規化する。
 3. `filepath.EvalSymlinks` でシンボリックリンクを解決する。
 4. **解決後のパス**の拡張子が許可リストに含まれるかを検査する（下記）。
