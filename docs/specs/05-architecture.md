@@ -112,9 +112,13 @@ go_MarkView/
 │       ├── vendor.json        資産ごとのバージョン・取得元・取得日
 │       ├── mermaid/           mermaid.min.js（ライセンス表記込み）
 │       └── katex/             katex.min.js / katex.min.css / フォント
+├── assets/                    アプリケーションアイコンの原本（UI-025, BR-013）
+│   ├── icon.ico               Windows: 実行ファイル・ウィンドウ
+│   ├── icon.png               Linux: ウィンドウ / 情報ダイアログ表示用
+│   └── icon.icns              macOS 用。本バージョンでは未使用（AR-090）
 ├── licenses/
 │   └── THIRD_PARTY.md         生成物（BR-040）
-├── scripts/                   ライセンス生成・vendor 更新・スモークテスト
+├── scripts/                   ライセンス生成・vendor 更新・アイコン配置・スモークテスト
 ├── testdata/                  検証用 Markdown（BR-053, BR-054）
 ├── docs/specs/                本仕様書
 └── .github/workflows/         CI/CD（BR-010 系）
