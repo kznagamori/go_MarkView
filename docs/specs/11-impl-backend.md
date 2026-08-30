@@ -679,7 +679,17 @@ func Vendors() []VendorEntry
 func Environment(webviewVersion string) string
 ```
 
-## 11.9 App（IMP-190 系）
+## 11.9 App と session（IMP-190 系）
+
+`app.go` は Wails にバインドされる唯一の型であり、Wails に依存する。**判断を伴うロジックは `internal/session` に置き、`app.go` からは呼ぶだけにする**（IMP-012）。この分離により、履歴・起動解決・パス算出を Wails なしでテストできる（UT-803〜UT-805）。
+
+| 責務 | 置き場所 |
+| --- | --- |
+| Wails のバインドメソッド、イベント送出、ウィンドウ操作 | `app.go` |
+| アプリケーション状態の保持と排他制御 | `app.go` |
+| 表示履歴の操作（IMP-191） | `internal/session` |
+| 起動時の対象解決（IMP-193） | `internal/session` |
+| 表示用パスの算出とパス比較（IMP-025） | `internal/session` |
 
 ### IMP-190: 保持する状態 **MUST**
 
@@ -693,8 +703,8 @@ type App struct {
     cfg      config.Config
 
     treeRoot string      // ツリールートの絶対パス（FR-030）
-    current  *document.Document // 表示中の文書。未表示なら nil
-    history  *history    // 表示履歴（IMP-191）
+    current  *document.Document   // 表示中の文書。未表示なら nil
+    history  *session.History     // 表示履歴（IMP-191）
 
     // 確認画面を表示中のファイル（FR-016）。OpenConfirmed が受け付ける
     // 対象をこの 1 つに限定するために保持する（IMP-314）。
@@ -707,25 +717,29 @@ type App struct {
 
 ### IMP-191: 表示履歴 **MUST**
 
-FR-051 を実装する。
+FR-051 を実装する。**配置は `internal/session`**（IMP-012）。
 
 ```go
-type historyEntry struct {
-    Path       string
-    ScrollTop  int    // フロントエンドから受け取るスクロール位置
-    Anchor     string // アンカー付きリンクで開いた場合の見出し ID
+package session
+
+type Entry struct {
+    Path      string
+    ScrollTop int    // フロントエンドから受け取るスクロール位置
+    Anchor    string // アンカー付きリンクで開いた場合の見出し ID
 }
 
-type history struct {
-    entries []historyEntry
+type History struct {
+    entries []Entry
     index   int // 現在位置
 }
 
-const maxHistory = 50 // FR-051
+const MaxHistory = 50 // FR-051
 
-func (h *history) Push(e historyEntry) // 前方履歴を破棄して追加
-func (h *history) Back() (historyEntry, bool)
-func (h *history) Forward() (historyEntry, bool)
+func NewHistory() *History
+func (h *History) Push(e Entry)              // 前方履歴を破棄して追加
+func (h *History) Back() (Entry, bool)
+func (h *History) Forward() (Entry, bool)
+func (h *History) SetScrollTop(top int)      // 現在位置のスクロール位置を更新
 ```
 
 - 履歴はメモリ上のみ。プロセス終了で破棄する（FR-051, NFR-042）。
@@ -765,12 +779,23 @@ func (a *App) open(path string, src openSource, opts document.LoadOptions) (Docu
 
 ### IMP-193: 起動シーケンス **MUST**
 
-FR-012 / FR-013 / AR-080 を実装する。
+FR-012 / FR-013 / AR-080 を実装する。**判定部分の配置は `internal/session`**（IMP-012）。`main.go` はコマンドライン引数を渡すだけとし、探索の判断をここへ集約する。
 
 ```go
-// resolveStartup は起動時の表示対象とツリールートを決定する。
-func resolveStartup(args []string) (treeRoot string, initial string)
+package session
+
+// Startup は起動時に決定した表示対象とツリールートを表す。
+type Startup struct {
+    TreeRoot string // 絶対パス
+    Initial  string // 表示対象の絶対パス。なければ空文字
+}
+
+// ResolveStartup は起動時の表示対象とツリールートを決定する。
+// cwd と exeDir を引数で受け取ることで、テストから差し替えられる（UT-803）。
+func ResolveStartup(args []string, cwd, exeDir string) (Startup, error)
 ```
+
+`os.Getwd()` と `os.Executable()` の呼び出しは `main.go` 側で行い、結果を引数として渡す。**実行環境に依存する値を関数内で直接取得しない**（UT-035）。
 
 1. `--version` / `--help` は Wails を起動する前に処理し、標準出力へ書いて終了する（FR-012）。
 2. 引数にパスがある場合、ファイルなら「親ディレクトリ + そのファイル」、ディレクトリなら「そのディレクトリ + 直下の README」。
@@ -780,10 +805,10 @@ func resolveStartup(args []string) (treeRoot string, initial string)
 4. どちらにも見つからない場合、ツリールートをカレントディレクトリとし、表示対象なしとする。
 
 ```go
-// findReadme はディレクトリ直下から README を探す。
+// FindReadme はディレクトリ直下から README を探す。
 // 完全一致 "README.md" を優先し、次に大文字小文字を無視した一致のうち
-// 名前の昇順で先頭のものを返す（FR-013）。
-func findReadme(dir string) (string, bool)
+// 名前の昇順で先頭のものを返す（FR-013）。配置は internal/session。
+func FindReadme(dir string) (string, bool)
 ```
 
 起動時の表示対象が読み込めない場合も、**ウィンドウは必ず開く**（FR-012）。エラーの種類に応じて `InitialStateDTO.StateKind` を設定し、状態画面を初期表示とする（IMP-303）。

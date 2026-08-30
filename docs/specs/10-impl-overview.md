@@ -66,8 +66,13 @@ go_MarkView/
 │   │   └── assetsrv.go         埋め込み資産とローカル画像の配信
 │   ├── opener/                 IMP-170 系
 │   │   └── opener.go           既定ブラウザ・既定アプリへの委譲
-│   └── buildinfo/              IMP-180 系
-│       └── buildinfo.go        バージョン情報、vendor.json の読み出し
+│   ├── buildinfo/              IMP-180 系
+│   │   └── buildinfo.go        バージョン情報、vendor.json の読み出し
+│   └── session/                IMP-190 系のうち Wails に依存しない部分
+│       ├── history.go          表示履歴（IMP-191）
+│       ├── startup.go          起動時の対象解決（IMP-193）
+│       ├── path.go             表示用パスの算出（IMP-025）
+│       └── *_test.go
 ├── frontend/                   IMP-200 系（12-impl-frontend.md）
 │   ├── index.html
 │   ├── css/
@@ -97,19 +102,21 @@ go_MarkView/
 
 ```mermaid
 flowchart TD
-    MAIN["main / app"] --> DOC["document"]
+    MAIN["main / app<br/>（Wails 依存）"] --> DOC["document"]
     MAIN --> TREE["filetree"]
     MAIN --> WATCH["watcher"]
     MAIN --> CFG["config"]
     MAIN --> ASSET["assetsrv"]
     MAIN --> OPEN["opener"]
     MAIN --> BI["buildinfo"]
+    MAIN --> SESS["session"]
     DOC --> REND["renderer"]
     ASSET --> BI
 ```
 
 - `document` → `renderer` 以外に、`internal/` 同士の依存を作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
-- `internal/` の各パッケージは Wails に依存しない。Wails の API を呼ぶのは `main.go` と `app.go` のみとする。これにより、GUI なしのユニットテストが可能になる（NFR-070）。
+- `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼ぶのは `main.go` と `app.go` のみとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。
+- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に置き、`app.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
 ## 10.3 実装規約（IMP-020 系）
 
@@ -174,7 +181,7 @@ func NewLogger() *slog.Logger  // MARKVIEW_DEBUG が未設定なら io.Discard �
 
 - 内部で保持するファイルパスは**常に絶対パス**とし、`filepath.Abs` と `filepath.Clean` を通す。
 - ユーザに表示するパスは、ツリールートからの相対パス（UI-060）を都度算出する。`filepath.Rel` が失敗した場合、またはツリー外の場合は絶対パスを表示する（FR-052）。
-- パスの比較は、Windows では大文字小文字を区別せず、Linux では区別する。この判定を行うヘルパを `app.go` に持つ。
+- パスの比較は、Windows では大文字小文字を区別せず、Linux では区別する。この判定と表示用パスの算出は `internal/session` に置く（IMP-012, UT-805）。
 - シンボリックリンクは `filepath.EvalSymlinks` で解決してから検査する（AR-041, NFR-031）。
 
 ## 10.4 埋め込み（IMP-030 系）

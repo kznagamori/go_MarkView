@@ -102,8 +102,10 @@ go_MarkView/
 │   ├── filetree/              ファイルツリーの遅延展開（FR-032）
 │   ├── watcher/               ファイル監視（FR-014）
 │   ├── config/                設定の保存・復元（UI-110 系）
-│   ├── assets/                埋め込み資産の配信とローカル画像配信（AR-040）
-│   └── buildinfo/             バージョン情報（BR-030）
+│   ├── assetsrv/              埋め込み資産の配信とローカル画像配信（AR-040）
+│   ├── opener/                既定ブラウザ・既定アプリへの委譲（FR-053）
+│   ├── buildinfo/             バージョン情報（BR-030）
+│   └── session/               履歴・起動解決・パス算出（FR-051, FR-013）
 ├── frontend/                  表示層
 │   ├── index.html
 │   ├── css/                   アプリ UI と GitHub 準拠スタイル

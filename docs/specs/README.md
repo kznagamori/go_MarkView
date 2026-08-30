@@ -148,7 +148,7 @@ flowchart TD
 | `UT-6xx` | `internal/assetsrv` |
 | `UT-7xx` | `internal/opener` |
 | `UT-8xx` | `internal/buildinfo` と `app.go` |
-| `UT-900`〜`901` | 要求とテストの対応、テストを持たない要求の扱い |
+| `UT-900`〜`902` | 要求とテストの対応、テストを持たない要求の扱い、網羅性 |
 
 必須度は RFC 2119 に準じ、次の語で表す。
 
