@@ -60,7 +60,7 @@ flowchart TD
 | # | 文書 | 内容 | ID |
 | --- | --- | --- | --- |
 | 10 | [全体構成と規約](10-impl-overview.md) | ディレクトリ構成、パッケージ依存、エラー処理、ログ、並行性、テスト方針 | `IMP-0xx` |
-| 11 | [Go 側](11-impl-backend.md) | document / renderer / filetree / watcher / config / assetsrv / opener / buildinfo / App | `IMP-1xx` |
+| 11 | [Go 側](11-impl-backend.md) | mdfile / document / renderer / filetree / watcher / config / assetsrv / opener / buildinfo / App | `IMP-1xx` |
 | 12 | [フロントエンド側](12-impl-frontend.md) | DOM 構造、モジュール分割、遅延ロード、検索、コピー、ショートカット | `IMP-2xx` |
 | 13 | [Go ↔ フロントエンド インターフェース](13-impl-interface.md) | バインドメソッド、イベント、DTO、エラーの受け渡し | `IMP-3xx` |
 
@@ -111,7 +111,7 @@ flowchart TD
 | このアプリが何であるか | [01](01-overview.md) → [02](02-functional.md) |
 | ある機能をこれから実装する | [90](90-traceability.md) で対応 ID を引く → 該当の `FR`/`UI` → `IMP` → `DSP` |
 | 画面を作る | [12](12-impl-frontend.md)（構造）→ [20](20-display-foundation.md)〜[22](22-display-states.md)（見た目） |
-| Markdown の変換部分を作る | [04](04-markdown.md)（規則）→ [11](11-impl-backend.md) 11.2 節（実装） |
+| Markdown の変換部分を作る | [04](04-markdown.md)（規則）→ [11](11-impl-backend.md) 11.3 節（実装） |
 | Go とフロントの受け渡しを知る | [13](13-impl-interface.md) |
 | ビルドとリリースを設定する | [06](06-build-release.md) → [10](10-impl-overview.md) 10.4 節 |
 | テストを書く | [30](30-test-policy.md)（書き方と**書いてはいけないもの**）→ [31](31-test-cases.md)（対象パッケージの節） |
@@ -141,7 +141,8 @@ flowchart TD
 | 帯 | 対象 |
 | --- | --- |
 | `IMP-001`〜`042` | 全体構成・規約・テスト方針 |
-| `IMP-100`〜`105` | `internal/document` |
+| `IMP-100`〜`104` | `internal/document` |
+| `IMP-105` | `internal/mdfile`（拡張子判定。依存なしの葉パッケージ） |
 | `IMP-110`〜`118` | `internal/renderer` |
 | `IMP-130`〜`133` | `internal/filetree` |
 | `IMP-140`〜`142` | `internal/watcher` |

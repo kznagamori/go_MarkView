@@ -22,7 +22,7 @@
 
 | 項目 | 内容 | 根拠 |
 | --- | --- | --- |
-| Go | 1.23 以上。`go.mod` の `go` ディレクティブは 1.23 とする | BR-001 |
+| Go | 1.25 以上。`go.mod` の `go` ディレクティブは 1.25 とする（Go が正規化して `1.25.0` と書く。Wails v2.13.0 以降の要求。BR-001） | BR-001 |
 | モジュールパス | `github.com/kznagamori/go_MarkView` | — |
 | フレームワーク | Wails v2 系 | AR-001 |
 | フロントエンド | 素の HTML / CSS / JavaScript（ES2020 相当）。ビルド工程なし | AR-050 |
@@ -39,6 +39,9 @@ go_MarkView/
 ├── go.mod / go.sum
 ├── wails.json
 ├── internal/
+│   ├── mdfile/                 IMP-105（依存を持たない葉パッケージ）
+│   │   ├── mdfile.go           Markdown 拡張子の判定
+│   │   └── mdfile_test.go
 │   ├── document/               IMP-100 系
 │   │   ├── document.go         Document 型、Load / Reload
 │   │   ├── encoding.go         BOM・改行・UTF-8 検証
@@ -105,6 +108,7 @@ go_MarkView/
 ```mermaid
 flowchart TD
     MAIN["main / app<br/>（Wails 依存）"] --> DOC["document"]
+    MAIN --> MDF["mdfile"]
     MAIN --> TREE["filetree"]
     MAIN --> WATCH["watcher"]
     MAIN --> CFG["config"]
@@ -113,10 +117,14 @@ flowchart TD
     MAIN --> BI["buildinfo"]
     MAIN --> SESS["session"]
     DOC --> REND["renderer"]
+    DOC --> MDF
+    TREE --> MDF
+    SESS --> MDF
     ASSET --> BI
 ```
 
-- `document` → `renderer` 以外に、`internal/` 同士の依存を作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
+- `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
+- `mdfile`（IMP-105）を例外としているのは、Markdown の拡張子判定を `filetree`（IMP-132）と `session`（IMP-193）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、両者が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
 - `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼ぶのは `main.go` と `app.go` のみとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。
 - **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に置き、`app.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 

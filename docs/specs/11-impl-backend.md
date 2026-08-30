@@ -4,7 +4,28 @@
 
 本文書は `internal/` 配下の各パッケージと `app.go` の実装仕様を定める。型定義・シグネチャは実装の指針であり、同等の結果が得られる範囲での変更を妨げない（IMP-002）。
 
-## 11.1 document パッケージ（IMP-100 系）
+## 11.1 mdfile パッケージ（IMP-105）
+
+責務: Markdown ファイルの拡張子判定。**依存を一切持たない葉パッケージ**であり、`document` / `filetree` / `session` / `app.go` のいずれからも直接参照してよい（IMP-012）。
+
+### IMP-105: 拡張子の判定 **MUST**
+
+```go
+package mdfile
+
+// Extensions は FR-010 / FR-031 が定める対象拡張子。
+var Extensions = []string{".md", ".markdown", ".mdown", ".mkd"}
+
+// IsMarkdown は拡張子が Markdown のものかを判定する。比較は常に小文字化して行う。
+func IsMarkdown(path string) bool
+```
+
+この 1 箇所を、ファイルダイアログのフィルタ（FR-010）、ドロップ判定（FR-011）、ツリーのフィルタ（FR-031）、リンク遷移の判定（FR-050）、README の探索（FR-013）のすべてが参照する。定義を分散させない。
+
+> [!NOTE]
+> 独立したパッケージとしているのは、`filetree`（IMP-132）と `session`（IMP-193）がこの判定を必要とする一方、IMP-012 が `internal/` 同士の依存を禁じているためである。判定を `document` に置くと両者が `document` を経由して `renderer` に依存し、拡張子を調べるだけのために goldmark と chroma をテストバイナリへ持ち込むことになる。依存を持たない葉パッケージに置くことで、「定義は 1 箇所」（本項）と「内部パッケージ同士を絡ませない」（IMP-012）の双方を満たす。
+
+## 11.2 document パッケージ（IMP-100 系）
 
 責務: Markdown ファイルの読み込み、文字コードの正規化、サイズ判定、`renderer` の呼び出し、結果の組み立て。
 
@@ -119,19 +140,7 @@ func Normalize(raw []byte) (text []byte, replaced bool)
 
 `LineCount` は正規化後のテキストの LF の個数に 1 を加えた値とする。末尾が LF で終わる場合は加算しない。
 
-### IMP-105: 拡張子の判定 **MUST**
-
-```go
-// MarkdownExtensions は FR-010 / FR-031 が定める対象拡張子。
-var MarkdownExtensions = []string{".md", ".markdown", ".mdown", ".mkd"}
-
-// IsMarkdown は拡張子が Markdown のものかを判定する。比較は常に小文字化して行う。
-func IsMarkdown(path string) bool
-```
-
-この 1 箇所を、ファイルダイアログのフィルタ（FR-010）、ドロップ判定（FR-011）、ツリーのフィルタ（FR-031）、リンク遷移の判定（FR-050）のすべてが参照する。定義を分散させない。
-
-## 11.2 renderer パッケージ（IMP-110 系）
+## 11.3 renderer パッケージ（IMP-110 系）
 
 責務: goldmark パイプラインの構築と実行。Markdown → サニタイズ済み HTML への変換と、見出しの抽出。
 
@@ -360,7 +369,7 @@ func rewriteImageURL(src, baseDir string) string
 - 相対パスは `baseDir` を基準に `filepath.Join` して絶対化する。
 - リンク（`a href`）は書き換えない。クリック時にフロントエンドが捕捉して Go 側へ渡すため（AR-060）、元の値のまま保持する。
 
-## 11.3 filetree パッケージ（IMP-130 系）
+## 11.4 filetree パッケージ（IMP-130 系）
 
 ### IMP-130: 型定義 **MUST**
 
@@ -406,7 +415,7 @@ func include(name string, isDir bool) bool
 
 - 名前が `.` で始まるものを除外する。
 - `excludedDirs` に一致するディレクトリを除外する。
-- ファイルは `document.IsMarkdown` が真のもののみ含める（IMP-105）。
+- ファイルは `mdfile.IsMarkdown` が真のもののみ含める（IMP-105）。
 - 並び順はディレクトリ優先、次に名前の昇順（大文字小文字を区別しない比較）。
 
 ### IMP-133: 空ディレクトリの判定 **SHOULD**
@@ -422,7 +431,7 @@ func hasMarkdownWithin(dir string) bool
 
 判定できなかった深い階層のディレクトリは表示し、展開したときに空であることが分かる状態を許容する。
 
-## 11.4 watcher パッケージ（IMP-140 系）
+## 11.5 watcher パッケージ（IMP-140 系）
 
 ### IMP-140: 型定義とライフサイクル **MUST**
 
@@ -476,7 +485,7 @@ const debounceInterval = 150 * time.Millisecond // FR-014
 - タイマはイベントごとにリセットする。
 - `Remove` / `Rename` を受けた場合、150 ms 待って対象ファイルが再び存在すれば `Modified`、存在しなければ `Removed` を送出する。これにより、リネーム型の保存を削除と誤認しない。
 
-## 11.5 config パッケージ（IMP-150 系）
+## 11.6 config パッケージ（IMP-150 系）
 
 ### IMP-150: 型定義 **MUST**
 
@@ -553,7 +562,7 @@ const (
 
 `Normalize` は、範囲外・ゼロ値・負値をすべて `Default()` の対応する値へ置き換える。ペイン幅の上限（ウィンドウ幅の 40 %）は実行時のウィンドウ幅に依存するため、フロントエンド側で制限する（IMP-240）。
 
-## 11.6 assetsrv パッケージ（IMP-160 系）
+## 11.7 assetsrv パッケージ（IMP-160 系）
 
 ### IMP-160: ハンドラ **MUST**
 
@@ -618,7 +627,7 @@ var allowedImageExt = map[string]string{
 
 埋め込み資産（`/` 配下）には `Cache-Control: public, max-age=31536000` を付けてよい。内容は実行ファイルに固定されているため。
 
-## 11.7 opener パッケージ（IMP-170 系）
+## 11.8 opener パッケージ（IMP-170 系）
 
 ### IMP-170: 外部委譲 **MUST**
 
@@ -642,7 +651,7 @@ func OpenFile(path string) error
 - 引数は必ず `exec.Command` の可変長引数として渡し、シェルを経由しない。文字列連結でコマンドを組み立てない。
 - URL は事前にスキームを検査し、`http` / `https` / `mailto` 以外を拒否する。
 
-## 11.8 buildinfo パッケージ（IMP-180 系）
+## 11.9 buildinfo パッケージ（IMP-180 系）
 
 ### IMP-180: バージョン情報 **MUST**
 
@@ -679,7 +688,7 @@ func Vendors() []VendorEntry
 func Environment(webviewVersion string) string
 ```
 
-## 11.9 App と session（IMP-190 系）
+## 11.10 App と session（IMP-190 系）
 
 `app.go` は Wails にバインドされる唯一の型であり、Wails に依存する。**判断を伴うロジックは `internal/session` に置き、`app.go` からは呼ぶだけにする**（IMP-012）。この分離により、履歴・起動解決・パス算出を Wails なしでテストできる（UT-803〜UT-805）。
 
@@ -848,7 +857,7 @@ func (a *App) captureWindowState() {
 - 最大化状態で終了した場合、**そのときの画面いっぱいのサイズを保存しない。** 保存すると、次回に最大化を解除したときのウィンドウが画面いっぱいのままになる。最大化フラグのみを保存し、幅と高さは最大化する前の値を保つ。
 - ウィンドウ位置は取得しない。構造体にフィールドが存在しない（IMP-150, UI-111）。
 
-## 11.10 要求一覧
+## 11.11 要求一覧
 
 | ID | 概要 | 必須度 |
 | --- | --- | --- |
@@ -857,7 +866,7 @@ func (a *App) captureWindowState() {
 | IMP-102 | 読み込み | MUST |
 | IMP-103 | 文字コードの正規化 | MUST |
 | IMP-104 | 行数の算出 | MUST |
-| IMP-105 | 拡張子の判定 | MUST |
+| IMP-105 | 拡張子の判定（`internal/mdfile`） | MUST |
 | IMP-110 | renderer 型定義 | MUST |
 | IMP-111 | goldmark の構成 | MUST |
 | IMP-112 | GitHub Alerts 拡張 | MUST |

@@ -1,0 +1,13 @@
+# 改行コードは LF に統一する。
+#
+# Windows で作業していると、ツールによっては CRLF を書き込むことがある
+# （Python の pathlib.Path.write_text は既定で LF を CRLF に変換する）。
+# そのままコミットすると、数行だけ直したファイルが全行書き換え扱いになり、
+# レビューで差分が読めなくなる。ここで正規化して防ぐ。
+* text=auto eol=lf
+
+# バイナリはそのまま扱う
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.xlsx  binary

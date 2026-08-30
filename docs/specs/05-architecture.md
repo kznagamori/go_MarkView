@@ -88,6 +88,7 @@ go_MarkView/
 ├── go.mod / go.sum
 ├── wails.json                 Wails のプロジェクト設定
 ├── internal/
+│   ├── mdfile/                Markdown 拡張子の判定（IMP-105。依存なしの葉）
 │   ├── document/              Markdown の読み込みと変換
 │   │   ├── document.go
 │   │   ├── outline.go         見出し抽出（FR-040）
