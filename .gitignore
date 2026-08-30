@@ -39,3 +39,7 @@ workspace/
 # Excel の一時ファイル
 ~$*.xlsx
 ~$*.xls
+
+# Python (docs/tests のスクリプト用)
+__pycache__/
+*.pyc

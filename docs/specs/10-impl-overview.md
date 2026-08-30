@@ -89,7 +89,9 @@ go_MarkView/
 ├── licenses/THIRD_PARTY.md
 ├── scripts/
 ├── testdata/
-├── docs/specs/
+├── docs/
+│   ├── specs/
+│   └── tests/                  手動テストの記録用 Excel と生成スクリプト（E2E-200）
 └── .github/workflows/
 ```
 

@@ -122,7 +122,11 @@ go_MarkView/
 │   └── THIRD_PARTY.md         生成物（BR-040）
 ├── scripts/                   ライセンス生成・vendor 更新・アイコン配置・スモークテスト
 ├── testdata/                  検証用 Markdown（BR-053, BR-054）
-├── docs/specs/                本仕様書
+├── docs/
+│   ├── specs/                 本仕様書
+│   └── tests/                 手動テストの記録用 Excel と生成スクリプト（E2E-200）
+│       ├── gen_manual_test_xlsx.py
+│       └── results/           実施済みの Excel（バージョンごとにコミット）
 └── .github/workflows/         CI/CD（BR-010 系）
 ```
 
