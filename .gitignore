@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+# AI エージェント用の一時作業領域
+# AI エージェント用の一時作業領域
+
+# Scratch area for AI agents - not tracked
+workspace/
