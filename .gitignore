@@ -35,3 +35,7 @@ go.work.sum
 
 # Scratch area for AI agents - not tracked
 workspace/
+
+# Excel の一時ファイル
+~$*.xlsx
+~$*.xls
