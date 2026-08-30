@@ -61,6 +61,15 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	action, positional := parseArgs(args)
 
+	if action != actionRun {
+		// ウィンドウを開かずに標準出力・標準エラーへ書く経路に入る前に、
+		// 親プロセスのコンソールへ繋ぎ直す（Windows のみ実体がある）。
+		// Wails が作る Windows の実行ファイルは GUI サブシステムであり、
+		// これを行わないとターミナルに何も表示されない。
+		attachConsole()
+		stdout, stderr = os.Stdout, os.Stderr
+	}
+
 	switch action {
 	case actionVersion:
 		printVersion(stdout)
