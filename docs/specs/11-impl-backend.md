@@ -402,9 +402,12 @@ type Node struct {
     IsDir    bool   `json:"isDir"`
     Children []Node `json:"children"` // 未読込のディレクトリでは nil
     Loaded   bool   `json:"loaded"`   // 子を読み込み済みか
-    Truncated bool  `json:"truncated"` // 件数上限で切り詰めたか（FR-032）
+    Truncated bool  `json:"truncated"` // 属する一覧が切り詰められたか（FR-032）
 }
 ```
+
+- `Truncated` は、**その要素が属する一覧が件数上限で切り詰められた**ことを示す。切り詰めが起きた場合、`ReadDir` は返すすべての要素に立てる。
+  一覧に対する印を要素側に持たせているのは、`ReadDir` が返すのが子の並びだけで、親を表す値を返さないためである。すべてに立てるので、並べ替えても印が失われない。フロントエンドは先頭の要素を見て、一覧の末尾に省略の旨を表示する（FR-032）。
 
 ### IMP-131: 読み込み **MUST**
 
@@ -412,12 +415,18 @@ type Node struct {
 const MaxEntriesPerDir = 1000 // FR-032
 
 // ReadDir は dir の直下のみを読み込む。再帰しない（FR-032）。
+// 件数の上限は絞り込み後の件数に対して適用する。
 func ReadDir(dir string) ([]Node, error)
 
 // PathTo は root から target に至る経路上のディレクトリを順に返す。
-// 表示中ファイルまでの自動展開（FR-032）に用いる。
+// 表示中ファイルまでの自動展開（FR-032）に用いる。target 自身は含めない。
+// target がツリー外にある場合は ErrOutsideRoot を返す。
+var ErrOutsideRoot = errors.New("target is outside the tree root")
+
 func PathTo(root, target string) ([]string, error)
 ```
+
+- `PathTo` はファイルシステムに触れない。与えられたパスを絶対パスとみなし、`filepath.Clean` だけを行う。存在しないパスでも経路を計算できるほうが、呼び出し側で扱いやすい。
 
 ### IMP-132: フィルタ規則 **MUST**
 
@@ -580,7 +589,9 @@ const (
 )
 ```
 
-`Normalize` は、範囲外・ゼロ値・負値をすべて `Default()` の対応する値へ置き換える。ペイン幅の上限（ウィンドウ幅の 40 %）は実行時のウィンドウ幅に依存するため、フロントエンド側で制限する（IMP-240）。
+`Normalize` は、範囲外・ゼロ値・負値をすべて `Default()` の対応する値へ置き換える。**最小値・最大値へ切り詰めない。** 範囲外の値が保存されているのはファイルが壊れた場合であり、その値を元に復元するより既定値から始めるほうが確実である。
+
+対象は数値と文字列に限る。**真偽値は対象としない。** 真偽値にはゼロ値と「利用者が false を選んだ状態」の区別がなく、ゼロ値を既定値へ戻すと、閉じたペインが毎回開くことになる（UI-113 の「一部の項目のみが存在する場合、欠けている項目は既定値を用いる」は、`Default()` を初期値として `json.Unmarshal` することで満たす。IMP-151）。ペイン幅の上限（ウィンドウ幅の 40 %）は実行時のウィンドウ幅に依存するため、フロントエンド側で制限する（IMP-240）。
 
 ## 11.7 assetsrv パッケージ（IMP-160 系）
 
@@ -649,6 +660,9 @@ var allowedImageExt = map[string]string{
 
 埋め込み資産（`/` 配下）には `Cache-Control: public, max-age=31536000` を付けてよい。内容は実行ファイルに固定されているため。
 
+- 埋め込み資産の `Content-Type` は**拡張子から自前の表で決める**。`mime.TypeByExtension` に任せない。Windows では拡張子と種別の対応をレジストリから引くため、`.js` が `text/plain` になる環境がある。CSS と JS の種別を誤ると画面が成り立たない。
+- 埋め込み資産の配信に `http.FileServer` を使わない。`/index.html` を `/` へ 301 で書き換え、ディレクトリ一覧も返すためである。パスから直接ファイルを引き、見つからなければ 404 とする。
+
 ## 11.8 opener パッケージ（IMP-170 系）
 
 ### IMP-170: 外部委譲 **MUST**
@@ -702,13 +716,22 @@ type VendorEntry struct {
     Fetched string `json:"fetched"`
 }
 
-// Vendors は埋め込まれた vendor.json を解析して返す。
+// SetVendorJSON は埋め込んだ vendor.json を登録する。main.go が起動時に
+// 1 度だけ呼ぶ。go:embed はパッケージのディレクトリより上を参照できず、
+// frontend/vendor/vendor.json をこのパッケージから直接は読めないため。
+func SetVendorJSON(data []byte)
+
+// Vendors は登録された vendor.json を解析して返す。**常に非 nil を返す。**
 func Vendors() []VendorEntry
 
 // Environment は "windows/amd64  Go 1.24.0  WebView2 120.x" 形式の文字列を返す。
-// WebView のバージョンは Wails から取得できない場合、空欄とする。
+// WebView のバージョンが取得できない場合、その区画ごと省く。
 func Environment(webviewVersion string) string
 ```
+
+- `vendor.json` の形式は `VendorEntry` の配列とする（BR-042）。
+- `Vendors` は解析に失敗しても**空スライスを返し、エラーにしない**（FR-111）。情報表示が欠けるだけで、文書の閲覧は続けられる。JSON の `null` は解析に成功したうえで nil を書き込むため、そこも空スライスへ揃える。
+- `Environment` の WebView 名は OS で異なる（Windows: `WebView2`、Linux: `WebKitGTK`）。バージョンが空のときに「`WebView2 `」とだけ書かれた区画は情報として役に立たないため、区画ごと省く。
 
 ## 11.10 App と session（IMP-190 系）
 
@@ -776,6 +799,18 @@ func (h *History) SetScrollTop(top int)      // 現在位置のスクロール�
 - 履歴はメモリ上のみ。プロセス終了で破棄する（FR-051, NFR-042）。
 - `Push` の前に、現在位置のエントリのスクロール位置を更新する。戻ったときに元の位置へ復元できるようにするため（FR-050）。
 - 上限を超えた場合、先頭から捨てる。
+
+表示用パスの算出も同じパッケージに置く（IMP-025, UT-805）。
+
+```go
+// DisplayPath はステータス領域に出すパスと、ツリー外かどうかを返す
+// （UI-060, FR-052）。ツリールートの内側なら相対パス、外側なら絶対パス。
+func DisplayPath(root, target string) (display string, outside bool)
+```
+
+- ファイルシステムには触れない。`target` は絶対パスであることを前提とし、`filepath.Clean` だけを行う。
+- 区切り文字は OS のものをそのまま使う。ツリー外で絶対パスを出すときと表記を揃えるため。
+- ツリールートが定まっていない（空文字）場合は絶対パスを返し、**`outside` は false とする**。ツリーがない状態で `(outside tree)` と表示しても意味を持たないため。
 
 ### IMP-192: 文書を開く共通処理 **MUST**
 

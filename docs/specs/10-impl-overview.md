@@ -66,13 +66,18 @@ go_MarkView/
 │   ├── config/                 IMP-150 系
 │   │   ├── config.go           Config 型、Load / Save
 │   │   ├── path.go             保存先の解決
+│   │   ├── path_windows.go     %TEMP%\MarkView（IMP-031, IMP-152）
+│   │   ├── path_other.go       $TMPDIR/MarkView-<uid>（IMP-031, IMP-152）
 │   │   └── config_test.go
 │   ├── assetsrv/               IMP-160 系
 │   │   └── assetsrv.go         埋め込み資産とローカル画像の配信
 │   ├── opener/                 IMP-170 系
-│   │   └── opener.go           既定ブラウザ・既定アプリへの委譲
+│   │   ├── opener.go           既定ブラウザ・既定アプリへの委譲
+│   │   ├── open_windows.go     rundll32.exe（IMP-031, IMP-170）
+│   │   └── open_other.go       xdg-open（IMP-031, IMP-170）
 │   ├── buildinfo/              IMP-180 系
-│   │   └── buildinfo.go        バージョン情報、vendor.json の読み出し
+│   │   ├── buildinfo.go        バージョン情報（IMP-180）
+│   │   └── vendor.go           vendor.json の読み出しと環境情報（IMP-181）
 │   └── session/                IMP-190 系のうち Wails に依存しない部分
 │       ├── history.go          表示履歴（IMP-191）
 │       ├── startup.go          起動時の対象解決（IMP-193）
@@ -122,7 +127,6 @@ flowchart TD
     DOC --> MDF
     TREE --> MDF
     SESS --> MDF
-    ASSET --> BI
     REND --> LURL["localurl"]
     ASSET --> LURL
 ```

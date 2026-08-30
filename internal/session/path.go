@@ -21,3 +21,31 @@ func samePath(a, b string) bool {
 	}
 	return a == b
 }
+
+// DisplayPath はステータス領域に出すパスと、ツリー外かどうかを返す
+// （UI-060, FR-052, IMP-025）。
+//
+// ツリールートの内側なら相対パス、外側なら絶対パスを返す。外側の文書には
+// 呼び出し側が `(outside tree)` を添える（UI-060）。
+//
+// ファイルシステムには触れない。target は絶対パスであることを前提とし、
+// Clean だけを行う。存在しないパスでも算出できるほうが呼び出し側で扱いやすい。
+//
+// 区切り文字は OS のものをそのまま使う。ツリー外で絶対パスを出すときと
+// 表記を揃えるためである。
+func DisplayPath(root, target string) (display string, outside bool) {
+	abs := filepath.Clean(target)
+
+	// ツリールートが定まっていない場合。ツリーがないので「外」でもない。
+	if root == "" {
+		return abs, false
+	}
+
+	// filepath.Rel は Windows で大文字小文字を区別せずに比較する（IMP-025）。
+	rel, err := filepath.Rel(filepath.Clean(root), abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return abs, true
+	}
+
+	return rel, false
+}
