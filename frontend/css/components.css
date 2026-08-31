@@ -1,0 +1,658 @@
+/*
+  components.css — ツールバー・ペイン・ステータス・検索バー・状態画面・
+  情報ダイアログ・ドロップオーバーレイの外観（DSP-100〜DSP-190）。
+
+  TODO(T5-4, T5-5, T5-6): 本格的な作り込みは P5「表示仕様」で行う。
+
+  以下は **P4 の間、画面を読める状態に保つための最低限**である。
+  項目が詰まって読めない・要素が画面の隅に寄って意味が取れない、といった
+  「動作の確認を妨げる」ものだけを置く。配色や余白の作り込みは P5 に回す。
+*/
+
+/* --- ステータス領域（DSP-150） --- */
+
+.status-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-meta {
+  display: flex;
+  gap: var(--space-3); /* 項目間 12px（DSP-150） */
+  margin-left: auto;
+  color: var(--fg-subtle);
+}
+
+/* 一時メッセージはステータス領域の全幅を占める（DSP-151, UI-060） */
+.status-message {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--status-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  z-index: var(--z-status-message);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--canvas-subtle);
+}
+
+.status-message[data-level="error"] {
+  color: var(--danger-fg);
+}
+
+.status-message[data-level="warning"] {
+  color: var(--attention-fg);
+}
+
+.status-message[data-level="info"] {
+  color: var(--accent-fg);
+}
+
+/* --- 状態画面（DSP-180, DSP-181） --- */
+
+.state-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  text-align: center;
+  z-index: var(--z-state-screen);
+  background: var(--canvas-default);
+}
+
+.state-icon {
+  width: 32px;
+  height: 32px;
+  fill: currentColor;
+  color: var(--fg-subtle);
+}
+
+.state-screen[data-tone="attention"] .state-icon {
+  color: var(--attention-fg);
+}
+
+.state-screen[data-tone="danger"] .state-icon {
+  color: var(--danger-fg);
+}
+
+.state-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--fg-default);
+}
+
+.state-hint {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.state-detail {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* DSP-182 */
+.state-button {
+  height: 32px;
+  padding: 0 var(--space-4);
+  margin-top: var(--space-2);
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* --- ペイン見出し（DSP-111） --- */
+
+.pane-title {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-pane-title);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.pane-subtitle {
+  padding: 0 var(--space-3) var(--space-1);
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* --- ファイルツリー（DSP-112, DSP-330） --- */
+
+.tree,
+.tree-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* アイコンと名前の間隔（DSP-112） */
+  height: 24px; /* 行の高さ（DSP-112） */
+  /* 1 レベルあたり 12px のインデント（DSP-112） */
+  padding-left: calc(var(--space-2) + var(--depth, 0) * var(--space-3));
+  padding-right: var(--space-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: var(--neutral-muted);
+}
+
+.tree-arrow {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: currentColor;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+
+.tree-name {
+  overflow: visible; /* ファイル名は省略しない（UI-030） */
+}
+
+/* 選択中（表示中のファイル）（DSP-330） */
+.tree-item.selected > .tree-row {
+  background: var(--accent-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-fg);
+}
+
+/* 切り詰め表示。クリック不可（DSP-112） */
+.tree-more > .tree-row {
+  color: var(--fg-subtle);
+  cursor: default;
+}
+
+.tree-more > .tree-row:hover {
+  background: transparent;
+}
+
+/* --- アウトライン（DSP-113, DSP-340） --- */
+
+.outline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  height: 24px; /* 行の高さ（DSP-113） */
+  /* 1 レベルあたり 12px のインデント（UI-040, DSP-113） */
+  padding-left: calc(var(--space-2) + var(--depth, 0) * var(--space-3));
+  padding-right: var(--space-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+/* h1〜h3 は 13px、h4 以降は 12px（DSP-113） */
+.outline-item[data-level="4"],
+.outline-item[data-level="5"],
+.outline-item[data-level="6"] {
+  font-size: 12px;
+}
+
+.outline-item:hover {
+  color: var(--fg-default);
+  background: var(--neutral-muted);
+}
+
+/* 現在位置（FR-042, DSP-340）。同時に 1 つのみ */
+.outline-item.current {
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-fg);
+}
+
+/* 横スクロールさせず省略する。全文はツールチップ（DSP-113） */
+.outline-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-empty {
+  padding: var(--space-2);
+  font-size: 12px;
+  text-align: center;
+  color: var(--fg-subtle);
+}
+
+/* --- コードブロックのコピーボタン（DSP-251, DSP-252） --- */
+
+.code-block {
+  position: relative;
+}
+
+.copy-btn {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--canvas-default);
+  color: var(--fg-muted);
+  /* 既定でも見える状態に置く。display: none にしない（FR-060） */
+  opacity: 0.5;
+  z-index: var(--z-copy);
+  cursor: pointer;
+}
+
+.copy-btn:hover,
+.copy-btn:focus-visible {
+  opacity: 1;
+  background: var(--neutral-muted);
+}
+
+.copy-btn.copied {
+  opacity: 1;
+  color: var(--success-fg);
+}
+
+/* --- GitHub Alerts（DSP-260, DSP-261） --- */
+
+.markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2); /* アイコンとラベルの間隔（DSP-260） */
+}
+
+/* --- Mermaid と数式（DSP-270, DSP-271） --- */
+
+.mermaid-rendered {
+  text-align: center; /* 本文幅の中央（DSP-270） */
+}
+
+.mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 描画に失敗したときの理由。ソースはコードブロックのまま残す（FR-023, DSP-270） */
+.mermaid-error {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  color: var(--danger-fg);
+}
+
+/* KaTeX の既定色を上書きし、テーマに追従させる（DSP-271） */
+.math-inline,
+.math-block {
+  color: var(--fg-default);
+}
+
+.math-block {
+  margin: var(--space-4) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+/* --- リサイザ（DSP-114） --- */
+
+.resizer:hover::after,
+#app.dragging .resizer::after {
+  background: var(--accent-fg);
+}
+
+/* ドラッグ中はテキスト選択を抑止する（DSP-114） */
+#app.dragging {
+  user-select: none;
+}
+
+/* --- 検索バー（DSP-160） --- */
+
+/* 本文ペインの右上に重ねる。**本文を押し下げない**（UI-080） */
+.searchbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: var(--z-search);
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  height: 32px;
+  padding: 0 8px;
+
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-overlay);
+}
+
+.search-icon {
+  color: var(--fg-muted);
+  flex: none;
+}
+
+.search-input {
+  width: 200px;
+  height: 22px;
+  padding: 0 6px;
+
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg-default);
+
+  background: var(--canvas-inset);
+  border: none;
+  border-radius: 4px;
+}
+
+.search-input::placeholder {
+  color: var(--fg-subtle);
+}
+
+/* 件数表示。`3 / 12` 形式（DSP-160） */
+.search-count {
+  min-width: 48px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ヒットなしは危険色で示す（DSP-160） */
+.search-count[data-empty="true"] {
+  color: var(--danger-fg);
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  width: 24px;
+  height: 24px;
+  padding: 0;
+
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.search-btn:hover {
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+}
+
+/* --- ヒットの強調（DSP-161） --- */
+
+mark.search-hit {
+  color: var(--fg-default);
+  background: var(--search-hit);
+  border-radius: 2px;
+}
+
+/* 現在位置には枠も付け、**色覚に依存せず判別できるようにする**（DSP-161） */
+mark.search-hit-current {
+  background: var(--search-hit-current);
+  box-shadow: 0 0 0 1px var(--attention-fg);
+}
+
+/* --- 情報ダイアログ（DSP-170, DSP-171） --- */
+
+/* 暗幕。**ウィンドウ全体を覆い、背後の操作を受け付けない**（UI-100） */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dialog {
+  position: relative;
+
+  /* 720 × 560px。ウィンドウが小さい場合は内側に収まるよう縮小（DSP-170） */
+  width: 720px;
+  height: 560px;
+  max-width: calc(100% - var(--space-8));
+  max-height: calc(100% - var(--space-8));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  padding: var(--space-6);
+
+  background: var(--canvas-overlay);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-overlay);
+}
+
+.dialog-x {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 28px;
+  height: 28px;
+  padding: 0;
+
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.dialog-x:hover {
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+}
+
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4); /* アイコンとタイトルの間隔（DSP-171） */
+}
+
+.about-icon {
+  width: 48px;
+  height: 48px;
+  flex: none;
+}
+
+.about-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.about-version {
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* ラベル列 96px 固定、行高 24px（DSP-171） */
+.about-table {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 0 var(--space-2);
+  margin: 0;
+  font-size: 13px;
+}
+
+.about-table dt {
+  color: var(--fg-muted);
+  line-height: 24px;
+}
+
+.about-table dd {
+  margin: 0;
+  color: var(--fg-default);
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-link {
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+
+.about-link:hover {
+  text-decoration: underline;
+}
+
+/* Bundled 行。項目を横に並べる（UI-100） */
+.about-vendors {
+  display: inline-flex;
+  gap: var(--space-3);
+}
+
+/* ライセンス欄だけがダイアログの残りを受け持つ。ここが縮むことで、
+   小さいウィンドウでも全体が内側に収まる（DSP-170） */
+.about-licenses-box {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: var(--space-2);
+}
+
+.about-licenses-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 等幅 12px、高さ 240px、選択可（UI-101, DSP-171）。
+   **伸びはせず、収まらないときだけ縮む。** */
+.about-licenses {
+  flex: 0 1 240px;
+  min-height: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-block);
+
+  overflow: auto;
+  white-space: pre;
+  user-select: text;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* DSP-182 の副次スタイル（DSP-171） */
+.dialog-button {
+  height: 32px;
+  padding: 0 var(--space-4);
+
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dialog-button:hover {
+  background: var(--border-muted);
+}
+
+/* --- ドロップオーバーレイ（DSP-190） --- */
+
+/* **ウィンドウ全体**（ツールバー・ステータスを含む。UI-070） */
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dropzone);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+
+  background: var(--accent-subtle);
+  opacity: 0.9;
+
+  /* 内側 8px の位置に 2px の破線（DSP-190） */
+  outline: 2px dashed var(--accent-fg);
+  outline-offset: -8px;
+
+  /* 表示は 80ms のフェードイン、消去は即座（DSP-050, DSP-190） */
+  animation: dropzone-in var(--motion-dropzone) ease-out;
+
+  /* ドロップの判定は Wails のランタイムが行う。オーバーレイ自身が
+     マウスイベントを奪うと、その下の要素を検出できなくなる（IMP-245） */
+  pointer-events: none;
+}
+
+.dropzone-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--accent-fg);
+}
+
+.dropzone-hint {
+  margin: 0;
+  font-size: 16px;
+  color: var(--accent-fg);
+}
+
+@keyframes dropzone-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.9;
+  }
+}

@@ -476,7 +476,7 @@ UI-100 を実装する。
 | 情報テーブル | ラベル列 96px 固定・`--fg-muted`、値列 `--fg-default`。行高 24px、13px |
 | リポジトリ URL | `--accent-fg`、ホバーで下線。クリックで既定ブラウザ（UI-102） |
 | ライセンス見出し | `Third-party licenses` 13px 太字、上マージン 16px |
-| ライセンス本文 | 等幅 12px、`--canvas-inset` の背景、枠 `1px solid var(--border-default)`、角丸 6px、高さ 240px 固定、`overflow: auto`、選択可（UI-101） |
+| ライセンス本文 | 等幅 12px、`--canvas-inset` の背景、枠 `1px solid var(--border-default)`、角丸 6px、高さ 240px、`overflow: auto`、選択可（UI-101）。**ダイアログの残りの高さを受け持つ唯一の領域**とし、伸びはせず、収まらないときだけ縮む（DSP-170） |
 | 閉じるボタン | 右下。`Close`、DSP-182 と同じ外観の副次スタイル（背景 `--canvas-subtle`、文字 `--fg-default`、枠あり） |
 
 ## 21.11 ドロップオーバーレイ（DSP-190 系）
