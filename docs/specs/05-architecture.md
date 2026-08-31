@@ -105,6 +105,7 @@ go_MarkView/
 │   ├── config/                設定の保存・復元（UI-110 系）
 │   ├── assetsrv/              埋め込み資産の配信とローカル画像配信（AR-040）
 │   ├── opener/                既定ブラウザ・既定アプリへの委譲（FR-053）
+│   ├── ostheme/               OS のテーマ設定の取得（FR-071）
 │   ├── buildinfo/             バージョン情報（BR-030）
 │   └── session/               履歴・起動解決・パス算出（FR-051, FR-013）
 ├── frontend/                  表示層

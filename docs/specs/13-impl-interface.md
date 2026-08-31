@@ -37,7 +37,7 @@ type DocumentDTO struct {
     NeedsMermaid bool               `json:"needsMermaid"` // AR-021
     NeedsKaTeX   bool               `json:"needsKaTeX"`   // AR-021
     Scroll       ScrollDTO          `json:"scroll"`       // 描画後のスクロール指示
-    Warnings     []string           `json:"warnings"`     // 表示する警告文言（英語）
+    Warnings     []string           `json:"warnings"`     // 警告の Kind（IMP-315）
 }
 
 type ScrollDTO struct {
@@ -57,6 +57,10 @@ type ScrollDTO struct {
 `restore` と `keep` を分けているのは、位置の出どころが異なるためである。`restore` は Go 側が履歴に記録した値を渡すのに対し、`keep` はフロントエンドが持っている現在位置を使う。両者を 1 つのモードで表そうとすると「`Top` に 0 を入れて現在位置を維持させる」といった約束が必要になり、意味が読み取れなくなる。
 
 `Scroll` を Go 側が決めるのは、スクロールの扱いが「どの経路で開いたか」（IMP-192）に依存するためである。フロントエンドに経路を意識させない。
+
+`Warnings` には**文言ではなく IMP-315 の `Kind` を入れる**（例: 不正な UTF-8 を置換したときは `encoding`）。文言そのものを Go 側が組み立てると、`strings.js` の `warnEncoding`（IMP-290）が使われないまま残り、同じ文言の定義が 2 箇所になる。`ErrorDTO.Kind` と同じ扱いに揃え、フロントエンドが `Kind` から文言を選ぶ。空でも `null` ではなく空配列を返す。
+
+同じ理由で、`Headings` も見出しがないとき空配列を返す。`null` を渡すとフロントエンドの走査が落ち、アウトラインだけでなく描画全体が止まる。
 
 ### IMP-303: InitialStateDTO **MUST**
 
@@ -79,7 +83,17 @@ type ConfigDTO struct {
 }
 ```
 
-`Theme` は Go 側で OS 設定への追従（FR-071）まで解決済みの値を返す。フロントエンドで `prefers-color-scheme` を判定して上書きしない。
+`Theme` は Go 側で OS 設定への追従（FR-071）まで解決済みの値を返す。OS 設定の取得は `ostheme`（IMP-175）が行う。フロントエンドで `prefers-color-scheme` を判定して上書きしない。
+
+**`ConfigDTO` は往路（Go → JS）と復路（JS → Go, `UpdateConfig`）で同じ型を用いるが、`Theme` の意味だけが異なる。**
+
+| 向き | `Theme` の値 | 意味 |
+| --- | --- | --- |
+| 往路 | `light` / `dark` | 解決済み。そのまま画面へ適用する |
+| 復路 | `light` / `dark` | 利用者が明示的に切り替えた |
+| 復路 | 空文字 | 利用者はまだ選んでいない。OS 設定への追従を保つ |
+
+復路で解決済みの値を常に返すと、**ペインを開閉しただけで `config.Config.Theme` が空文字から `light` へ書き換わり、初回起動の OS 追従が最初の保存で失われる。** フロントエンドは「利用者が自分で切り替えたか」を別に持ち（IMP-210 の `state.themeExplicit`）、切り替えるまでは空文字を送る。Go 側の `Normalize`（IMP-153）は空文字を既定値（＝空文字）のまま保つため、追加の処理は要らない。
 
 `StateKind` が `welcome` 以外の値を取るのは、**起動時の引数に大きすぎるファイルや壊れたファイルが指定された場合**である（FR-012）。この場合 `Document` は null となり、`Error` に対象パスとサイズが入る。フロントエンドは通常の状態画面（IMP-250）と同じ処理でこれを描画する。起動経路のためだけの専用画面を作らない。
 
@@ -91,13 +105,15 @@ type TreeNodeDTO struct {
     Path      string `json:"path"`      // 絶対パス
     IsDir     bool   `json:"isDir"`
     HasChild  bool   `json:"hasChild"`  // 展開可能か（FR-032 の先読み結果）
-    Truncated bool   `json:"truncated"` // 件数上限で切り詰めた（FR-032）
+    Omitted   int    `json:"omitted"`   // 件数上限で除かれた数。0 なら全件（FR-032）
 }
 ```
 
 子ノードは含めない。展開のたびに `ReadDir` を呼ぶ（FR-032 の遅延展開）。
 
-`Truncated` は**その要素が属する一覧が切り詰められた**ことを示す（IMP-130）。切り詰めが起きた場合、返すすべての要素に立つ。フロントエンドは先頭の要素を見て、一覧の末尾に省略の旨を表示する。
+`Omitted` は**その要素が属する一覧から件数上限で除かれた数**である（IMP-130）。切り詰めが起きた場合、返すすべての要素に同じ値が入る。フロントエンドは先頭の要素を見て、一覧の末尾に `… and N more` を表示する（DSP-112, IMP-290 の `treeMore`）。
+
+`HasChild` はディレクトリかどうかと一致する。`filetree.ReadDir` が Markdown を含まないディレクトリを既に除いており（FR-031, IMP-133）、返ってきたディレクトリはすべて展開する価値があるためである。**先読みの判定を DTO 側でやり直さない。**
 
 ### IMP-305: LinkResultDTO **MUST**
 
@@ -106,11 +122,13 @@ type LinkResultDTO struct {
     Kind     string       `json:"kind"`     // "document" | "external" | "anchor" | "error"
     Document *DocumentDTO `json:"document"` // kind == "document" のとき
     Anchor   string       `json:"anchor"`   // kind == "anchor" のとき
-    Message  string       `json:"message"`  // kind == "error" のとき（英語）
+    Error    *ErrorDTO    `json:"error"`    // kind == "error" のとき
 }
 ```
 
 `external`（外部 URL・画像・その他のファイル）の場合、Go 側が既に OS へ委譲済みであり、フロントエンドは何もしない。
+
+失敗は文言ではなく `ErrorDTO` をそのまま載せる（IMP-307）。リンク先が大きな Markdown だった場合、`Kind` は `error`、`Error.Kind` は `needs-confirm` となり、フロントエンドは他の経路と同じ確認画面を出せる（FR-016）。文言だけを渡すとサイズと上限が失われ、確認画面を組み立てられない。理由は IMP-308 と同じである。
 
 ### IMP-306: AboutDTO **MUST**
 
@@ -140,6 +158,33 @@ type ErrorDTO struct {
 }
 ```
 
+### IMP-308: OpenResultDTO **MUST**
+
+```go
+type OpenResultDTO struct {
+    Document *DocumentDTO `json:"document"` // 成功したとき。失敗時は null
+    Error    *ErrorDTO    `json:"error"`    // 失敗したとき。成功時は null
+}
+```
+
+文書を開くバインドメソッド（IMP-310）の戻り値。**失敗を Go の `error` ではなく、この構造体で返す。**
+
+> [!IMPORTANT]
+> Wails v2 は Go の `error` を**メッセージ文字列としてしか**フロントエンドへ渡せない（`dispatcher.NewErrorCallback(message string, ...)` を経て、JavaScript 側は `new Error(message)` を受け取る）。`(*DocumentDTO, error)` のまま返すと `ErrorDTO` の `Kind` / `Size` / `Limit` が失われ、**大きなファイルの確認画面（FR-016, IMP-314）を組み立てられない。** 失敗が値として渡る形にする必要がある。
+
+`Document` と `Error` がどちらも `null` の場合は「**何も起きなかった**」を表す。フロントエンドは表示を変えない。次の 4 つがこれにあたる。
+
+| 場面 | メソッド |
+| --- | --- |
+| ダイアログを取り消した | `OpenFileDialog` |
+| ダイアログを開けなかった | `OpenFileDialog` |
+| 履歴の端で戻る・進むを呼んだ | `HistoryBack` / `HistoryForward` |
+| 表示中の文書がない状態で再読み込みした | `Reload` |
+
+ダイアログを開けなかった場合を失敗として扱わないのは、表示中の文書を状態画面で置き換える理由がないためである（FR-110）。利用者から見れば「ファイルが選ばれなかった」ことに変わりはない。
+
+`ReadDir` と `CopyToClipboard` は `error` を返したままとする。前者はツリーの一部が読めないだけであり、後者は失敗の種類が 1 つしかない。いずれも `Kind` を伴う分岐を必要としない（IMP-315）。
+
 ## 13.3 バインドメソッド（IMP-310 系）
 
 すべて `App` のメソッドとして定義する。Wails のバインディングにより、JavaScript からは `window.go.main.App.*` として呼べる。`js/api.js` がこれを薄くラップする（IMP-201）。
@@ -149,20 +194,26 @@ type ErrorDTO struct {
 | メソッド | 引数 | 戻り値 | 対応要求 |
 | --- | --- | --- | --- |
 | `GetInitialState()` | — | `InitialStateDTO` | FR-012, FR-013, UI-110 |
-| `OpenFileDialog()` | — | `(*DocumentDTO, error)` | FR-010 |
-| `OpenFromTree(path string)` | 絶対パス | `(*DocumentDTO, error)` | FR-033 |
-| `OpenConfirmed(path string)` | 絶対パス | `(*DocumentDTO, error)` | FR-016 |
-| `FollowLink(href string)` | リンクの生値 | `(LinkResultDTO, error)` | FR-050, FR-053 |
-| `HistoryBack()` / `HistoryForward()` | — | `(*DocumentDTO, error)` | FR-051 |
-| `Reload()` | — | `(*DocumentDTO, error)` | FR-015 |
+| `OpenFileDialog()` | — | `OpenResultDTO` | FR-010 |
+| `OpenFromTree(path string)` | 絶対パス | `OpenResultDTO` | FR-033 |
+| `OpenConfirmed(path string)` | 絶対パス | `OpenResultDTO` | FR-016 |
+| `FollowLink(href string)` | リンクの生値 | `LinkResultDTO` | FR-050, FR-053 |
+| `HistoryBack()` / `HistoryForward()` | — | `OpenResultDTO` | FR-051 |
+| `Reload()` | — | `OpenResultDTO` | FR-015 |
 | `ReadDir(path string)` | 絶対パス | `([]TreeNodeDTO, error)` | FR-032, FR-035 |
 | `GetTreeRoot()` | — | `string` | FR-030 |
 | `SetScrollTop(top int)` | 現在のスクロール位置 | — | FR-051 |
 | `UpdateConfig(patch ConfigDTO)` | 変更後の設定 | — | UI-110, UI-114 |
 | `CopyToClipboard(text string)` | コピー対象 | `error` | FR-061, AR-062 |
 | `GetAbout()` | — | `AboutDTO` | FR-100, FR-101 |
+| `Quit()` | — | — | UI-090 |
 
 このほかに、フロントエンドから任意のパスを開く汎用メソッドを**定義しない**（IMP-300 の 3）。
+
+- **失敗は戻り値の DTO で伝える**（IMP-308, IMP-305）。Go の `error` を返すのは `ReadDir` と `CopyToClipboard` だけとする。
+- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。
+- `Quit` は `Ctrl+Q`（UI-090）の受け口である。`Alt+F4` と閉じるボタンは OS とウィンドウマネージャが処理するためこの経路を通らない。**終了処理そのものは Wails に任せ、ここで設定を保存しない。** `OnBeforeClose` / `OnShutdown`（IMP-194）を通ることで、閉じるボタンで終了した場合とまったく同じ後始末になる。
+- `UpdateConfig` を**立て続けに 2 つ呼ばない**。バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、到着順が入れ替わりうる。フロントエンドは `saveConfig`（IMP-210）を経由し、前の応答を待ってから次を送る。
 
 ### IMP-311: SetScrollTop の扱い **MUST**
 
@@ -191,7 +242,9 @@ flowchart TD
 ```
 
 - `href` にアンカーが付いた Markdown（`./a.md#sec`）は、パス部分とアンカー部分を分離し、`DocumentDTO.Scroll` を `anchor` モードで返す。
-- 基準ディレクトリは**表示中の文書のディレクトリ**であり、ツリールートではない（AR-042）。
+- 基準ディレクトリは**表示中の文書のディレクトリ**であり、ツリールートではない（AR-042）。相対パスの解決規則は画像（IMP-118）と同一のものを使う。別々に書くと、`[x](./a.png)` が開くファイルと `![x](./a.png)` が表示するファイルが食い違いうる。
+- **Windows のドライブレターをスキームと取り違えない。** `net/url` は `C:/docs/a.md` のスキームを `c` と解釈する。1 文字のスキームは存在しないため、これはローカルパスとして扱う。
+- **`opener` が受け付けないスキームは `kind: error` とする**（IMP-170, NFR-030）。FR-050 は「`mailto:` 等のその他スキームは OS の既定ハンドラに委譲する」と定めるが、委譲してよいのは `http` / `https` / `mailto` に限る。文書は任意の第三者から受け取りうるため、`javascript:` や `file:` を OS へ渡さないことを優先する。
 
 ### IMP-313: ドロップの受け口 **MUST**
 
@@ -212,11 +265,15 @@ runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
 FR-016 を実装する。
 
 1. 通常の `open` が `ErrNeedsConfirm`（`*SizeError`）を返す。
-2. `app.go` はこれを `ErrorDTO{Kind: "needs-confirm", Path, Size, Limit}` に変換して返す。
+2. `app.go` はこれを `OpenResultDTO{Error: &ErrorDTO{Kind: "needs-confirm", Path, Size, Limit}}` に変換して返す（IMP-308）。リンクから開いた場合は `LinkResultDTO{Kind: "error", Error: ...}` となる（IMP-305）。
 3. フロントエンドは状態画面 `confirm-large` を表示する（IMP-250）。
 4. `Open anyway` の押下で `OpenConfirmed(path)` を呼ぶ。Go 側は `LoadOptions{Confirmed: true}` で再試行する。
 
 `OpenConfirmed` は、直前に確認画面を出したパスに対してのみ有効とする。Go 側が「確認待ちのパス」を 1 つだけ保持し、それ以外のパスを渡された場合は拒否する。任意のサイズのファイルを無条件に開く経路を作らないため。
+
+**確認画面を出した時点で、ツリールートと表示履歴は対象へ移す**（FR-016）。FR-016 は「確認画面を表示した時点でタイトルとパス表示を対象のものに更新し、履歴に積む。`Alt+←` で直前の文書へ戻れること」を求めており、積まないと戻る先が 1 つずれる。適用する規則は成功時と同じ表（IMP-192）に従う。**監視は張らず、表示中の文書も差し替えない。** 描画を始めていないファイルは FR-014 の対象外である（FR-016）。
+
+したがって `OpenConfirmed` から呼ぶ `open` は `openFromConfirm` を使い、ツリールートと履歴を二重に動かさない（IMP-192）。
 
 ### IMP-315: エラーの分類と文言 **MUST**
 
@@ -236,6 +293,7 @@ Go 側の番兵エラー（IMP-021）を `ErrorDTO.Kind` へ写像し、フロ�
 | 不正な文字コードを置換 | `encoding` | ステータス | `Some characters were replaced.` |
 
 - 文言の組み立てはフロントエンドで行う。Go 側は `Kind` と要素（パス・サイズ）を渡す。これにより、文言の定義が `strings.js` の 1 箇所に集約される（IMP-290）。
+- **`Kind` は戻り値の DTO に載せて渡す**（IMP-308, IMP-305）。Go の `error` として返すとメッセージ文字列しか渡らず、`Kind` も `Size` / `Limit` も失われる。
 - `ErrorDTO.Message` には Go 側が組み立てた英語文言も入れる。フロントエンドが未知の `Kind` を受け取った場合のフォールバックとして用いる。
 
 ## 13.4 イベント（IMP-320 系）
@@ -309,6 +367,7 @@ sequenceDiagram
 | IMP-305 | LinkResultDTO | MUST |
 | IMP-306 | AboutDTO | MUST |
 | IMP-307 | ErrorDTO | MUST |
+| IMP-308 | OpenResultDTO | MUST |
 | IMP-310 | バインドメソッド一覧 | MUST |
 | IMP-311 | SetScrollTop の扱い | MUST |
 | IMP-312 | FollowLink の判定順序 | MUST |

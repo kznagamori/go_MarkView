@@ -15,6 +15,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,9 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 
+	"github.com/kznagamori/go_MarkView/internal/assetsrv"
 	"github.com/kznagamori/go_MarkView/internal/buildinfo"
+	"github.com/kznagamori/go_MarkView/internal/config"
 	"github.com/kznagamori/go_MarkView/internal/session"
 )
 
@@ -85,14 +88,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsageError
 	}
 
-	startup, err := resolveStartup(positional)
-	if err != nil {
-		// 起動対象が読めなくてもウィンドウは必ず開く（FR-012）。
-		// エラーは状態画面 welcome とステータス表示へ渡す（IMP-193）。
-		_ = err // TODO(T3-12): InitialStateDTO の Error に載せる（IMP-303）
-	}
+	// 起動対象が読めなくてもウィンドウは必ず開く（FR-012）。エラーは
+	// App が保持し、GetInitialState で状態画面とステータスへ渡す（IMP-193）。
+	startup, startupErr := resolveStartup(positional)
 
-	if err := launch(startup); err != nil {
+	if err := launch(startup, startupErr); err != nil {
 		fmt.Fprintf(stderr, "MarkView: %v\n", err)
 		return exitRunError
 	}
@@ -101,31 +101,92 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // launch は Wails のウィンドウを起動する。戻るのはウィンドウを閉じた後。
 //
-// ウィンドウのサイズと最小サイズは UI-011 が定める値。位置は設定に保存せず、
-// 常にプライマリモニタの中央に置く（UI-111。中央寄せは App.onStartup）。
-//
-// TODO(T3-12): 設定（UI-110）を読み、保存されたウィンドウサイズと
-// 最大化状態を反映する。テーマの解決結果も渡す（IMP-303）。
-func launch(startup session.Startup) error {
-	app := NewApp(startup)
+// 設定はここで読む。ウィンドウの初期サイズが Wails の起動オプションとして
+// 必要であり、App より先に必要になるためである（UI-011, UI-110, IMP-193）。
+// **位置は保存も復元もしない。** 常にプライマリモニタの中央に置く
+// （UI-111。中央寄せは App.onStartup）。
+func launch(startup session.Startup, startupErr error) error {
+	// 設定がない・壊れている場合も既定値で起動する。Load はエラーを
+	// 返さない（UI-113, IMP-151）。
+	cfg := config.Load()
+
+	buildinfo.SetVendorJSON(readVendorJSON())
+	app := NewApp(startup, startupErr, cfg)
 
 	return wails.Run(&options.App{
-		Title:     "MarkView", // 文書未表示時のタイトル（UI-013）
-		Width:     1280,
-		Height:    860,
-		MinWidth:  640,
+		Title:     AppTitle, // 文書未表示時のタイトル（UI-013）
+		Width:     cfg.WindowWidth,
+		Height:    cfg.WindowHeight,
+		MinWidth:  640, // UI-011
 		MinHeight: 480,
+
+		// 最大化状態は復元する。位置は復元しない（UI-110, UI-111）。
+		WindowStartState: startState(cfg),
+
 		AssetServer: &assetserver.Options{
-			Assets: frontendFS,
-			// TODO(T3-5): assetsrv.Handler を Middleware / Handler として
-			// 組み込み、ローカル画像と /appicon.png を配信する（IMP-160）。
+			// Assets を渡さず Handler だけを使う。埋め込み資産の
+			// Content-Type を自前の表で決めるためである（IMP-160, IMP-162）。
+			// Wails は /wails/runtime.js の配信と index.html への
+			// スクリプト挿入を、この Handler より前で行う。
+			Handler: assetsrv.New(frontendAssets(), appIconPNG),
 		},
+
+		// **ファイルドロップは既定で無効である**（IMP-245, FR-011）。
+		// これを渡さないと runtime.OnFileDrop のコールバックが呼ばれない。
+		// 受け口となる要素は CSS の --wails-drop-target で決まるため、
+		// #app に指定してウィンドウ全体を対象にする（UI-070）。
+		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
+
 		OnStartup: app.onStartup,
-		Bind:      []any{app},
+
+		// ウィンドウの大きさは閉じる直前に取り込む。OnShutdown では
+		// ウィンドウが既に破棄されており、読み出すと落ちる（IMP-194）。
+		OnBeforeClose: app.onBeforeClose,
+		OnShutdown:    app.onShutdown,
+
+		Bind: []any{app},
+
 		// Windows は実行ファイルのリソースからアイコンを取るため指定不要。
 		// Linux は埋め込んだ PNG を明示的に渡す（IMP-032）。
 		Linux: &linux.Options{Icon: appIconPNG},
 	})
+}
+
+// startState は起動時のウィンドウ状態を返す（UI-110）。
+func startState(cfg config.Config) options.WindowStartState {
+	if cfg.WindowMaximized {
+		return options.Maximised
+	}
+	return options.Normal
+}
+
+// frontendAssets は埋め込みの frontend/ を根とした FS を返す。
+//
+// go:embed は frontend/ を含んだ形で保持するため、そのままでは
+// assetsrv が index.html を引けない。
+func frontendAssets() fs.FS {
+	sub, err := fs.Sub(frontendFS, "frontend")
+	if err != nil {
+		// go:embed の対象が変わらない限り起こらない。起きた場合も
+		// ウィンドウは開き、資産が 404 になるだけとする（FR-111）。
+		return frontendFS
+	}
+	return sub
+}
+
+// readVendorJSON は同梱資産の情報を読む（IMP-181, BR-042）。
+//
+// go:embed はパッケージのディレクトリより上を参照できないため、main.go が
+// 読んで buildinfo へ渡す。**読めなくてもエラーにしない。** 情報ダイアログの
+// Bundled 行が空になるだけで、文書の閲覧は続けられる（FR-111）。
+//
+// TODO(T6-1): frontend/vendor/ を用意するまでは常に読めない。
+func readVendorJSON() []byte {
+	data, err := frontendFS.ReadFile("frontend/vendor/vendor.json")
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // action は解析結果として選ばれる動作。

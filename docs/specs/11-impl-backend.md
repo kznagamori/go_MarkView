@@ -402,12 +402,13 @@ type Node struct {
     IsDir    bool   `json:"isDir"`
     Children []Node `json:"children"` // 未読込のディレクトリでは nil
     Loaded   bool   `json:"loaded"`   // 子を読み込み済みか
-    Truncated bool  `json:"truncated"` // 属する一覧が切り詰められたか（FR-032）
+    Omitted  int    `json:"omitted"`  // 件数上限で除かれた数。0 なら全件（FR-032）
 }
 ```
 
-- `Truncated` は、**その要素が属する一覧が件数上限で切り詰められた**ことを示す。切り詰めが起きた場合、`ReadDir` は返すすべての要素に立てる。
-  一覧に対する印を要素側に持たせているのは、`ReadDir` が返すのが子の並びだけで、親を表す値を返さないためである。すべてに立てるので、並べ替えても印が失われない。フロントエンドは先頭の要素を見て、一覧の末尾に省略の旨を表示する（FR-032）。
+- `Omitted` は、**その要素が属する一覧から件数上限で除かれた数**である。切り詰めが起きた場合、`ReadDir` は返すすべての要素に同じ値を入れる。
+  一覧に対する値を要素側に持たせているのは、`ReadDir` が返すのが子の並びだけで、親を表す値を返さないためである。すべてに入れるので、並べ替えても値が失われない。フロントエンドは先頭の要素を見て、一覧の末尾に `… and N more` を表示する（FR-032, DSP-112）。
+  真偽値ではなく件数を持つのは、表示に N が要るためである。切り詰めの有無だけを返すと、フロントエンドは省略された件数を組み立てられない。
 
 ### IMP-131: 読み込み **MUST**
 
@@ -687,7 +688,39 @@ func OpenFile(path string) error
 - 引数は必ず `exec.Command` の可変長引数として渡し、シェルを経由しない。文字列連結でコマンドを組み立てない。
 - URL は事前にスキームを検査し、`http` / `https` / `mailto` 以外を拒否する。
 
-## 11.9 buildinfo パッケージ（IMP-180 系）
+## 11.9 ostheme パッケージ（IMP-175 系）
+
+### IMP-175: OS のテーマ設定の取得 **MUST**
+
+FR-071 を実装する。Wails に依存しない（IMP-012）。
+
+```go
+package ostheme
+
+const (
+    Light   = "light"
+    Dark    = "dark"
+    Unknown = ""       // 判定できなかった
+)
+
+// Detect は OS のテーマ設定を返す。判定できない場合は Unknown を返す。
+func Detect() string
+```
+
+**Wails v2 のランタイムには OS のテーマを取得する API がない**（`WindowSetDarkTheme` などの設定側のみ）。FR-071 の追従を実現するには、OS ごとの設定を直接読むほかない。
+
+| OS | 実装 |
+| --- | --- |
+| Windows | レジストリ `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize` の `AppsUseLightTheme`（`REG_DWORD`）を読む。**0 がダーク、1 がライト**。`golang.org/x/sys/windows/registry` を用いる |
+| Linux | `gsettings get org.gnome.desktop.interface color-scheme` を実行し、`'prefer-dark'` / `'prefer-light'` を解釈する。`'default'` または取得に失敗した場合は `gtk-theme` を読み、名前が `-dark` で終わるものだけをダークとみなす |
+
+- **判定できない場合に Light を返さない。** 「OS がライトである」ことと「OS の設定を読めなかった」ことは別であり、呼び出し側が区別できる必要がある。FR-071 の「判定できない場合は Light テーマとする」の適用は呼び出し側（`resolvedTheme`）の責務とする。
+- `SystemUsesLightTheme`（タスクバー等の配色）ではなく `AppsUseLightTheme` を見る。アプリケーションの配色に対応するのは後者である。
+- Linux では外部コマンドを起動するため、応答を待つ上限を 500 ms とする。GNOME が入っていない環境では実行そのものが失敗し、待ち時間は発生しない。引数は `exec.Command` の可変長引数として渡し、シェルを経由しない（IMP-170 と同じ理由）。
+- **OS へ実際に問い合わせる部分と、値を解釈する部分を分ける。** 解釈（`fromAppsUseLightTheme` / `fromColorScheme` / `fromGTKTheme`）はプラットフォームに依存しないファイルへ置き、ビルドタグ付きのテストを書かずに済むようにする（UT-035, UT-703）。
+- **呼び出しは設定にテーマが記録されていないときだけとする**（IMP-303）。通常は初回起動の 1 回に限られるため、結果を保持する仕組みは持たない。
+
+## 11.10 buildinfo パッケージ（IMP-180 系）
 
 ### IMP-180: バージョン情報 **MUST**
 
@@ -733,7 +766,7 @@ func Environment(webviewVersion string) string
 - `Vendors` は解析に失敗しても**空スライスを返し、エラーにしない**（FR-111）。情報表示が欠けるだけで、文書の閲覧は続けられる。JSON の `null` は解析に成功したうえで nil を書き込むため、そこも空スライスへ揃える。
 - `Environment` の WebView 名は OS で異なる（Windows: `WebView2`、Linux: `WebKitGTK`）。バージョンが空のときに「`WebView2 `」とだけ書かれた区画は情報として役に立たないため、区画ごと省く。
 
-## 11.10 App と session（IMP-190 系）
+## 11.11 App と session（IMP-190 系）
 
 `app.go` は Wails にバインドされる唯一の型であり、Wails に依存する。**判断を伴うロジックは `internal/session` に置き、`app.go` からは呼ぶだけにする**（IMP-012）。この分離により、履歴・起動解決・パス算出を Wails なしでテストできる（UT-803〜UT-805）。
 
@@ -763,6 +796,7 @@ type App struct {
     // 確認画面を表示中のファイル（FR-016）。OpenConfirmed が受け付ける
     // 対象をこの 1 つに限定するために保持する（IMP-314）。
     pendingConfirm string
+    pendingSource  openSource // 確認画面を出したときの経路（IMP-192）
 }
 ```
 
@@ -812,6 +846,16 @@ func DisplayPath(root, target string) (display string, outside bool)
 - 区切り文字は OS のものをそのまま使う。ツリー外で絶対パスを出すときと表記を揃えるため。
 - ツリールートが定まっていない（空文字）場合は絶対パスを返し、**`outside` は false とする**。ツリーがない状態で `(outside tree)` と表示しても意味を持たないため。
 
+パスの比較も同じパッケージに置く（IMP-025）。
+
+```go
+// SamePath は 2 つのパスが同じ場所を指すかを返す。Windows では大文字小文字を
+// 区別せず、Linux では区別する。シンボリックリンクは解決しない。
+func SamePath(a, b string) bool
+```
+
+`app.go` はツリールートの変更判定にこれを使う（IMP-192）。単純な `!=` で比べると、Windows で大文字小文字だけが違うパスを別のルートとみなし、同じ場所を指しているのに `tree:root-changed` を送ってツリーを組み直してしまう。
+
 ### IMP-192: 文書を開く共通処理 **MUST**
 
 FR-010 / FR-011 / FR-012 / FR-033 / FR-050 / FR-051 のすべてが、この 1 つの内部処理を通る（AR-060）。
@@ -827,9 +871,20 @@ const (
     openFromLink                     // FR-050
     openFromHistory                  // FR-051
     openFromReload                   // FR-014, FR-015
+    openFromConfirm                  // FR-016 の Open anyway
 )
 
-func (a *App) open(path string, src openSource, opts document.LoadOptions) (DocumentDTO, error)
+// openRequest は open への指示。アンカー（FR-050）と復元位置（FR-051）を
+// 渡す必要があるため、位置引数ではなく構造体で受ける。
+type openRequest struct {
+    path      string
+    src       openSource
+    anchor    string // アンカー付きリンクを踏んだときの見出し ID
+    scrollTop int    // openFromHistory で復元する位置
+    confirmed bool   // FR-016 の Open anyway
+}
+
+func (a *App) open(req openRequest) (*DocumentDTO, error)
 ```
 
 各 `openSource` による差異は以下に限る。
@@ -840,8 +895,17 @@ func (a *App) open(path string, src openSource, opts document.LoadOptions) (Docu
 | `openFromTree` / `openFromLink` | **変更しない**（FR-030, FR-052） | 積む | 先頭（アンカー指定時はその位置） |
 | `openFromHistory` | 変更しない | 積まない | `restore`: 記録された位置を復元 |
 | `openFromReload` | 変更しない | **積まない**（FR-051） | `keep`: 現在位置を維持 |
+| `openFromConfirm` | **変更しない**（確認時に変更済み） | **積まない**（確認時に積み済み） | 先頭 |
 
 この表以外の差異を持ち込まない。分岐が増えると FR-030 の不変条件（リンク遷移でツリールートが動かない）を壊しやすくなる。
+
+実装上の規約を以下に定める。
+
+- **読み込みと変換はミューテックスの外で行う。** 10 MB 近い文書では時間がかかり、その間ほかのバインドメソッドを止める理由がない。`renderer` は状態を持たず同時に呼んでよい（IMP-024）。状態への反映だけをロックの内側で行う。
+- **Wails の呼び出し（`tree:root-changed` の送出）もロックの外で行う。** ツリールートが変わったかどうかはロックの内側で判定し、送出は解いた後に行う。
+- ツリールートが変わるのは `filepath.Dir` を取った結果が現在の値と異なる場合に限る。比較は `session.SamePath` で行う（IMP-191）。
+- 確認待ちのパス（`pendingConfirm`）はこの処理の中でのみ更新する。`ErrNeedsConfirm` で立て、**開けたときと、確認以外の失敗のときに消す**（IMP-314）。残したままにすると、確認画面を閉じたあとの操作で開けてしまう。
+- 監視対象の切り替え（`watcher.Watch`）もここで行う。監視は常に 1 つ以下とし、失敗しても開く操作は成功とする。自動更新が効かなくなるだけで、利用者は再読み込みできる（FR-014, FR-015, FR-111）。
 
 ### IMP-193: 起動シーケンス **MUST**
 
@@ -852,8 +916,9 @@ package session
 
 // Startup は起動時に決定した表示対象とツリールートを表す。
 type Startup struct {
-    TreeRoot string // 絶対パス
-    Initial  string // 表示対象の絶対パス。なければ空文字
+    TreeRoot  string // 絶対パス
+    Initial   string // 表示対象の絶対パス。なければ空文字
+    Requested string // 引数で指定されたパスの絶対形。解決に失敗した場合も残す
 }
 
 // ResolveStartup は起動時の表示対象とツリールートを決定する。
@@ -901,6 +966,8 @@ func ResolveStartup(args []string, cwd, exeDir string) (Startup, error)
 func FindReadme(dir string) (string, bool)
 ```
 
+**設定は `main.go` が Wails の起動前に読む**（`config.Load`）。ウィンドウの初期サイズと最大化状態（UI-110）が `wails.Run` のオプションとして必要であり、`App` の生成より先に確定していなければならないためである。`Load` はエラーを返さない。設定がない・壊れている場合も既定値で起動する（UI-113, IMP-151）。
+
 起動時の表示対象が読み込めない場合も、**ウィンドウは必ず開く**（FR-012）。エラーの種類に応じて `InitialStateDTO.StateKind` を設定し、状態画面を初期表示とする（IMP-303）。
 
 | 起動時の事象 | `StateKind` | `Document` |
@@ -922,8 +989,27 @@ func FindReadme(dir string) (string, bool)
 
 **ウィンドウのサイズと最大化状態は Go 側で取得する。** これらはフロントエンドから通知されない（`ConfigDTO` に含まれない。IMP-303）ため、保存の直前に Wails のランタイムから読み出す。
 
+> [!IMPORTANT]
+> **取得は `OnBeforeClose` で行う。`OnShutdown` では取得できない。**
+> `OnShutdown` が呼ばれる時点でウィンドウは既に破棄されており、
+> `runtime.WindowGetSize` は DPI を 0 として除算し、**panic する**
+> （Wails v2.15.0 / Windows で実測。`winc.ScaleToDefaultDPI`）。
+> 終了のたびにアプリケーションが異常終了することになり、FR-111 に反する。
+>
+> 役割を次のように分ける。
+>
+> | 契機 | 行うこと |
+> | --- | --- |
+> | `OnBeforeClose` | `captureWindowState` のみ。`false` を返して閉じる操作を通す |
+> | 保存の予約（UI-114 の 1 秒） | `captureWindowState` + `config.Save`。ウィンドウは生きている |
+> | `OnShutdown` | 保存の予約を止め、`watcher` を閉じ、`config.Save`。**Wails のランタイムを呼ばない** |
+>
+> `captureWindowState` 自体にも `recover` を置く。ウィンドウの状態を読む API は
+> ウィンドウの生存に依存しており、取りこぼしても保存は続けるべきである
+> （FR-111, IMP-022）。
+
 ```go
-// 終了時、および設定保存時に呼ぶ
+// OnBeforeClose と、保存の予約から呼ぶ
 func (a *App) captureWindowState() {
     if runtime.WindowIsMaximised(a.ctx) {
         a.cfg.WindowMaximized = true
@@ -938,7 +1024,7 @@ func (a *App) captureWindowState() {
 - 最大化状態で終了した場合、**そのときの画面いっぱいのサイズを保存しない。** 保存すると、次回に最大化を解除したときのウィンドウが画面いっぱいのままになる。最大化フラグのみを保存し、幅と高さは最大化する前の値を保つ。
 - ウィンドウ位置は取得しない。構造体にフィールドが存在しない（IMP-150, UI-111）。
 
-## 11.11 要求一覧
+## 11.12 要求一覧
 
 | ID | 概要 | 必須度 |
 | --- | --- | --- |
@@ -972,6 +1058,7 @@ func (a *App) captureWindowState() {
 | IMP-161 | ローカル配信の検査順序 | MUST |
 | IMP-162 | 応答ヘッダ | MUST |
 | IMP-170 | 外部委譲 | MUST |
+| IMP-175 | OS のテーマ設定の取得 | MUST |
 | IMP-180 | バージョン情報 | MUST |
 | IMP-181 | 同梱資産の情報 | MUST |
 | IMP-190 | App が保持する状態 | MUST |

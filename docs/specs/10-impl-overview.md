@@ -35,7 +35,12 @@ AR-011 の構成を実装単位まで具体化したもの。
 ```
 go_MarkView/
 ├── main.go                     エントリポイント、CLI 解析、Wails 起動
-├── app.go                      Wails にバインドする App 型（IMP-190 系）
+├── app.go                      App 型の状態とライフサイクル（IMP-190, IMP-193, IMP-194）
+├── open.go                     文書を開く共通処理（IMP-192）
+├── bind.go                     バインドメソッドとドロップ判定（IMP-310, IMP-313）
+├── link.go                     リンク遷移の判定（IMP-312）
+├── errors.go                   エラーの分類（IMP-315）
+├── dto.go                      フロントエンドとの境界の型（IMP-302〜307）
 ├── go.mod / go.sum
 ├── wails.json
 ├── internal/
@@ -75,6 +80,11 @@ go_MarkView/
 │   │   ├── opener.go           既定ブラウザ・既定アプリへの委譲
 │   │   ├── open_windows.go     rundll32.exe（IMP-031, IMP-170）
 │   │   └── open_other.go       xdg-open（IMP-031, IMP-170）
+│   ├── ostheme/                IMP-175（依存を持たない葉パッケージ）
+│   │   ├── ostheme.go          OS のテーマの取得と、値の解釈
+│   │   ├── ostheme_windows.go  レジストリ（IMP-031, IMP-175）
+│   │   ├── ostheme_other.go    gsettings（IMP-031, IMP-175）
+│   │   └── ostheme_test.go
 │   ├── buildinfo/              IMP-180 系
 │   │   ├── buildinfo.go        バージョン情報（IMP-180）
 │   │   └── vendor.go           vendor.json の読み出しと環境情報（IMP-181）
@@ -121,6 +131,7 @@ flowchart TD
     MAIN --> CFG["config"]
     MAIN --> ASSET["assetsrv"]
     MAIN --> OPEN["opener"]
+    MAIN --> OSTH["ostheme"]
     MAIN --> BI["buildinfo"]
     MAIN --> SESS["session"]
     DOC --> REND["renderer"]
@@ -134,7 +145,7 @@ flowchart TD
 - `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile` / `localurl`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
 - `mdfile`（IMP-105）を例外としているのは、Markdown の拡張子判定を `filetree`（IMP-132）と `session`（IMP-193）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、両者が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
 - `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
-- `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼ぶのは `main.go` と `app.go` のみとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。
+- `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼ぶのは `main.go` と `app.go` / `bind.go` のみとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。
 - **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に置き、`app.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
 ## 10.3 実装規約（IMP-020 系）
@@ -275,6 +286,7 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 | `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め | UI-112, UI-113 |
 | `assetsrv` | 拡張子の許可・拒否、パス正規化、ヘッダ | AR-041, NFR-031 |
 | `opener` | 引数の組み立て（実際の起動は行わない） | FR-053 |
+| `ostheme` | レジストリ値と gsettings 出力の解釈（実際の問い合わせは行わない） | FR-071 |
 
 ### IMP-041: ゴールデンテスト **SHOULD**
 

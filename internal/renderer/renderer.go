@@ -289,9 +289,20 @@ func rewriteImageURL(src, baseDir string) string {
 		}
 	}
 
+	return localurl.Encode(ResolveRef(src, baseDir))
+}
+
+// ResolveRef は Markdown 内の参照をローカルの絶対パスへ解決する（AR-042）。
+//
+// **画像（IMP-118）とリンク遷移（IMP-312）が同じ規則を使う。** 別々に書くと、
+// [x](./a.png) が開くファイルと ![x](./a.png) が表示するファイルが食い違いうる。
+//
+// 基準は baseDir、すなわち表示中ファイルのディレクトリである。ツリールートを
+// 基準にしてはならない（AR-042）。スキームの判定は呼び出し側が済ませておく。
+func ResolveRef(ref, baseDir string) string {
 	// Markdown の宛先は URL であり、空白などは %20 で書かれうる。
 	// ファイルパスへ戻してから解決する。復号できない場合は元の文字列を使う。
-	path := src
+	path := ref
 	if decoded, err := url.PathUnescape(path); err == nil {
 		path = decoded
 	}
@@ -303,5 +314,5 @@ func rewriteImageURL(src, baseDir string) string {
 		path = filepath.Join(baseDir, path)
 	}
 
-	return localurl.Encode(filepath.Clean(path))
+	return filepath.Clean(path)
 }

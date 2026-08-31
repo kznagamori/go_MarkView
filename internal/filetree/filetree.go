@@ -39,13 +39,16 @@ type Node struct {
 	Children []Node `json:"children"` // 未読込のディレクトリでは nil
 	Loaded   bool   `json:"loaded"`   // 子を読み込み済みか
 
-	// Truncated は **この要素が属する一覧が件数上限で切り詰められた**ことを示す
-	// （FR-032）。切り詰めが起きた場合、返すすべての要素に立てる。
+	// Omitted は **この要素が属する一覧から件数上限で除かれた数**（FR-032）。
+	// 切り詰めが起きた場合、返すすべての要素に同じ値を入れる。0 なら全件。
 	//
 	// 一覧に対する印を要素側に持たせているのは、ReadDir が返すのが子の並びだけで
-	// あり、親を表す値を返さないためである（IMP-131）。すべてに立てるので、
-	// 並べ替えても印が失われない。
-	Truncated bool `json:"truncated"`
+	// あり、親を表す値を返さないためである（IMP-131）。すべてに入れるので、
+	// 並べ替えても値が失われない。
+	//
+	// 真偽値ではなく件数を持つのは、表示が `… and N more` だからである
+	// （DSP-112）。件数を返さないと、フロントエンドは N を組み立てられない。
+	Omitted int `json:"omitted"`
 }
 
 // ReadDir は dir の直下のみを読み込む。再帰しない（FR-032, IMP-131）。
@@ -82,9 +85,10 @@ func ReadDir(dir string) ([]Node, error) {
 	slices.SortFunc(nodes, compareNodes)
 
 	if len(nodes) > MaxEntriesPerDir {
+		omitted := len(nodes) - MaxEntriesPerDir
 		nodes = nodes[:MaxEntriesPerDir]
 		for i := range nodes {
-			nodes[i].Truncated = true
+			nodes[i].Omitted = omitted
 		}
 	}
 

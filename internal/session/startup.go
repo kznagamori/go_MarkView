@@ -23,6 +23,11 @@ type Startup struct {
 
 	// Initial は最初に表示する文書の絶対パス。表示対象がなければ空文字。
 	Initial string
+
+	// Requested は引数で指定されたパスの絶対形。**解決に失敗した場合も残す。**
+	// ウィンドウは必ず開くため（FR-012）、どのパスが開けなかったのかを
+	// 伝える必要がある。引数がない場合は空文字。
+	Requested string
 }
 
 // ResolveStartup は起動時の表示対象とツリールートを決定する（FR-012, FR-013, IMP-193）。
@@ -61,11 +66,12 @@ func resolveFromArg(arg, cwd string) (Startup, error) {
 	info, err := os.Stat(target)
 	if err != nil {
 		// 起動は継続させるため、ツリールートだけは決めて返す（FR-012）。
-		return Startup{TreeRoot: cwd}, fmt.Errorf("cannot open %s: %w", target, err)
+		return Startup{TreeRoot: cwd, Requested: target},
+			fmt.Errorf("cannot open %s: %w", target, err)
 	}
 
 	if info.IsDir() {
-		st := Startup{TreeRoot: target}
+		st := Startup{TreeRoot: target, Requested: target}
 		if readme, ok := FindReadme(target); ok {
 			st.Initial = readme
 		}
@@ -75,7 +81,7 @@ func resolveFromArg(arg, cwd string) (Startup, error) {
 	// ファイルの場合、Markdown かどうかはここで判定しない。
 	// 拡張子が対象外であることは document.Load が ErrNotMarkdown として
 	// 報告する（IMP-102）。判定を 2 箇所に分散させないため、ここでは通す。
-	return Startup{TreeRoot: filepath.Dir(target), Initial: target}, nil
+	return Startup{TreeRoot: filepath.Dir(target), Initial: target, Requested: target}, nil
 }
 
 // resolveWithoutArg は引数がない場合の探索を行う（FR-013、IMP-193 の 3〜4）。
@@ -91,7 +97,7 @@ func resolveWithoutArg(cwd, exeDir string) Startup {
 	}
 
 	// カレントと実行ファイルの場所が同一なら、探索は 1 回で済ませる（FR-013）。
-	if exeDir != "" && !samePath(cwd, exeDir) {
+	if exeDir != "" && !SamePath(cwd, exeDir) {
 		exeDir = filepath.Clean(exeDir)
 		if readme, ok := FindReadme(exeDir); ok {
 			return Startup{TreeRoot: exeDir, Initial: readme}

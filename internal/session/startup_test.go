@@ -307,3 +307,72 @@ func TestResolveStartup_WithArg(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveStartup_Requested は、引数で指定されたパスが解決の成否によらず
+// 残ることを検証する（UT-803。根拠: FR-012 / IMP-193）。
+//
+// **開けなかったパスを伝えるために必要**である。ここが空だと、起動時に
+// 存在しないファイルを指定したとき「File not found:」の後ろが空欄になる。
+func TestResolveStartup_Requested(t *testing.T) {
+	t.Run("引数なしなら空文字", func(t *testing.T) {
+		cwd := t.TempDir()
+		writeFiles(t, cwd, "README.md")
+
+		got, err := ResolveStartup(nil, cwd, t.TempDir())
+		if err != nil {
+			t.Fatalf("ResolveStartup() = %v", err)
+		}
+		if got.Requested != "" {
+			t.Errorf("Requested = %q, want \"\"", got.Requested)
+		}
+	})
+
+	t.Run("引数にファイル", func(t *testing.T) {
+		cwd := t.TempDir()
+		writeFiles(t, cwd, "doc.md")
+		target := filepath.Join(cwd, "doc.md")
+
+		got, err := ResolveStartup([]string{target}, cwd, t.TempDir())
+		if err != nil {
+			t.Fatalf("ResolveStartup() = %v", err)
+		}
+		if got.Requested != target {
+			t.Errorf("Requested = %q, want %q", got.Requested, target)
+		}
+	})
+
+	t.Run("引数にディレクトリ", func(t *testing.T) {
+		cwd, target := t.TempDir(), t.TempDir()
+		writeFiles(t, target, "README.md")
+
+		got, err := ResolveStartup([]string{target}, cwd, t.TempDir())
+		if err != nil {
+			t.Fatalf("ResolveStartup() = %v", err)
+		}
+		if got.Requested != target {
+			t.Errorf("Requested = %q, want %q", got.Requested, target)
+		}
+	})
+
+	t.Run("存在しないパスでも残る", func(t *testing.T) {
+		cwd := t.TempDir()
+		missing := filepath.Join(cwd, "nosuch.md")
+
+		got, err := ResolveStartup([]string{missing}, cwd, t.TempDir())
+		if err == nil {
+			t.Fatal("エラーを期待したが nil だった")
+		}
+		if got.Requested != missing {
+			t.Errorf("Requested = %q, want %q", got.Requested, missing)
+		}
+	})
+
+	t.Run("相対パスは cwd 基準の絶対パスになる", func(t *testing.T) {
+		cwd := t.TempDir()
+
+		got, _ := ResolveStartup([]string{"sub/nosuch.md"}, cwd, t.TempDir())
+		if want := filepath.Join(cwd, "sub", "nosuch.md"); got.Requested != want {
+			t.Errorf("Requested = %q, want %q", got.Requested, want)
+		}
+	})
+}

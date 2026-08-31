@@ -153,14 +153,15 @@ func TestReadDir_Order(t *testing.T) {
 // **上限ちょうどは切り詰めではない。**
 func TestReadDir_Truncation(t *testing.T) {
 	tests := []struct {
-		name          string
-		count         int
-		wantLen       int
-		wantTruncated bool
+		name        string
+		count       int
+		wantLen     int
+		wantOmitted int
 	}{
-		{"上限の 1 つ下", MaxEntriesPerDir - 1, MaxEntriesPerDir - 1, false},
-		{"上限ちょうど", MaxEntriesPerDir, MaxEntriesPerDir, false},
-		{"上限を 1 つ超える", MaxEntriesPerDir + 1, MaxEntriesPerDir, true},
+		{"上限の 1 つ下", MaxEntriesPerDir - 1, MaxEntriesPerDir - 1, 0},
+		{"上限ちょうど", MaxEntriesPerDir, MaxEntriesPerDir, 0},
+		{"上限を 1 つ超える", MaxEntriesPerDir + 1, MaxEntriesPerDir, 1},
+		{"上限を大きく超える", MaxEntriesPerDir + 234, MaxEntriesPerDir, 234},
 	}
 
 	for _, tt := range tests {
@@ -176,8 +177,8 @@ func TestReadDir_Truncation(t *testing.T) {
 				t.Errorf("件数 = %d, want %d", len(nodes), tt.wantLen)
 			}
 			for i, n := range nodes {
-				if n.Truncated != tt.wantTruncated {
-					t.Errorf("%d 件目の Truncated = %v, want %v", i, n.Truncated, tt.wantTruncated)
+				if n.Omitted != tt.wantOmitted {
+					t.Errorf("%d 件目の Omitted = %d, want %d", i, n.Omitted, tt.wantOmitted)
 					break
 				}
 			}
