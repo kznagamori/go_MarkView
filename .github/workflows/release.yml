@@ -1,0 +1,441 @@
+# リリース（BR-050）。
+#
+# `v` で始まるタグの push を契機に、4 種の配布物を作って GitHub Releases へ
+# 添付する。**プレリリース（`v1.0.0-rc.n`）は省略できない工程である**
+# （BR-080, E2E-205）。rc で埋め込み資産を更新して手動テストを行い、
+# 本タグでは資産を更新せず、検証した内容をそのまま配る。
+#
+# 仕様書やドキュメントの節目に付けるタグは `v` で始めない（例: specs-4.2.0）。
+# ここが起動してしまう。
+#
+# アクションはメジャータグで参照する。**Node.js 20 を対象とする版は使わない**
+# （ci.yml と同じ理由）。
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# タグの付け替え（BR-043）と Release の作成に要る。
+# **追加のシークレットは使わない**（BR-050）。
+permissions:
+  contents: write
+
+# **打ち切らない。** 途中で止めると、タグを付け替えたのに配布物が無い、
+# という中途半端な状態が残りうる。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  WAILS_PACKAGE: github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+  MODULE: github.com/kznagamori/go_MarkView
+
+jobs:
+  # 埋め込み資産の更新と、**ビルドするコミットの確定**（BR-043, BR-050）。
+  #
+  # 本タグでは資産を更新しない。rc で手動テスト（E2E-205）を行った内容と
+  # 実際に配布される内容を一致させるためで、本タグでも取得しに行くと
+  # 誰も確認していないものが配布される。
+  #
+  # ただしジョブ自体は本タグでも走る。後続の 3 ジョブは**タグ名ではなく
+  # ここが出した SHA を checkout する**。付け替えの前後で取り違えないため。
+  vendor-update:
+    name: Vendor update
+    runs-on: ubuntu-latest
+
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      updated: ${{ steps.vendor.outputs.updated }}
+      reason: ${{ steps.vendor.outputs.reason }}
+      mermaid_before: ${{ steps.vendor.outputs.mermaid_before }}
+      mermaid_after: ${{ steps.vendor.outputs.mermaid_after }}
+      katex_before: ${{ steps.vendor.outputs.katex_before }}
+      katex_after: ${{ steps.vendor.outputs.katex_after }}
+
+    steps:
+      # 付け替えのために履歴とタグを全部取る。
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Classify tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_name }}" == *-rc.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "プレリリース。埋め込み資産を更新する（BR-043）"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "本リリース。埋め込み資産は更新しない（BR-043）"
+          fi
+
+      # 取得に失敗しても**中止しない**（BR-043）。コミット済みの版で続ける。
+      # 失敗したかどうかは reason で後段へ伝わる。
+      - name: Update bundled assets
+        id: vendor
+        if: steps.tag.outputs.prerelease == 'true'
+        run: go run ./scripts/vendorupdate
+
+      - name: Regenerate licenses
+        if: steps.vendor.outputs.updated == 'true'
+        run: go run ./scripts/genlicenses
+
+      # **ここで失敗したらリリースを中止する**（BR-043 の手順 4）。
+      # まだコミットも push もしていないため、リポジトリの状態は変わらない。
+      # ブラウザは ubuntu-latest 同梱の Chrome を使う（BR-054）。
+      - name: Render smoke test
+        if: steps.vendor.outputs.updated == 'true'
+        run: go run ./scripts/smoke
+
+      - name: Commit and move tag
+        if: steps.vendor.outputs.updated == 'true'
+        run: |
+          tag="${{ github.ref_name }}"
+          branch="${{ github.event.repository.default_branch }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add frontend/vendor licenses/THIRD_PARTY.md
+          git commit \
+            -m "chore: 同梱資産を更新する（${tag}）" \
+            -m "Mermaid ${{ steps.vendor.outputs.mermaid_before }} -> ${{ steps.vendor.outputs.mermaid_after }}
+          KaTeX ${{ steps.vendor.outputs.katex_before }} -> ${{ steps.vendor.outputs.katex_after }}
+
+          [skip ci]"
+
+          # **ブランチの先端がタグのコミットと同じときだけ push する。**
+          # 先へ進んでいる場合に無理やり載せると、リリースと関係のない
+          # 変更を巻き込むか、非早送りで弾かれる。
+          git fetch --quiet origin "$branch"
+          if [ "$(git rev-parse "origin/$branch")" = "${{ github.sha }}" ]; then
+            git push origin "HEAD:$branch"
+            echo "$branch へ push した"
+          else
+            echo "::warning::${branch} の先端がタグのコミットと違うため、ブランチへは push しない。資産の更新はタグの側にだけ残る"
+          fi
+
+          # **タグを新しいコミットへ付け替える**（BR-043 の手順 6）。
+          #
+          # GITHUB_TOKEN による push は新しいワークフローを起動しない。
+          # したがってここでリリースが再帰することはない。コミットの
+          # [skip ci] は、人が同じ手順を追うときの保険である。
+          git tag -f "$tag"
+          git push --force origin "refs/tags/$tag"
+
+      - name: Resolve commit
+        id: commit
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "ビルドするコミット: $sha"
+
+  build-windows:
+    name: Build (Windows)
+    needs: vendor-update
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.vendor-update.outputs.sha }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Wails CLI
+        run: go install ${{ env.WAILS_PACKAGE }}
+
+      # amd64 と arm64 のどちらも cgo を要さない（BR-011）。
+      - name: Build and pack
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          ldflags="-s -w"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.Version=${tag}"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.Commit=$(git rev-parse --short HEAD)"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          for arch in amd64 arm64; do
+            wails build -platform "windows/${arch}" -ldflags "$ldflags" -o MarkView.exe
+            go run ./scripts/pack -exe build/bin/MarkView.exe -os windows -arch "$arch" -version "$tag"
+          done
+
+      # **amd64 だけ動かす。** Windows の arm64 ランナーは無く、x64 の上では
+      # 起動できない。E2E-010 も WA を「ビルドのみ」としている。
+      - name: Automated E2E (windows/amd64)
+        shell: bash
+        run: |
+          go run ./scripts/e2e binary \
+            -archive "dist/MarkView-${{ github.ref_name }}-windows-amd64.zip" \
+            -version "${{ github.ref_name }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-windows
+          path: dist/*
+          if-no-files-found: error
+
+  build-linux-amd64:
+    name: Build (Linux amd64)
+    needs: vendor-update
+    # **ランナーを固定する**（BR-050）。より新しいランナーでビルドすると
+    # glibc の要求が上がり、宣言している Ubuntu 24.04 で動かなくなる。
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.vendor-update.outputs.sha }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 4.1 系を入れる（AR-003, BR-002）。xvfb は E2E-104 の起動確認に使う。
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
+
+      - name: Install Wails CLI
+        run: go install ${{ env.WAILS_PACKAGE }}
+
+      - name: Build and pack
+        run: |
+          tag="${{ github.ref_name }}"
+          ldflags="-s -w"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.Version=${tag}"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.Commit=$(git rev-parse --short HEAD)"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          wails build -platform linux/amd64 -tags webkit2_41 -ldflags "$ldflags" -o MarkView
+          go run ./scripts/pack -exe build/bin/MarkView -os linux -arch amd64 -version "$tag"
+
+      - name: Automated E2E (linux/amd64)
+        run: |
+          go run ./scripts/e2e binary \
+            -archive "dist/MarkView-${{ github.ref_name }}-linux-amd64.tar.gz" \
+            -version "${{ github.ref_name }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux-amd64
+          path: dist/*
+          if-no-files-found: error
+
+  build-linux-arm64:
+    name: Build (Linux arm64)
+    needs: vendor-update
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.vendor-update.outputs.sha }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
+
+      - name: Install Wails CLI
+        run: go install ${{ env.WAILS_PACKAGE }}
+
+      # arm64 は cgo が要るため、**同じアーキテクチャのランナーで作る**
+      # （BR-011）。ここが arm64 なので、そのまま E2E も動かせる。
+      - name: Build and pack
+        run: |
+          tag="${{ github.ref_name }}"
+          ldflags="-s -w"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.Version=${tag}"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.Commit=$(git rev-parse --short HEAD)"
+          ldflags="$ldflags -X ${MODULE}/internal/buildinfo.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          wails build -platform linux/arm64 -tags webkit2_41 -ldflags "$ldflags" -o MarkView
+          go run ./scripts/pack -exe build/bin/MarkView -os linux -arch arm64 -version "$tag"
+
+      - name: Automated E2E (linux/arm64)
+        run: |
+          go run ./scripts/e2e binary \
+            -archive "dist/MarkView-${{ github.ref_name }}-linux-arm64.tar.gz" \
+            -version "${{ github.ref_name }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux-arm64
+          path: dist/*
+          if-no-files-found: error
+
+  # 成果物がそろってからでないと確かめられないもの（E2E-101, E2E-107,
+  # E2E-108, E2E-109）。実行を伴う確認は、対象 OS を持つ各ビルドジョブが
+  # 済ませている。
+  e2e:
+    name: Automated E2E
+    needs: [vendor-update, build-windows, build-linux-amd64, build-linux-arm64]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.vendor-update.outputs.sha }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum MarkView-*.zip MarkView-*.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Automated E2E (archives)
+        run: go run ./scripts/e2e archives -dir dist -version "${{ github.ref_name }}"
+
+      # 本タグでは vendor-update がスモークテストを行わないため、ここで通す
+      # （E2E-100 の表は E2E-109 を「リリース CI」で実行すると定めている）。
+      - name: Render smoke test
+        run: go run ./scripts/smoke
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checksums
+          path: dist/checksums.txt
+          if-no-files-found: error
+
+  release:
+    name: Create release
+    needs: [vendor-update, e2e]
+    runs-on: ubuntu-latest
+
+    steps:
+      # 変更点の一覧をコミットから作るため、履歴とタグを全部取る（BR-051）。
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.vendor-update.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: checksums
+          path: dist
+
+      - name: Compose release notes
+        run: |
+          tag="${{ github.ref_name }}"
+          previous="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+
+          {
+            echo "## 変更点"
+            echo
+            if [ -n "$previous" ]; then
+              git log --no-merges --pretty='- %s' "${previous}..${tag}"
+              echo
+              echo "[${previous}...${tag}](${{ github.server_url }}/${{ github.repository }}/compare/${previous}...${tag})"
+            else
+              git log --no-merges --pretty='- %s' -n 50
+            fi
+            echo
+            echo "## 成果物"
+            echo
+            echo "| ファイル | 対象環境 |"
+            echo "| --- | --- |"
+            echo "| \`MarkView-${tag}-windows-amd64.zip\` | Windows 11 (x64) |"
+            echo "| \`MarkView-${tag}-windows-arm64.zip\` | Windows 11 (ARM64) |"
+            echo "| \`MarkView-${tag}-linux-amd64.tar.gz\` | Ubuntu 24.04+ (x64) |"
+            echo "| \`MarkView-${tag}-linux-arm64.tar.gz\` | Ubuntu 24.04+ (ARM64) |"
+            echo
+            echo "展開してそのまま実行できます。インストーラはありません。"
+            echo
+            echo "## Linux をお使いの方へ"
+            echo
+            echo "WebKitGTK 4.1 が必要です。"
+            echo
+            echo '```sh'
+            echo "sudo apt install libwebkit2gtk-4.1-0"
+            echo '```'
+            echo
+            echo "## チェックサム"
+            echo
+            echo "\`checksums.txt\` に SHA-256 を記載しています。"
+            echo
+            echo '```sh'
+            echo "sha256sum -c checksums.txt"
+            echo '```'
+            echo
+            echo '```powershell'
+            echo "Get-FileHash MarkView-${tag}-windows-amd64.zip -Algorithm SHA256"
+            echo '```'
+            echo
+            echo "## 同梱している資産"
+            echo
+            echo "| 資産 | バージョン |"
+            echo "| --- | --- |"
+
+            jq -r '.[] | "| \(.name) | \(.version) |"' frontend/vendor/vendor.json
+
+            echo
+            case "${{ needs.vendor-update.outputs.reason }}" in
+              updated)
+                echo "このリリースで最新安定版へ更新しました（BR-043）。"
+                echo "Mermaid ${{ needs.vendor-update.outputs.mermaid_before }} → ${{ needs.vendor-update.outputs.mermaid_after }} /"
+                echo "KaTeX ${{ needs.vendor-update.outputs.katex_before }} → ${{ needs.vendor-update.outputs.katex_after }}"
+                ;;
+              fetch-failed)
+                echo "**最新版の取得に失敗したため、資産は更新していません。** 上の表が実際に同梱しているバージョンです。"
+                ;;
+              already-latest)
+                echo "更新を試みましたが、どちらも既に最新安定版でした。"
+                ;;
+              *)
+                echo "本リリースでは資産を更新していません（BR-043）。プレリリースで検証した内容をそのまま配布しています。"
+                ;;
+            esac
+          } > notes.md
+
+          cat notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          if [ "${{ needs.vendor-update.outputs.prerelease }}" = "true" ]; then
+            flags="--prerelease"
+          fi
+
+          gh release create "${{ github.ref_name }}" \
+            --title "MarkView ${{ github.ref_name }}" \
+            --notes-file notes.md \
+            $flags \
+            dist/MarkView-*.zip dist/MarkView-*.tar.gz dist/checksums.txt
