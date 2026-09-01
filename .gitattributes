@@ -11,3 +11,7 @@
 *.ico   binary
 *.icns  binary
 *.xlsx  binary
+
+# E2E の検証用データ（E2E-012）。**不正な UTF-8 をそのまま保つ。**
+# text=auto は内容から種別を推測するため、改行の正規化で中身が変わりうる。
+testdata/e2e/broken/invalid-utf8.md -text

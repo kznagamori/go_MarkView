@@ -68,26 +68,43 @@ E2E テストで用いる Markdown 一式を `testdata/e2e/` に用意する。
 testdata/
 ├── showcase.md              全対応記法（BR-053 が定める。UT-214 と E2E で共用）
 ├── showcase.golden.html     ゴールデン（UT-214）
+├── smoke.md                 描画スモークテスト（BR-054）
 └── e2e/                     E2E の検証用データ
     ├── README.md
+    ├── notes.txt
     ├── docs/design.md
     ├── docs/img/sample.png
     ├── outside/external.md
-    └── broken/invalid-utf8.md
+    ├── broken/invalid-utf8.md
+    ├── node_modules/ignored.md
+    ├── vendor/ignored.md
+    ├── .hidden/ignored.md
+    └── generated/           生成する。コミットしない
 ```
 
 | ファイル | 用途 |
 | --- | --- |
 | `e2e/README.md` | 起動時に自動表示される文書（FR-013）。他の文書へのリンクを含む |
-| `e2e/docs/design.md` | 相対リンクの遷移先 |
-| `e2e/docs/img/sample.png` | ローカル画像 |
+| `e2e/notes.txt` | Markdown ではないファイル。**ツリーに出ないこと**（FR-031） |
+| `e2e/docs/design.md` | 相対リンクの遷移先。ツリールートを `docs` にする起点でもある |
+| `e2e/docs/img/sample.png` | ローカル画像。**1600 x 300** で本文幅を超えるため縮小される（E2E-236） |
 | `e2e/outside/external.md` | ツリールート外への遷移先（FR-052） |
 | `e2e/broken/invalid-utf8.md` | 不正な UTF-8 を含む（FR-021） |
+| `e2e/node_modules/` `e2e/vendor/` `e2e/.hidden/` | 除外されるディレクトリ。**ツリーに出ないこと**（FR-031, E2E-241） |
+| `e2e/generated/` | 10 MiB 超・50 MiB 超・1000 段の入れ子・巨大な表（FR-016, FR-111） |
 | `showcase.md` | 全対応記法。**BR-053 が定める `testdata/showcase.md` をそのまま使う** |
-| （生成） | 10 MB 超・50 MB 超のファイル（FR-016 の確認用） |
 
 - **`showcase.md` を E2E 用に複製しない。** BR-053・UT-214・E2E で同じ 1 つのファイルを使う。複製すると、記法を追加したときに片方だけが更新される。
-- 巨大ファイルはリポジトリに含めない。検証のたびに生成する。
+- 巨大ファイルはリポジトリに含めない。検証のたびに生成する。生成は `scripts/gentestdata` が行う。
+
+  ```bash
+  go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
+  go run ./scripts/gentestdata -clean   # 消す
+  ```
+
+- **`.git` はリポジトリに入れられない。** Git がその名前を予約しているため、検証用データとして置けない。除外の規則は「名前が `.` で始まる」であり `.git` に固有ではないので、`.hidden/` を代わりに置いて同じ規則を確かめる。
+- 除外されるディレクトリは `node_modules` / `vendor` / `.git` / `target` / `dist` / `build` である（IMP-132）。このうち **2 つを実際に置く**。一覧の全部を並べても、確かめているのは同じ 1 つの規則である。
+- `e2e/generated/` は**除外の対象ではない**。ツリーに現れ、そこから大きなファイルを選んで E2E-322 を実施できる。
 - この一式は自動テストと手動テストの両方で使う。用途ごとに別のデータを用意しない。
 
 ## 40.3 自動テストで行わないこと（E2E-020 系）

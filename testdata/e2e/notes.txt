@@ -1,0 +1,7 @@
+Markdown ではないファイルです。
+
+ファイルツリーには Markdown ファイルとディレクトリだけを出します（FR-031）。
+このファイルがツリーに現れたら不合格です（E2E-241）。
+
+拡張子の判定は internal/mdfile が行います（IMP-105）。
+対象は .md / .markdown / .mdown / .mkd です。
