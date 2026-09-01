@@ -6,6 +6,11 @@
 # （UT-060, BR-060）。
 #
 # タグは対象にしない。v で始まるタグはリリース CI が受け持つ（BR-050）。
+#
+# アクションはメジャータグで参照する。修正が自動で流れてくる一方、
+# 破壊的変更は取り込まれない。**Node.js 20 を対象とする版（checkout@v4、
+# setup-go@v5）は使わない。** ランナーが Node.js 24 で強制実行し、
+# 実行のたびに警告が出る（2026-09-02 の初回実行で確認）。
 name: CI
 
 on:
@@ -35,9 +40,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -133,9 +138,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
