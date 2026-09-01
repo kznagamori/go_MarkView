@@ -8,8 +8,8 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 | 区分 | 内容 |
 | --- | --- |
-| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/specs/`（仕様 20 文書）、`assets/`、`.github/workflows/ci.yml`（BR-052） |
-| **ない** | 自動 E2E テスト（E2E-101〜108）、リリースワークフロー（BR-050, BR-043）。ルート `README.md` は整備前（BR-051, BR-070） |
+| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/specs/`（仕様 20 文書）、`assets/`、`.github/workflows/ci.yml`（BR-052） |
+| **ない** | リリースワークフロー（BR-050, BR-043）。ルート `README.md` は整備前（BR-051, BR-070） |
 
 仕様は `specs-4.2.0` タグの時点で完成している。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直す（NFR-071）。
 
@@ -127,6 +127,11 @@ go run ./scripts/smoke                # Chromium 系ブラウザを自動で探�
 # E2E の検証用データのうち巨大なもの（E2E-012）。コミットしない
 go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
 go run ./scripts/gentestdata -clean   # 消す
+
+# 自動 E2E テスト（E2E-101〜108）。リリース CI が配布物に対して実行する
+go run ./scripts/e2e archives -dir dist -version v1.0.0-rc.1
+go run ./scripts/e2e binary -archive dist/MarkView-v1.0.0-rc.1-windows-amd64.zip -version v1.0.0-rc.1
+#   binary は **対象 OS の上でしか実行できない**（合わなければ中断する）
 
 # 手動テストの記録用 Excel を生成（E2E-200）
 python docs/tests/gen_manual_test_xlsx.py --version v1.0.0-rc.1

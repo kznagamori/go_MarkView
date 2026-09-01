@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 // **位置は保存も復元もしない。** 常にプライマリモニタの中央に置く
 // （UI-111。中央寄せは App.onStartup）。
 func launch(startup session.Startup, startupErr error) error {
+	silenceDefaultLogger()
+
 	// 設定がない・壊れている場合も既定値で起動する。Load はエラーを
 	// 返さない（UI-113, IMP-151）。
 	cfg := config.Load()
@@ -262,6 +265,25 @@ func executableDir() string {
 		exe = resolved
 	}
 	return filepath.Dir(exe)
+}
+
+// silenceDefaultLogger は標準ロガーの出力先を捨てる（NFR-041, IMP-023）。
+//
+// **既定ではログを出さない**という要求は、自分が書かなければ満たせるもの
+// ではない。**依存ライブラリが標準の log パッケージへ直接書く。**
+// go-webview2 は環境の初期化に成功したことを log.Printf で報告しており
+// （v1.0.22 の pkg/edge/chromium.go:318）、そのままだと配布物が起動のたびに
+// 標準エラーへ 1 行出す。2026-09-02 に E2E-104 のケース 5 で検出した。
+//
+// MarkView 自身は log/slog を使う（IMP-023）。標準ロガーを黙らせても
+// 自前のログには影響しない。MARKVIEW_DEBUG=1 のときは調査の助けになるため
+// そのまま出す。
+func silenceDefaultLogger() {
+	if os.Getenv("MARKVIEW_DEBUG") == "1" {
+		return
+	}
+
+	log.SetOutput(io.Discard)
 }
 
 // printVersion はバージョン情報を出力する（FR-012, BR-030, E2E-102）。
