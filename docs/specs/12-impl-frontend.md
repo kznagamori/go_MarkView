@@ -34,6 +34,7 @@ frontend/
 │   ├── theme.js            テーマ適用
 │   ├── panes.js            ペインの開閉とリサイズ
 │   ├── shortcuts.js        キーボードショートカット
+│   ├── tooltip.js          ツールバーのツールチップ（IMP-247）
 │   ├── dnd.js              ドラッグ＆ドロップ
 │   ├── lazy.js             Mermaid / KaTeX の遅延ロード
 │   ├── status.js           ステータス領域
@@ -99,6 +100,7 @@ export function initToolbar(deps) { /* … */ }
 
   <div id="overlay" class="overlay" hidden></div>
   <div id="dropzone" class="dropzone" hidden></div>
+  <div id="tooltip" class="tooltip" hidden></div>
 </div>
 ```
 
@@ -186,7 +188,7 @@ async function boot() {
   applyTheme(init.config.theme);
   applyZoom(init.config.zoom);
   applyPanes(init.config);
-  initToolbar(); initFileTree(); initOutline(); initViewer(); initPanes();
+  initToolbar(); initTooltip(); initFileTree(); initOutline(); initViewer(); initPanes();
   initSearch(); initZoom(); initOverlay(); initDnd(); initShortcuts();
   subscribe();                              // Go からのイベント購読（IMP-322）
   if (init.document) renderDocument(init.document);
@@ -339,6 +341,7 @@ document.querySelectorAll('#markdown .math-inline, #markdown .math-block')
     katex.render(src, el, {
       displayMode:  el.classList.contains('math-block'),
       throwOnError: false,                // FR-023 と同じ方針。エラーでも描画を継続する
+      errorColor:   'var(--danger-fg)',   // 既定の #cc0000 を使わせない（下記）
       trust:        false,                // NFR-030
     });
   });
@@ -347,6 +350,7 @@ document.querySelectorAll('#markdown .math-inline, #markdown .math-block')
 - **KaTeX の auto-render 拡張（`renderMathInElement`）を使わない。** Go 側の変換段階でデリミタ（`$` / `$$`）は既に除去されているため、デリミタ走査では一致しない。加えて auto-render は本文全体を走査するため、コードブロック内の `$` を数式と誤認する余地が生じ、MD-060 の「コードブロック内の `$` は数式として解釈しない」に反する。数式の範囲判定は Go 側の 1 箇所に集約する。
 - 要素ごとに `katex.render` を呼ぶため、1 つの数式の失敗が他の数式へ波及しない。
 - 失敗時は `throwOnError: false` により元のソースが赤字で出力される。DSP-271 の「元のソースを `--danger-fg` の等幅テキストで表示」と一致する。
+- **`errorColor` を必ず渡す。** 省略すると KaTeX が既定の `#cc0000` を**インラインスタイル**として書き込み、CSS からは `!important` なしに上書きできない。テーマにも追従しなくなる。トークンを参照する式（`var(--danger-fg)`）をそのまま渡せば、解決は要素の位置で起きるため Light / Dark の双方に追従する。
 - テーマ切り替えでの再描画は不要とする。KaTeX の出力は文字色を継承させる（DSP-271）ため、CSS の切り替えだけで追随する。この点が Mermaid（再描画が必要。IMP-231）と異なる。
 
 ## 12.5 操作（IMP-240 系）
@@ -430,6 +434,7 @@ export function toggleTheme()      // 切り替えて反映し、保存する
 - Mermaid のみ再描画が必要（IMP-231）。再描画は待たない。図の描画で画面全体の切り替えを遅らせない。
 - **起動時の適用と切り替えを別の関数に分ける。** `applyTheme` は反映のみを行う。起動時にここが保存すると、利用者が選んでいないテーマが記録され、OS 設定への追従（FR-071）が失われる。
 - `toggleTheme` は `state.themeExplicit` を立ててから `saveConfig`（IMP-210）を呼ぶ。**この印が立つまで設定にテーマを書かない。**
+- **属性を書き換える前後だけトランジションを止める。** ツールバーのボタンは背景色を 80ms でフェードさせるため（DSP-050）、そのままではテーマ切り替え時に ON のトグルの背景だけが遅れて追いつく。DSP-011 の「即時に完了させる」を満たすため、`#app` に一時的なクラスを付けて `transition: none` を効かせ、レイアウトを 1 度確定させてから外す。
 - アイコンとツールチップは**切り替え先**を示す（Light 表示中は月と `Dark theme / ダークテーマ`）。
 
 ### IMP-244: ショートカット **MUST**
@@ -486,6 +491,19 @@ UI-026 / DSP-380 を実装する。**利用者の設定と、幅による一時�
 - `resize` は連続して発火するため、`requestAnimationFrame` で 1 フレームにまとめる（NFR-012）。
 - ファイルツリーは抑制の対象としない（UI-026）。
 - 抑制中に利用者がトグルボタンを押した場合は、`outlineVisible` を通常どおり切り替える。抑制が解けたときにその値が反映される。
+
+### IMP-247: ツールチップ **MUST**
+
+UI-024 / DSP-102 を実装する。
+
+- **ブラウザ既定の `title` 属性を使わない。** DSP-102 はボタンの下 6px・遅延 400ms・反転色・折り返しなしという具体値を定めているが、`title` は見た目も遅延も表示位置も OS が決めており、いずれも満たせない。英日併記（`Open / 開く (Ctrl+O)`）で横に長くなるため、折り返さないことが特に効く。
+- 対象は**ツールバーのボタンだけ**とする。ツリー・アウトライン・ステータスの「全文をツールチップで示す」（DSP-113, DSP-151）は隠れた文字を読ませるためのものであり、`title` のままでよい。
+- 文言は `data-tip` 属性に置く（`toolbar.js` の `setTip`）。同じ文字列を `aria-label` にも与える（IMP-295）。
+- 描画する要素は `#tooltip` の 1 つだけを使い回す。ボタンごとに持たせない。
+- 配線はツールバーへの委譲で行う。ボタンごとにリスナを置くと、文言が変わるボタン（テーマ。IMP-243）で付け替えが要る。
+- 位置はボタンの下・水平中央。**ウィンドウの外へ出る場合は左右に寄せて収める。** 左端の `Open` と右端の `?` は、中央に置くと枠外へ出る。
+- `pointer-events: none` を与える。ツールチップがポインタを受け取ると `pointerout` が発生して点滅する。
+- 押下時・ウィンドウのフォーカス喪失時・キー操作時に消す。トグルの状態が変わると文言が古くなるため（IMP-243）。
 
 ## 12.6 状態画面とダイアログ（IMP-250 系）
 
@@ -659,6 +677,7 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 | IMP-244 | ショートカット | MUST |
 | IMP-245 | ドラッグ＆ドロップ | MUST |
 | IMP-246 | ウィンドウ幅に応じた一時的な非表示 | MUST |
+| IMP-247 | ツールチップ | MUST |
 | IMP-250 | 状態画面 | MUST |
 | IMP-251 | 情報ダイアログ | MUST |
 | IMP-290 | UI 文言の一元定義 | MUST |

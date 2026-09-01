@@ -24,7 +24,23 @@ export function applyTheme(theme) {
   const resolved = theme === "dark" ? "dark" : "light";
   state.theme = resolved;
 
-  $("app").setAttribute("data-theme", resolved);
+  const app = $("app");
+
+  // **切り替えの瞬間だけトランジションを止める**（DSP-011）。
+  //
+  // ツールバーのボタンはホバーの背景を 80ms でフェードさせる（DSP-050）。
+  // その指定があると、テーマを切り替えたときに ON のトグルの背景だけが
+  // 80ms かけて追いつき、他の要素から遅れる（実機で確認）。DSP-011 は
+  // 「テーマ切り替えは即時に完了させる」と定めているため、属性を変える
+  // 前後を挟んで無効にする。
+  //
+  // クラスを外す前に offsetWidth を読み、**その時点でスタイルを確定
+  // させる。** これをしないと、追加と削除が同じフレームにまとまり、
+  // ブラウザからは何も起きなかったことになる。
+  app.classList.add("theme-switching");
+  app.setAttribute("data-theme", resolved);
+  void app.offsetWidth;
+  app.classList.remove("theme-switching");
 
   // アイコンとツールチップは**切り替え先**を示す（IMP-203, UI-024）。
   const button = $("btn-theme");

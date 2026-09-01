@@ -52,7 +52,7 @@ UI-021 を実装する。
 | --- | --- | --- | --- |
 | 通常 | 透明 | `--fg-muted` | |
 | ホバー | `--neutral-muted` | `--fg-default` | 80 ms フェード（DSP-050） |
-| 押下中 | `--neutral-muted`（濃 1.5 倍） | `--fg-default` | |
+| 押下中 | `--neutral-muted-strong` | `--fg-default` | `--neutral-muted` の 1.5 倍の濃さ |
 | フォーカス | 透明 | `--fg-default` | フォーカスリング（DSP-016） |
 | トグル ON | `--accent-subtle` | `--accent-fg` | `aria-pressed="true"` |
 | 無効 | 透明 | `--fg-subtle` | `cursor: default`、ホバー効果なし |
@@ -191,11 +191,12 @@ MD-020〜MD-026 を実装する。値は `github-markdown-css` に従う（DSP-0
 | 段落 | 下マージン 16px |
 | リスト | 左パディング 2em、項目間 4px、入れ子は 16px の上下マージン |
 | タスクリスト | チェックボックスは読み取り専用（MD-022）。`cursor: default`、`pointer-events: none` |
-| 引用 | 左に 4px の `--border-default`、左パディング 16px、文字 `--fg-muted` |
-| 水平線 | 高さ 1px（`--border-default`）、上下マージン 24px |
+| 引用 | 左に 4px の `--border-default`、左パディング 16px、文字 `--fg-muted`。**本文と同じ左端から始める**（ブラウザ既定の左右マージン 40px を打ち消す） |
+| 水平線 | 高さ 0.25em（倍率 100 % で 4px。`--border-default`）、上下マージン 24px。**脚注の区切りだけは 1px** |
 | インラインコード | 背景 `--neutral-muted`、角丸 6px、パディング 0.2em 0.4em、サイズ 85 % |
-| リンク | 色 `--accent-fg`、下線なし。ホバーで下線 |
-| 脚注 | 文書末尾に区切り線を挟んで一覧表示、12px |
+| リンク | 色 `--accent-fg`、**常に下線**（`text-underline-offset: 0.2em`）。色だけで区別しない |
+| 脚注 | 文書末尾に区切り線を挟んで一覧表示、12px。参照は `[1]` の形（括弧は CSS で付ける）、戻りリンクは `↩` |
+| 生 HTML のインライン要素（MD-072） | `mark` は背景 `--attention-subtle`・文字 `--fg-default`（**ブラウザ既定の純黄色を使わない**）。`small` は 90 %。`abbr[title]` は点線の下線。`kbd` は等幅 11px 相当、地 `--canvas-subtle`、枠と内側の影 `--border-muted`、角丸 6px |
 
 ### DSP-122: 表 **MUST**
 
@@ -207,7 +208,7 @@ MD-024 を実装する。
 | ヘッダ行 | 太字、背景 `--canvas-subtle` |
 | 偶数行 | 背景 `--canvas-subtle` |
 | セルのパディング | 6px 13px |
-| 幅が溢れる場合 | 表を `overflow-x: auto` のラッパで包み、**表の内部だけを横スクロール**させる（UI-050） |
+| 幅が溢れる場合 | **表の内部だけを横スクロール**させる（UI-050）。`table` 自身に `display: block` と `width: max-content` を与えて実現し、ラッパ要素を足さない。本文の DOM を変えないため、見出しアンカーの位置も検索の走査対象も変わらない |
 
 ### DSP-123: 画像 **MUST**
 
@@ -291,7 +292,7 @@ MD-040 を実装する。
 | 上下マージン | 16px |
 | 角丸 | 6px（左端の角は角丸にしない） |
 | 背景 | なし（`--canvas-default` のまま） |
-| ラベル | 種別色、太字、14px、アイコン 16px を 8px の間隔で先頭に置く |
+| ラベル | 種別色、太字、**本文と同じ 16px**、アイコン 16px を 8px の間隔で先頭に置く |
 | 本文 | `--fg-default`、最後の段落の下マージンを 0 にする |
 
 ### DSP-261: 種別ごとの色とアイコン **MUST**
@@ -364,8 +365,8 @@ FR-110 を実装する。
 | 種別 | 背景 | 文字 | 表示時間 |
 | --- | --- | --- | --- |
 | 情報 | `--accent-subtle` | `--accent-fg` | 5 秒 |
-| 警告 | `attention` の淡色 | `--attention-fg` | 5 秒 |
-| エラー | `danger` の淡色 | `--danger-fg` | 5 秒 |
+| 警告 | `--attention-subtle` | `--attention-fg` | 5 秒 |
+| エラー | `--danger-subtle` | `--danger-fg` | 5 秒 |
 
 - ステータス領域の全幅を一時的に占有し、5 秒後に元の表示へ戻る（UI-060）。
 - 表示中に新しいメッセージが来た場合、置き換えてタイマをリセットする。積み上げない。
@@ -450,7 +451,7 @@ UI-100 を実装する。
 | サイズ | 720 × 560px。ウィンドウが小さい場合は内側に収まるよう縮小 |
 | 配置 | メインウィンドウの中央 |
 | 背景 | `--canvas-overlay`、角丸 12px、影 `--shadow-overlay` |
-| 背後 | `rgba(0,0,0,0.4)` の暗幕。クリックで閉じる |
+| 背後 | `--overlay-backdrop`（`rgba(0,0,0,0.4)`）の暗幕。クリックで閉じる |
 | 重なり順 | `z-index: 50`（DSP-015） |
 | パディング | 24px |
 

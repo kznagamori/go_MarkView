@@ -4,14 +4,18 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 ## 現状
 
-**仕様のみが存在し、アプリケーションのコードはまだ 1 行もない。** `go.mod`・`main.go`・`internal/`・`frontend/` はこれから作る。
+**アプリケーションとしては動く。** 起動してファイルを開き、変換して表示し、ツリー・アウトライン・検索・テーマ切り替えまで使える。残っているのは表示の作り込みの一部と、CI・リリースの一式。
 
 | 区分 | 内容 |
 | --- | --- |
-| **ある** | `docs/specs/`（仕様 20 文書）、`docs/tests/`（手動テスト用スクリプト）、`assets/`（アイコン）、`LICENSE` |
-| **ない** | Go のコード、フロントエンド、`go.mod`、`wails.json`、`testdata/`、`scripts/`、`.github/workflows/` |
+| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`）、`testdata/`、`docs/specs/`（仕様 20 文書）、`assets/` |
+| **ない** | `licenses/THIRD_PARTY.md`（BR-040）、`.github/workflows/`（BR-050, BR-052）、描画スモークテスト（BR-054）、`testdata/e2e/`（E2E-012）。ルート `README.md` は整備前（BR-051, BR-070） |
 
-仕様は `specs-4.2.0` タグの時点で完成している。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。
+仕様は `specs-4.2.0` タグの時点で完成している。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直す（NFR-071）。
+
+> [!IMPORTANT]
+> **進捗の唯一の状態は `workspace/plans/implementation-progress.md`**（現在地・タスク一覧・検証ログ・決定と逸脱の記録・未解決の課題）。作業を始める前に読む。手順は同じディレクトリの `implementation-prompt.md`。
+> **`workspace/` は `.gitignore` で除外されており、コミットされない。** 別クローンや `git clean -xdf` では失われるため、仕様に関わる決定はここに書いたうえで `docs/specs/` へ反映する。
 
 ## 仕様書の構造
 
@@ -20,7 +24,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 | 層 | 文書 | ID | 内容 |
 | --- | --- | --- | --- |
 | 要求 | 01〜07 | `FR` `UI` `MD` `AR` `BR` `NFR` | 何を満たすか（163 件） |
-| 実装 | 10〜13 | `IMP` | どう作るか（100 件） |
+| 実装 | 10〜13 | `IMP` | どう作るか（101 件） |
 | 表示 | 20〜22 | `DSP` | どう見えるか（66 件） |
 | 単体テスト | 30〜31 | `UT` | 部品が正しいか（86 件） |
 | E2E テスト | 40〜41 | `E2E` | 配布物が動くか（82 件） |
@@ -111,6 +115,9 @@ go test ./...
 go test -race ./...          # CI で最低限これを実行する
 go test -shuffle=on ./...    # 順序依存の検出
 go test ./internal/renderer -update   # ゴールデンの更新（差分を必ず読む）
+
+# 生成物（コミットする。手で書き換えない）
+go run ./scripts/genchroma            # frontend/css/chroma.css（IMP-114, DSP-013）
 
 # 手動テストの記録用 Excel を生成（E2E-200）
 python docs/tests/gen_manual_test_xlsx.py --version v1.0.0-rc.1

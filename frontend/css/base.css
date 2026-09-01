@@ -19,14 +19,21 @@ body {
   overflow: hidden;
 }
 
+/*
+  **body に色を持たせない**（DSP-011）。テーマの切り替えは
+  #app の data-theme 属性だけで行うため（IMP-243）、#app より上の
+  要素で var(--fg-default) を参照すると **常に Light の値に解決される**。
+  その値は継承で #app の内側まで降りてくるため、Dark のときに
+  本文が暗い背景の上の暗い文字になる。文字色・背景・
+  スクロールバーはすべて #app 側で与える。
+
+  body の背景はキャンバスへ伝播するが、#app が height: 100% で
+  覆い、html と body が overflow: hidden のため露出しない。
+*/
 body {
   font-family: var(--font-ui);
   font-size: var(--font-size-app);
   line-height: var(--line-height-app);
-  color: var(--fg-default);
-  background: var(--canvas-default);
-  /* テーマに追従させ、スクロールの有無で幅が揺れないようにする（DSP-041） */
-  scrollbar-color: var(--fg-subtle) transparent;
 }
 
 /* 表示・非表示は hidden 属性で切り替える。style.display を直接触らない（IMP-202） */
@@ -56,7 +63,12 @@ body {
   display: grid;
   grid-template-rows: var(--toolbar-height) 1fr var(--status-height);
   height: 100%;
+
+  /* テーマに依存する値はここから下で与える（DSP-011、上の body の注記） */
+  color: var(--fg-default);
   background: var(--canvas-default);
+  /* テーマに追従させ、スクロールの有無で幅が揺れないようにする（DSP-041） */
+  scrollbar-color: var(--fg-subtle) transparent;
 
   /* **ドロップの受け口を宣言する**（FR-011, UI-070, IMP-245）。
      Wails はドロップ地点の要素の計算済みスタイルにこの値があるかで
@@ -172,15 +184,14 @@ body {
   background: var(--canvas-default);
 }
 
+/* 本文の「領域」だけをここで与える（DSP-120）。
+   書体・行の高さ・要素ごとの体裁は markdown.css が持つ（DSP-121）。 */
 .markdown-body {
   max-width: var(--content-max-width);
   margin: 0 auto;
   /* ウィンドウが狭いときは 16px まで縮める（DSP-030） */
   padding: var(--content-padding-y)
     clamp(var(--content-padding-x-min), 4vw, var(--content-padding-x));
-  /* 表示倍率は本文にだけ効かせる。ツールバー・ペイン・ステータスには波及させない（DSP-021） */
-  font-size: calc(var(--font-size-body) * var(--zoom, 100) / 100);
-  line-height: var(--line-height-body);
 }
 
 /* --- ステータス領域（DSP-150） --- */
@@ -199,6 +210,15 @@ body {
   border-top: 1px solid var(--border-default);
   overflow: hidden;
   white-space: nowrap;
+}
+
+/* テーマ切り替えの間はトランジションを止める（DSP-011）。
+   theme.js が属性を変える前後だけ付ける（IMP-243）。 */
+#app.theme-switching,
+#app.theme-switching *,
+#app.theme-switching *::before,
+#app.theme-switching *::after {
+  transition: none !important;
 }
 
 /* --- 動きの抑制（DSP-051） --- */

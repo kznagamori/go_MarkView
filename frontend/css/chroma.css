@@ -1,7 +1,152 @@
 /*
   chroma.css — シンタックスハイライトの配色（DSP-013）。
-  Go 側は WithClasses(true) でクラス名だけを出力するため（IMP-114）、
-  色はここで与える。Light / Dark の 2 系統をトークンではなく実際の色で定義する。
 
-  TODO(T5-3): chroma のスタイル定義から生成して埋める。P5「表示仕様」で行う。
+  **このファイルは scripts/genchroma が生成する。手で書き換えない。**
+
+      go run ./scripts/genchroma
+
+  Go 側は WithClasses(true) でクラス名だけを出力するため（IMP-114）、
+  色はここで与える。インラインスタイルを出さないことで、テーマの切り替えが
+  再変換なしで済む（UI-105）。
+
+  クラス名は chroma の型一覧から、色は DSP-013 の表から採っている。
+  表に挙がっていない系統には色を与えず、本文の文字色のままにする。
 */
+
+/* --- 配色（DSP-013）--- */
+
+/* **トークンを参照する色をここに置かない。** :root で var() を書くと
+   その場で Light の値に確定してから継承するため、Dark にしても
+   切り替わらない。該当する 2 つ（コメント・演算子）は規則の側に
+   直接書いている。 */
+:root {
+  /* キーワード */
+  --chroma-keyword: #cf222e;
+  /* 文字列 */
+  --chroma-string: #0a3069;
+  /* 数値 */
+  --chroma-number: #0550ae;
+  /* 関数名・識別子 */
+  --chroma-entity: #8250df;
+  /* タグ名 */
+  --chroma-tag: #116329;
+  /* 属性名 */
+  --chroma-attr: #0550ae;
+  /* diff 削除行の文字 */
+  --chroma-deleted-fg: #82071e;
+  /* diff 削除行の背景 */
+  --chroma-deleted-bg: #ffebe9;
+  /* diff 追加行の文字 */
+  --chroma-inserted-fg: #116329;
+  /* diff 追加行の背景 */
+  --chroma-inserted-bg: #dafbe1;
+}
+
+[data-theme="dark"] {
+  --chroma-keyword: #ff7b72;
+  --chroma-string: #a5d6ff;
+  --chroma-number: #79c0ff;
+  --chroma-entity: #d2a8ff;
+  --chroma-tag: #7ee787;
+  --chroma-attr: #79c0ff;
+  --chroma-deleted-fg: #ffdcd7;
+  --chroma-deleted-bg: #67060c;
+  --chroma-inserted-fg: #aff5b4;
+  --chroma-inserted-bg: #033a16;
+}
+
+/* キーワード（Keyword 系すべて） */
+.chroma .k,
+.chroma .kc,
+.chroma .kd,
+.chroma .kn,
+.chroma .kp,
+.chroma .kr,
+.chroma .kt {
+  color: var(--chroma-keyword);
+}
+
+/* 関数名・識別子 */
+.chroma .fm,
+.chroma .nf,
+.chroma .nx {
+  color: var(--chroma-entity);
+}
+
+/* タグ名 */
+.chroma .nt {
+  color: var(--chroma-tag);
+}
+
+/* 属性名 */
+.chroma .na {
+  color: var(--chroma-attr);
+}
+
+/* 文字列（LiteralString 系すべて） */
+.chroma .dl,
+.chroma .s,
+.chroma .s1,
+.chroma .s2,
+.chroma .sa,
+.chroma .sb,
+.chroma .sc,
+.chroma .sd,
+.chroma .se,
+.chroma .sh,
+.chroma .si,
+.chroma .sr,
+.chroma .ss,
+.chroma .sx {
+  color: var(--chroma-string);
+}
+
+/* 数値（LiteralNumber 系すべて） */
+.chroma .il,
+.chroma .m,
+.chroma .mb,
+.chroma .mf,
+.chroma .mh,
+.chroma .mi,
+.chroma .mo {
+  color: var(--chroma-number);
+}
+
+/* コメント（Comment 系すべて） */
+.chroma .c,
+.chroma .c1,
+.chroma .ch,
+.chroma .cm,
+.chroma .cp,
+.chroma .cpf,
+.chroma .cs {
+  color: var(--fg-muted);
+}
+
+/* 演算子・区切り */
+.chroma .o,
+.chroma .ow,
+.chroma .p {
+  color: var(--fg-default);
+}
+
+/* diff の削除行・追加行。**背景を敷くため行全体に効かせる** */
+.chroma .gd {
+  color: var(--chroma-deleted-fg);
+  background-color: var(--chroma-deleted-bg);
+}
+
+.chroma .gi {
+  color: var(--chroma-inserted-fg);
+  background-color: var(--chroma-inserted-bg);
+}
+
+/* 字句エラー。**強調しない**（DSP-013）。
+   未対応の言語や部分的な解析失敗で本文が赤く染まるのを避ける。
+   chroma 同梱のスタイルは赤字に赤の地を与えるが、それは採らない。
+   規則を書かずに済ませないのは、上の系統の規則が将来 .err を巻き込んで
+   色を付けたときに、ここで打ち消せるようにしておくためである。 */
+.chroma .err {
+  color: var(--fg-default);
+  background-color: transparent;
+}

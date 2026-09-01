@@ -23,14 +23,28 @@ export function updateStatus() {
   clear(meta);
 
   if (!state.doc) {
-    path.textContent = "";
+    clear(path);
     return;
   }
 
   // ツリー外の文書は絶対パスの末尾に印を付ける（FR-052, DSP-150）。
-  path.textContent = state.doc.outsideTree
-    ? `${state.doc.displayPath} ${S.outsideTree}`
-    : state.doc.displayPath;
+  //
+  // **印だけ淡い色にするため要素を分ける。** 1 つの textContent に
+  // 混ぜると、パスと同じ --fg-muted になってしまう。
+  clear(path);
+
+  const text = document.createElement("span");
+  text.className = "status-path-text";
+  text.textContent = state.doc.displayPath;
+  path.appendChild(text);
+
+  if (state.doc.outsideTree) {
+    const mark = document.createElement("span");
+    mark.className = "status-outside";
+    mark.textContent = ` ${S.outsideTree}`;
+    path.appendChild(mark);
+  }
+
   path.title = state.doc.path;
 
   // 倍率は 100 % 以外のときだけ出す（FR-081）。等倍が既定であり、常に

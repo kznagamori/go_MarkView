@@ -30,11 +30,15 @@ export function initToolbar(deps) {
 //
 // 表示は `Open / 開く (Ctrl+O)` の形。文言は strings.js、キー表記は
 // shortcuts.js から採り、どちらも定義を 1 か所に保つ（IMP-290）。
+//
+// **title ではなく data-tip に置く**（IMP-247）。DSP-102 が定める見た目と
+// 遅延はブラウザ既定のツールチップでは満たせないため、tooltip.js が
+// 自前で描く。title を残すと両方が出る。
 export function setTip(button, text, shortcutId) {
   const key = keyLabel(shortcutId);
   const label = key ? `${text} (${key})` : text;
 
-  button.title = label;
+  button.dataset.tip = label;
   button.setAttribute("aria-label", label);
 }
 

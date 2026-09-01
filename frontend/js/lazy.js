@@ -96,9 +96,14 @@ export function drawMath(root) {
 
       // 要素ごとに呼ぶため、1 つの失敗が他へ波及しない。
       // throwOnError: false により、失敗時は元のソースが赤字で残る（DSP-271）。
+      //
+      // **errorColor を渡さないと KaTeX 既定の #cc0000 が
+      // インラインスタイルで入り、CSS から上書きできない。** トークンを
+      // 参照する式を渡し、テーマに追従させる（DSP-271）。
       window.katex.render(source, element, {
         displayMode: element.classList.contains("math-block"),
         throwOnError: false,
+        errorColor: "var(--danger-fg)",
         trust: false, // NFR-030
       });
     }

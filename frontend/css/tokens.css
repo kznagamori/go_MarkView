@@ -8,6 +8,11 @@
 */
 
 :root {
+  /* **OS が描く部品をテーマへ追従させる**（DSP-011）。
+     チェックボックス（MD-022 のタスクリスト）は色を CSS で指定できず、
+     この宣言だけが効く。宣言しないと Dark でも白い枠のまま浮く。 */
+  color-scheme: light;
+
   /* --- カラートークン: Light（DSP-010） --- */
   --canvas-default: #ffffff;
   --canvas-subtle: #f6f8fa;
@@ -32,7 +37,13 @@
   --done-fg: #8250df;
 
   --neutral-muted: rgba(129, 139, 152, 0.12);
+  /* ボタン押下中の背景。--neutral-muted の 1.5 倍の濃さ（DSP-101） */
+  --neutral-muted-strong: rgba(129, 139, 152, 0.18);
+  --attention-subtle: #fff8c5;
+  --danger-subtle: #ffebe9;
   --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
+  /* 暗幕はテーマで変えない。Light でも背後を沈めるため黒を重ねる（DSP-170） */
+  --overlay-backdrop: rgba(0, 0, 0, 0.4);
 
   --search-hit: #fff8c5;
   --search-hit-current: #ffd33d;
@@ -114,6 +125,8 @@
 
 /* --- カラートークン: Dark（DSP-010, DSP-011） --- */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --canvas-default: #0d1117;
   --canvas-subtle: #151b23;
   --canvas-inset: #010409;
@@ -137,7 +150,11 @@
   --done-fg: #ab7df8;
 
   --neutral-muted: rgba(101, 108, 118, 0.2);
+  --neutral-muted-strong: rgba(101, 108, 118, 0.3);
+  --attention-subtle: rgba(187, 128, 9, 0.15);
+  --danger-subtle: rgba(248, 81, 73, 0.15);
   --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.6);
+  --overlay-backdrop: rgba(0, 0, 0, 0.4);
 
   --search-hit: #3b2300;
   --search-hit-current: #9e6a03;

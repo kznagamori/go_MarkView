@@ -2,19 +2,99 @@
   components.css — ツールバー・ペイン・ステータス・検索バー・状態画面・
   情報ダイアログ・ドロップオーバーレイの外観（DSP-100〜DSP-190）。
 
-  TODO(T5-4, T5-5, T5-6): 本格的な作り込みは P5「表示仕様」で行う。
+  ツールバー・ペイン・ステータス・検索バー（DSP-100〜161）は T5-4 で、
+  コードブロック・Alerts・Mermaid・数式（DSP-250〜271）は T5-5 で揃えた。
 
-  以下は **P4 の間、画面を読める状態に保つための最低限**である。
-  項目が詰まって読めない・要素が画面の隅に寄って意味が取れない、といった
-  「動作の確認を妨げる」ものだけを置く。配色や余白の作り込みは P5 に回す。
+  状態画面・情報ダイアログ・ドロップオーバーレイ（DSP-170〜190）は T5-6 で
+  揃えた。z-index は tokens.css の 8 段階だけを使う（DSP-015）。
 */
+
+/* --- ツールバー（DSP-100, DSP-101） --- */
+
+/* 背景・下境界・高さ・ボタンの寸法は base.css が配置とともに与える
+   （DSP-100, DSP-032）。ここは**状態の表現**（DSP-101）を持つ。 */
+
+.tb-btn {
+  /* 背景色だけを 80ms でフェードさせる（DSP-050）。
+     prefers-reduced-motion では base.css が無効にする（DSP-051）。 */
+  transition: background-color var(--motion-hover) ease;
+}
+
+.tb-btn:hover {
+  color: var(--fg-default);
+  background: var(--neutral-muted);
+}
+
+.tb-btn:active {
+  color: var(--fg-default);
+  background: var(--neutral-muted-strong);
+}
+
+/* フォーカスリング自体は base.css の :focus-visible が引く（DSP-016） */
+.tb-btn:focus-visible {
+  color: var(--fg-default);
+}
+
+/* トグル ON。**:hover より後に置く。** 同じ詳細度のため、先に置くと
+   ホバーした瞬間に ON の色が消える（DSP-101, UI-021）。 */
+.tb-btn[aria-pressed="true"] {
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+.tb-btn:disabled {
+  color: var(--fg-subtle);
+  background: transparent;
+  cursor: default;
+}
+
+/* --- ツールチップ（DSP-102） ---
+   位置と遅延は tooltip.js が与える（IMP-247）。 */
+
+.tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+
+  padding: var(--space-1) var(--space-2);
+
+  /* 背景と文字を反転させる（DSP-102） */
+  color: var(--canvas-default);
+  background: var(--fg-default);
+  border-radius: var(--radius-control);
+
+  font-size: 12px;
+  line-height: 1.4;
+  /* 英日併記で横に長くなるが**折り返さない**（DSP-102, UI-024） */
+  white-space: nowrap;
+
+  /* ポインタを奪わない。奪うと pointerout が飛んで点滅する */
+  pointer-events: none;
+}
 
 /* --- ステータス領域（DSP-150） --- */
 
 .status-path {
+  display: flex;
+  min-width: 0;
+}
+
+/* **先頭を省略する**（DSP-150）。末尾のファイル名が識別に最も重要。
+
+   direction: rtl にすると、行が溢れる側が左になり、省略記号も左へ付く。
+   パスは英数字と区切り記号だけで構成され、区切りは前後を英数字に挟まれる
+   ため、文字の並び自体は左から右のまま保たれる。 */
+.status-path-text {
+  direction: rtl;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ツリー外の印。パスより淡く出す（FR-052, DSP-150） */
+.status-outside {
+  flex: none;
+  color: var(--fg-subtle);
 }
 
 .status-meta {
@@ -43,14 +123,17 @@
 
 .status-message[data-level="error"] {
   color: var(--danger-fg);
+  background: var(--danger-subtle);
 }
 
 .status-message[data-level="warning"] {
   color: var(--attention-fg);
+  background: var(--attention-subtle);
 }
 
 .status-message[data-level="info"] {
   color: var(--accent-fg);
+  background: var(--accent-subtle);
 }
 
 /* --- 状態画面（DSP-180, DSP-181） --- */
@@ -66,7 +149,15 @@
   padding: var(--space-8);
   text-align: center;
   z-index: var(--z-state-screen);
+  /* オーバーレイにしない。本文と同じ地にする（DSP-180） */
   background: var(--canvas-default);
+}
+
+/* 最大幅 420px（DSP-180）。**中身に効かせる。**
+   状態画面そのものは本文ペイン全体を覆うため、ここを狭めると
+   本文が透けて見えてしまう。 */
+.state-screen > * {
+  max-width: 420px;
 }
 
 .state-icon {
@@ -113,6 +204,14 @@
   color: var(--fg-on-emphasis);
   font: inherit;
   cursor: pointer;
+  transition: filter var(--motion-hover) ease;
+}
+
+/* ホバーで明度を 8 % 下げる（DSP-182）。
+   **色を別に持たない。** --accent-emphasis は Light / Dark で違う値であり、
+   暗くした色をもう 1 組トークンに増やすと、片方だけずれる余地が生まれる。 */
+.state-button:hover {
+  filter: brightness(0.92);
 }
 
 /* --- ペイン見出し（DSP-111） --- */
@@ -241,11 +340,35 @@
   color: var(--fg-subtle);
 }
 
-/* --- コードブロックのコピーボタン（DSP-251, DSP-252） --- */
+/* --- コードブロック（DSP-250） --- */
+
+/* 寸法は本文 1 文字ぶんを基準にした --md-N を使う（markdown.css が
+   .markdown-body に置いている）。px で書くと、倍率を上げたときに文字だけが
+   大きくなって余白が置いていかれる（DSP-021）。 */
 
 .code-block {
   position: relative;
+  margin: var(--md-16) 0;
+
+  background: var(--canvas-subtle);
+  border-radius: var(--radius-block);
+
+  /* コード用スタック・85 %・行高 1.45（DSP-250, DSP-020） */
+  font-family: var(--font-mono);
+  font-size: 85%;
+  line-height: var(--line-height-code);
 }
+
+/* markdown.css の pre への指定（下マージン 16px）を打ち消すため、
+   .markdown-body を付けて詳細度を上げる。 */
+.markdown-body .code-block > pre {
+  margin: 0;
+  padding: var(--md-16);
+  /* 溢れたら**折り返さずに**横スクロールさせる（MD-032, DSP-250） */
+  overflow-x: auto;
+}
+
+/* --- コピーボタン（DSP-251, DSP-252） --- */
 
 .copy-btn {
   position: absolute;
@@ -273,6 +396,7 @@
   background: var(--neutral-muted);
 }
 
+/* 成功直後の 1.5 秒。アイコンの差し替えは copy.js が行う（DSP-252） */
 .copy-btn.copied {
   opacity: 1;
   color: var(--success-fg);
@@ -280,13 +404,74 @@
 
 /* --- GitHub Alerts（DSP-260, DSP-261） --- */
 
-.markdown-alert-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2); /* アイコンとラベルの間隔（DSP-260） */
+/* 種別ごとの色は --alert-color に入れ、枠とラベルの両方から参照する
+   （DSP-261）。**この宣言は #app の内側で行うため**、var() はテーマの
+   切り替わった値に解決される（:root に置くと Light に固定される）。 */
+.markdown-alert-note {
+  --alert-color: var(--accent-fg);
 }
 
-/* --- Mermaid と数式（DSP-270, DSP-271） --- */
+.markdown-alert-tip {
+  --alert-color: var(--success-fg);
+}
+
+.markdown-alert-important {
+  --alert-color: var(--done-fg);
+}
+
+.markdown-alert-warning {
+  --alert-color: var(--attention-fg);
+}
+
+.markdown-alert-caution {
+  --alert-color: var(--danger-fg);
+}
+
+.markdown-alert {
+  margin: var(--md-16) 0;
+  padding: var(--md-8) var(--md-16);
+
+  /* 左だけ角丸にしない。色の帯を途切れさせないため（DSP-260） */
+  border-left: var(--md-4) solid var(--alert-color);
+  border-radius: 0 var(--radius-block) var(--radius-block) 0;
+
+  /* 背景は敷かない（DSP-260）。本文と地続きに見せる */
+}
+
+/* 内側の段落が上下に余白を作らないようにする（DSP-260）。
+
+   **.markdown-body を付けて詳細度を上げる。** 中身は <p> であり、
+   markdown.css の `.markdown-body p`（0,1,1）はクラス 1 つ（0,1,0）より
+   強い。付けないと下マージン 16px が残ったままになる。 */
+.markdown-body .markdown-alert > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: var(--md-8); /* アイコンとラベルの間隔（DSP-260） */
+  margin-top: 0;
+  margin-bottom: var(--md-8);
+
+  color: var(--alert-color);
+  /* GitHub は本文と同じ大きさで出す。14px にすると弱く見える（MD-002） */
+  font-size: var(--md-16);
+  font-weight: 600;
+}
+
+/* --- Mermaid（DSP-270） --- */
+
+/* 描画が済んだブロックは図として見せる。コードブロックの地を外す。
+   コピーボタンは残す（FR-060, IMP-115）。 */
+.code-block:has(> .mermaid-rendered) {
+  background: var(--canvas-default);
+  border-radius: 0;
+}
 
 .mermaid-rendered {
   text-align: center; /* 本文幅の中央（DSP-270） */
@@ -298,11 +483,14 @@
 }
 
 /* 描画に失敗したときの理由。ソースはコードブロックのまま残す（FR-023, DSP-270） */
-.mermaid-error {
-  margin: 0 0 var(--space-2);
-  font-size: 12px;
+.markdown-body .mermaid-error {
+  margin: 0;
+  padding: var(--md-8) var(--md-16) 0;
+  font-size: var(--md-12);
   color: var(--danger-fg);
 }
+
+/* --- 数式（DSP-271） --- */
 
 /* KaTeX の既定色を上書きし、テーマに追従させる（DSP-271） */
 .math-inline,
@@ -311,9 +499,16 @@
 }
 
 .math-block {
-  margin: var(--space-4) 0;
+  margin: var(--md-16) 0;
   text-align: center;
+  /* 横に溢れる場合はその要素の中で横スクロールさせる（DSP-271） */
   overflow-x: auto;
+}
+
+/* 描画に失敗した数式。元のソースがそのまま残る（MD-060, DSP-271） */
+.katex-error {
+  font-family: var(--font-mono);
+  color: var(--danger-fg);
 }
 
 /* --- リサイザ（DSP-114） --- */
@@ -333,8 +528,9 @@
 /* 本文ペインの右上に重ねる。**本文を押し下げない**（UI-080） */
 .searchbar {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  /* 上 16px / 右 16px。スクロールバーの内側（DSP-160） */
+  top: var(--space-4);
+  right: var(--space-4);
   z-index: var(--z-search);
 
   display: flex;
@@ -342,11 +538,11 @@
   gap: var(--space-2);
 
   height: 32px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
 
   background: var(--canvas-overlay);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   box-shadow: var(--shadow-overlay);
 }
 
@@ -366,7 +562,7 @@
 
   background: var(--canvas-inset);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 .search-input::placeholder {
@@ -400,7 +596,7 @@
   color: var(--fg-muted);
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
@@ -411,14 +607,17 @@
 
 /* --- ヒットの強調（DSP-161） --- */
 
-mark.search-hit {
+/* **.markdown-body を付けて詳細度を上げる。** markdown.css が
+   `.markdown-body mark`（0,1,1）で本文中のハイライトを塗っており、
+   同じ詳細度だと読み込み順で負けて検索の色が出ない（MD-072, DSP-121）。 */
+.markdown-body mark.search-hit {
   color: var(--fg-default);
   background: var(--search-hit);
   border-radius: 2px;
 }
 
 /* 現在位置には枠も付け、**色覚に依存せず判別できるようにする**（DSP-161） */
-mark.search-hit-current {
+.markdown-body mark.search-hit-current {
   background: var(--search-hit-current);
   box-shadow: 0 0 0 1px var(--attention-fg);
 }
@@ -435,7 +634,21 @@ mark.search-hit-current {
   align-items: center;
   justify-content: center;
 
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--overlay-backdrop);
+
+  /* 表示は 100ms のフェードイン（DSP-050）。
+     prefers-reduced-motion では base.css が無効にする（DSP-051） */
+  animation: dialog-in var(--motion-dialog) ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .dialog {
@@ -555,7 +768,9 @@ mark.search-hit-current {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  margin-top: var(--space-2);
+  /* 見出しの上マージンは 16px（DSP-171）。.dialog の gap が既に 12px を
+     作っているため、ここでは残りの 4px だけを足す。 */
+  margin-top: var(--space-1);
 }
 
 .about-licenses-title {
@@ -621,8 +836,9 @@ mark.search-hit-current {
   justify-content: center;
   gap: var(--space-4);
 
-  background: var(--accent-subtle);
-  opacity: 0.9;
+  /* **背景だけを 0.9 の不透明度で重ねる**（DSP-190）。
+     要素ごと opacity を下げると、アイコンと文字まで薄くなる。 */
+  background: color-mix(in srgb, var(--accent-subtle) 90%, transparent);
 
   /* 内側 8px の位置に 2px の破線（DSP-190） */
   outline: 2px dashed var(--accent-fg);
@@ -652,7 +868,8 @@ mark.search-hit-current {
   from {
     opacity: 0;
   }
+
   to {
-    opacity: 0.9;
+    opacity: 1;
   }
 }

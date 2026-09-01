@@ -42,7 +42,11 @@ UI-105 を実装する。Light / Dark の 2 系統を定義する。
 | `--danger-fg` | Caution、エラー | `#d1242f` | `#f85149` |
 | `--done-fg` | Important | `#8250df` | `#ab7df8` |
 | `--neutral-muted` | ホバー背景、コードのインライン背景 | `rgba(129,139,152,0.12)` | `rgba(101,108,118,0.2)` |
+| `--neutral-muted-strong` | ボタン押下中の背景（`--neutral-muted` の 1.5 倍） | `rgba(129,139,152,0.18)` | `rgba(101,108,118,0.3)` |
+| `--attention-subtle` | 警告の一時メッセージの背景、本文のハイライト（`<mark>`） | `#fff8c5` | `rgba(187,128,9,0.15)` |
+| `--danger-subtle` | エラーの一時メッセージの背景 | `#ffebe9` | `rgba(248,81,73,0.15)` |
 | `--shadow-overlay` | ダイアログの影 | `0 8px 24px rgba(31,35,40,0.2)` | `0 8px 24px rgba(1,4,9,0.6)` |
+| `--overlay-backdrop` | ダイアログ背後の暗幕 | `rgba(0,0,0,0.4)` | `rgba(0,0,0,0.4)` |
 | `--search-hit` | 検索ヒット（通常） | `#fff8c5` | `#3b2300` |
 | `--search-hit-current` | 検索ヒット（現在位置） | `#ffd33d` | `#9e6a03` |
 
@@ -55,6 +59,7 @@ UI-105 を実装する。Light / Dark の 2 系統を定義する。
 
 - 切り替えは `#app` の `data-theme` 属性のみで行う（IMP-243）。要素の再生成や本文の再変換を伴わない（UI-105）。
 - `prefers-color-scheme` に直接反応する CSS を書かない。OS 設定の反映は起動時に Go 側が解決した値で行う（FR-071, IMP-303）。両方に反応させると、設定値と OS 設定が食い違ったときに表示が揺れる。
+- **`color-scheme` をテーマに合わせて宣言する。** タスクリストのチェックボックス（MD-022）のように OS が描く部品は、色を CSS のトークンで指定できない。この宣言がないと Dark でも明るい配色のまま浮く。
 - トランジションを色に対して掛けない。テーマ切り替えは即時に完了させる（UI-105 の「ちらつきを発生させない」）。
 
 ### DSP-012: 本文の配色 **MUST**
@@ -69,6 +74,11 @@ UI-105 を実装する。Light / Dark の 2 系統を定義する。
 | `--color-fg-muted` | `--fg-muted` |
 | `--color-border-default` | `--border-default` |
 | `--color-accent-fg` | `--accent-fg` |
+
+`markdown.css` はこの 6 つを `.markdown-body` の上で定義し、本文の規則からはトークンではなくこちらを参照する。対応表を 1 か所に閉じ込めるためである。表に無い色（`--border-muted` など）はトークンを直接参照してよい。
+
+> [!NOTE]
+> **同梱物側の変数名は改称されている。** `github-markdown-css` は v5.9.0 の時点で `--fgColor-default` / `--bgColor-default` / `--fgColor-muted` / `--borderColor-default` / `--fgColor-accent` という名前へ移行しており、上の表が挙げる `--color-*` は既に使っていない。現在の `markdown.css` は同梱物のファイルを読み込まず書き起こしているため実害はないが、将来ファイルをそのまま読み込む形へ変える場合は、この表を新しい名前へ揃える必要がある。
 
 ### DSP-013: シンタックスハイライト配色 **MUST**
 

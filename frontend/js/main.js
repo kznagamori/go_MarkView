@@ -7,6 +7,7 @@ import * as api from "./api.js";
 import { state } from "./state.js";
 import { errorText } from "./strings.js";
 import { initToolbar } from "./toolbar.js";
+import { initTooltip } from "./tooltip.js";
 import { applyTheme, toggleTheme } from "./theme.js";
 import { applyZoom, initZoom, setZoom, stepZoom } from "./zoom.js";
 import { applyPanes, initPanes, togglePane } from "./panes.js";
@@ -85,6 +86,7 @@ async function boot() {
     onFileTree: () => togglePane("filetree"),
     onAbout: showAboutDialog,
   });
+  initTooltip();
   initFileTree({ onOpen: openFromTree });
   initOutline();
   initViewer({ onFollow: followLink });
