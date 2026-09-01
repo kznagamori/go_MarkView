@@ -8,8 +8,8 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 | 区分 | 内容 |
 | --- | --- |
-| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`）、`licenses/THIRD_PARTY.md`、`testdata/`、`docs/specs/`（仕様 20 文書）、`assets/` |
-| **ない** | `.github/workflows/`（BR-050, BR-052）、描画スモークテスト（BR-054）、`testdata/e2e/`（E2E-012）。ルート `README.md` は整備前（BR-051, BR-070） |
+| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`）、`licenses/THIRD_PARTY.md`、`testdata/`、`docs/specs/`（仕様 20 文書）、`assets/`、`.github/workflows/ci.yml`（BR-052） |
+| **ない** | リリースワークフロー（BR-050）、`testdata/e2e/`（E2E-012）。ルート `README.md` は整備前（BR-051, BR-070） |
 
 仕様は `specs-4.2.0` タグの時点で完成している。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直す（NFR-071）。
 
@@ -119,6 +119,10 @@ go test ./internal/renderer -update   # ゴールデンの更新（差分を必�
 # 生成物（コミットする。手で書き換えない）
 go run ./scripts/genchroma            # frontend/css/chroma.css（IMP-114, DSP-013）
 go run ./scripts/genlicenses          # licenses/THIRD_PARTY.md（BR-040, FR-101）
+
+# 描画スモークテスト（BR-054, E2E-109）。同梱資産を更新したら必ず実行する
+go run ./scripts/smoke                # Chromium 系ブラウザを自動で探す
+#   MARKVIEW_SMOKE_BROWSER=... で明示指定。Node.js は要らない（BR-001）
 
 # 手動テストの記録用 Excel を生成（E2E-200）
 python docs/tests/gen_manual_test_xlsx.py --version v1.0.0-rc.1
