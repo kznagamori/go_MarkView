@@ -116,6 +116,7 @@ UI-022 を実装する。
 
 - SVG は `index.html` の先頭に `<svg style="display:none">` のシンボル定義としてまとめ、各ボタンは `<svg class="icon"><use href="#icon-open"></use></svg>` で参照する。寸法（16 × 16）と色は `.icon` に対して CSS から与える（DSP-014）。
 - `fill="currentColor"` とし、色は CSS から与える（DSP-014）。
+- **出典は `@primer/octicons` 19.33.0（MIT）。** 原本を `frontend/icons/` に、シンボル定義を `index.html` に写している。**BR-042 の管理対象には加えない。** あちらは取得したファイルを改変せずに格納することが前提で、リリース CI が自動更新する（BR-043）。ここは名前を変えて置いており、実際に描画に使うのは `index.html` の `<symbol>` であるため、自動更新すると記録と実物が静かにずれる。版は `scripts/genlicenses` が記録し、ライセンス一覧へ載せる（BR-040, FR-101）。
 - アイコンの一覧と対応は以下とする。同じ絵柄を複数箇所で使う場合、シンボルは 1 つだけ定義して共用する。`icon-dir` と `icon-open` のようにシンボル ID を分けたまま同じ絵柄を使う場合は、`<symbol id="icon-dir"><use href="#icon-open"/></symbol>` として参照で共用し、パスデータを二重に持たない。
 
 | シンボル ID | 使用箇所 | 出典（Octicons） |

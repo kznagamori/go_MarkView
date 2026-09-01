@@ -45,6 +45,15 @@ var frontendFS embed.FS
 //go:embed assets/icon.png
 var appIconPNG []byte
 
+// OSS ライセンス一覧（FR-101, BR-040, IMP-030）。
+//
+// **実行時に外部から取得しない。** ビルド時に埋め込んだものだけを表示する
+// （FR-101）。中身は scripts/genlicenses が生成する。ファイルが無いと
+// ビルドが失敗するため、生成漏れのまま配布されることはない。
+//
+//go:embed licenses/THIRD_PARTY.md
+var thirdPartyLicenses string
+
 // exit code。FR-012 が定める。
 const (
 	exitOK         = 0

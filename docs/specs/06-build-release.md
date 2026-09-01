@@ -92,10 +92,12 @@ UI-025 のアイコンを実行ファイルとウィンドウに反映させる�
 
 ### BR-040: OSS ライセンス情報の生成 **MUST**
 
-- 実行ファイルに埋め込む OSS ライセンス一覧（FR-101）は、`licenses/THIRD_PARTY.md` としてリポジトリに生成・コミットする。
-- Go モジュールのライセンスは `go-licenses` 等のツールで自動収集する。
-- 埋め込みの JavaScript / CSS / フォント資産（Mermaid、KaTeX、github-markdown-css、アイコン）は自動収集の対象外となるため、生成スクリプト内に定義を持ち、同じ一覧に統合する。
-- 生成は `go generate` または専用スクリプトで実行できること。
+- 実行ファイルに埋め込む OSS ライセンス一覧（FR-101）は、`licenses/THIRD_PARTY.md` としてリポジトリに生成・コミットする。生成は `go run ./scripts/genlicenses` で行う。
+- Go モジュールのライセンスは自動収集する。**収集対象は `go list -deps` で main パッケージから到達するモジュールに限る。** `go.mod` の `require` をそのまま並べると、実行ファイルに入らないものまで載る。全文はモジュールキャッシュ内の `LICENSE` / `COPYING` 等から読む。
+- **`NOTICE` と `PATENTS`、および副次的なライセンスファイルも併記する。** Apache-2.0 は `NOTICE` の再頒布を求めており（`gopkg.in/yaml.v2`）、`golang.org/x/*` の `PATENTS` も許諾の一部である。主たる 1 つだけでは条件を満たさない。
+- **収集は対象プラットフォームを明示し、その和集合を採る**（Windows / Linux）。Windows だけに入るモジュール（`go-webview2`）があり、生成したホストによって内容が変わると BR-041 の検査が環境ごとに違う結果を出す。
+- 埋め込みの JavaScript / CSS / フォント資産（Mermaid、KaTeX、github-markdown-css、アイコン）は自動収集の対象外となるため、生成スクリプト内に定義を持ち、同じ一覧に統合する。Mermaid と KaTeX のバージョンは `vendor.json`（BR-042）を正として読み出し、二重に持たない。
+- 外部ツール（`go-licenses` 等）に依存しない。CI へ導入の手間とネットワークの前提を持ち込まないためで、収集内容が同等であれば手段は問わない。
 
 ### BR-041: ライセンス情報の鮮度検査 **MUST**
 

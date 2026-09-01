@@ -332,12 +332,9 @@ func (a *App) CopyToClipboard(text string) (err error) {
 func (a *App) GetAbout() AboutDTO {
 	defer recoverQuiet()
 
-	// TODO(T6-2): licenses/THIRD_PARTY.md を go:embed して渡す
-	// （IMP-030, BR-040）。生成スクリプトができるまでは空欄とする。
-	//
 	// WebView のバージョンは Wails v2 のランタイムが返さないため空文字を
 	// 渡す。Environment は当該区画ごと省く（IMP-181）。
-	return newAboutDTO("", "")
+	return newAboutDTO(thirdPartyLicenses, "")
 }
 
 // Quit はアプリケーションを終了する（IMP-310, UI-090）。
