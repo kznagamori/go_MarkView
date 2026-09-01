@@ -1,52 +1,86 @@
 # MarkView
 
-Markdown を **GitHub と同じ見た目で読むためだけ**のデスクトップアプリケーションです。
-実行ファイルは 1 つ。インストールも、ランタイムの導入も、ネットワーク接続も要りません。
+[![Latest Release](https://img.shields.io/github/v/release/kznagamori/go_MarkView?label=release)](https://github.com/kznagamori/go_MarkView/releases) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D4)
+![UI](https://img.shields.io/badge/UI-Wails%20v2-CF3A2B) ![Language](https://img.shields.io/badge/language-Go-00ADD8) ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
+## 概要
+
+MarkView は、**Markdown ドキュメントを受け取った側が、追加のセットアップなしに GitHub と
+同じ見た目で読める**ようにするためのビューアです。
+
+設計書・手順書・API 仕様といった一次資料は Markdown で書かれ、ZIP や共有フォルダでリポジトリの
+外へ渡されます。しかし受け取った側の環境に、それを GitHub と同じ体裁で読む手段があるとは
+限りません。テキストエディタでは記法が生のまま出て読みにくく、ブラウザは Markdown を
+描画せず、VS Code の導入を相手に強いるのは配布物としては重すぎます。
+
+MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown と一緒に配れば、受け取った側は
+ダブルクリックするだけで読める。** インストールも、ランタイムの導入も、ネットワーク接続も
+要りません。書く道具は既にあるので、MarkView は書きません。読むことだけをします。
 
 > **MarkView** is a lightweight, single-executable Markdown viewer for Windows and Linux.
 > No installation, no runtime, no network access. It renders Markdown the way GitHub does.
 
-設計書や手順書を ZIP で渡したとき、受け取った側は「開けばそのまま読める」状態になります。
-書く道具は既にあるので、MarkView は**書きません**。読むことだけをします。
+## 主な機能
 
-## すぐ使う
+- GitHub Flavored Markdown を、GitHub のファイルビューと同じ見た目で描画
+- コードブロックのシンタックスハイライト（Go・Python・TypeScript など 40 言語以上）
+- GitHub Alerts 5 種（`> [!NOTE]` `> [!TIP]` `> [!IMPORTANT]` `> [!WARNING]` `> [!CAUTION]`）
+- Mermaid 図の描画。ライブラリを同梱しているため**オフラインでも図が出る**
+- 数式の描画（KaTeX 同梱、`$...$` / `$$...$$` / ` ```math ` の 3 記法）
+- 見出しからアウトラインを自動生成し、本文のスクロールに連動して現在位置を強調
+- Markdown ファイルとディレクトリだけを並べるファイルツリー（遅延展開、`.git` などは除外）
+- **ツリーからファイルを選んでも、ツリーの起点は動かない**
+- 相対リンクで文書間を移動し、`Alt+←` で**スクロール位置ごと**元の場所へ戻れる
+- 文書内のインクリメンタル検索（全ヒットをハイライト、現在位置 / 総数を表示）
+- 表示倍率 50 %〜300 %（`Ctrl` + ホイールにも対応）
+- Light / Dark テーマ。**初回は OS の設定に追従**し、一度切り替えるとその選択を記憶
+- コードブロックのコピーボタン
+- 表示中のファイルが外部で保存されると、**スクロール位置を保ったまま自動で再描画**
+- 外部 URL は既定のブラウザ、画像は OS の既定アプリへ委譲。ウィンドウ内で遷移しない
+- 開いたファイルのパス・表示履歴・検索語を**ディスクのどこにも書かない**
 
-展開したフォルダに `MarkView`（Windows は `MarkView.exe`）と `LICENSE`、そしてこの
-`README.md` が入っています。階層はありません。
+## インストール
+
+[GitHub Releases](https://github.com/kznagamori/go_MarkView/releases) から、環境に合った
+アーカイブをダウンロードして展開します。中身は実行ファイルと `LICENSE`、`README.md` の
+3 点だけで、ディレクトリ階層はありません。インストーラはありません。
+
+| ファイル | 対象環境 |
+| --- | --- |
+| `MarkView-<version>-windows-amd64.zip` | Windows 11 (x64) |
+| `MarkView-<version>-windows-arm64.zip` | Windows 11 (ARM64) |
+| `MarkView-<version>-linux-amd64.tar.gz` | Ubuntu 24.04+ (x64) |
+| `MarkView-<version>-linux-arm64.tar.gz` | Ubuntu 24.04+ (ARM64) |
+
+展開したフォルダは USB メモリなどに入れて持ち運べます。
 
 ### Windows 11
 
-実行ファイルをダブルクリックしてください。それだけです。
+`MarkView.exe` をダブルクリックします。それだけです。
 表示エンジンには OS 標準の WebView2 を使うため、追加のインストールはありません。
 
 ### Ubuntu 24.04 以降
 
-WebKitGTK 4.1 が必要です。多くのデスクトップ環境では既に入っていますが、
+WebKitGTK 4.1 が必要です。多くのデスクトップ環境には既に入っていますが、
 起動しない場合は次を実行してください。
 
 ```sh
 sudo apt install libwebkit2gtk-4.1-0
 ```
 
-実行ビットが落ちている場合は付け直します。
-
 ```sh
 chmod +x ./MarkView
 ./MarkView
 ```
 
-### 起動したとき何が開くか
+### 起動したときに開くもの
 
-引数なしで起動すると、次の順に `README.md` を探して最初に見つかったものを開きます。
-そのファイルのあるディレクトリが、ファイルツリーの起点になります。
-
-1. コマンドを実行したディレクトリ
-2. 実行ファイルが置かれているディレクトリ
+引数なしで起動すると、**カレントディレクトリ → 実行ファイルのあるディレクトリ**の順に
+`README.md` を探し、最初に見つかったものを開きます。そのファイルのあるディレクトリが
+ファイルツリーの起点になります。
 
 つまり**実行ファイルと `README.md` を同じフォルダに入れて配れば、受け取った側は
-ダブルクリックするだけ**で読み始められます。いま表示されているのがまさにその状態です。
-
-引数を渡すこともできます。
+ダブルクリックするだけ**で読み始められます。
 
 ```sh
 MarkView docs/design.md    # そのファイルを開き、docs/ をツリーの起点にする
@@ -55,89 +89,26 @@ MarkView --version         # バージョンを表示して終了する
 MarkView --help            # 使い方を表示して終了する
 ```
 
-## 使い方
+## ドキュメント
 
-### 文書を開く
-
-開く経路は 6 つだけです。
-
-| 経路 | 操作 |
+| ドキュメント | 内容 |
 | --- | --- |
-| ダイアログ | ツールバーの Open、または `Ctrl+O` |
-| ドラッグ＆ドロップ | ウィンドウへファイルかフォルダを落とす |
-| コマンドライン引数 | 上記のとおり |
-| ファイルツリー | 左ペインから選ぶ。**選んでもツリーの起点は動きません** |
-| 本文中のリンク | `.md` へのリンクは同じウィンドウで開く |
-| 表示履歴 | `Alt+←` / `Alt+→` |
+| [使い方](https://github.com/kznagamori/go_MarkView/blob/main/docs/usage.md) | 起動のしかた、文書の開き方、ペイン、検索、倍率、テーマ、ショートカット |
+| [対応する Markdown 記法](https://github.com/kznagamori/go_MarkView/blob/main/docs/markdown.md) | 見出しから Mermaid・数式まで、何がどう表示されるか |
+| [設定と保存されるもの](https://github.com/kznagamori/go_MarkView/blob/main/docs/settings.md) | 何が保存され、何が保存されないか。保存先と消し方 |
+| [困ったときは](https://github.com/kznagamori/go_MarkView/blob/main/docs/troubleshooting.md) | 起動しない、図が出ない、誤検知される、といった場合の対処 |
 
-扱う拡張子は `.md` `.markdown` `.mdown` `.mkd` です。
-外部 URL は既定のブラウザへ、画像や PDF は OS の既定のアプリへ渡します。
-**ウィンドウの中で別のサイトへ遷移することはありません。**
+開発者向けの [仕様書](https://github.com/kznagamori/go_MarkView/tree/main/docs/specs)
+（要求・実装・表示・テストの 5 層、20 文書）もあります。実装の判断はすべてそちらに根拠があります。
 
-### キーボード
+## 署名について
 
-| キー | 動作 |
-| --- | --- |
-| `Ctrl+O` | ファイルを開く |
-| `F5` / `Ctrl+R` | 再読み込み |
-| `Ctrl+Shift+E` | ファイルツリーの表示 / 非表示 |
-| `Ctrl+Shift+O` | アウトラインの表示 / 非表示 |
-| `Ctrl+F` | 文書内検索（`Enter` / `Shift+Enter` で次 / 前、`Esc` で閉じる） |
-| `Alt+←` / `Alt+→` | 表示履歴を戻る / 進む |
-| `Ctrl` `+` / `Ctrl` `-` / `Ctrl+0` | 拡大 / 縮小 / 100 % に戻す |
-| `Ctrl+Shift+T` | Light / Dark の切り替え |
-| `Ctrl+C` | 選択範囲をコピー |
-| `F1` | バージョンとライセンスの情報 |
-| `Ctrl+Q` / `Alt+F4` | 終了 |
+配布物にコード署名を行っていません。個人開発の OSS として、証明書の取得・維持コストが
+運用に見合わないためです。
 
-### 表示中のファイルが変わったら
-
-エディタで保存すると、**スクロール位置を保ったまま自動で描き直します**。
-別のアプリで書いている文書の仕上がりを、隣に置いて確かめられます。
-
-## 読める Markdown
-
-GitHub Flavored Markdown に沿っています。
-
-- 見出し・リスト・表・引用・タスクリスト・脚注・取り消し線・絵文字
-- コードブロックのシンタックスハイライト
-- GitHub Alerts（`> [!NOTE]` `> [!TIP]` `> [!IMPORTANT]` `> [!WARNING]` `> [!CAUTION]`）
-- Mermaid 図（`mermaid` のコードブロック）
-- 数式（`$...$` と `$$...$$`、および `math` のコードブロック）
-
-Mermaid と KaTeX は実行ファイルに埋め込んであり、**使う文書を開いたときだけ**
-読み込みます。オフラインでも図と数式は欠けません。
-
-10 MB を超えるファイルは、描画の前に確認画面を出します。50 MB を超えるものは開きません。
-
-## 残らないもの
-
-MarkView は**閲覧の痕跡をディスクに残しません**。
-
-| | 内容 |
-| --- | --- |
-| **残さないもの** | 開いたファイルのパス、ツリーの起点、表示履歴、検索語、ウィンドウの位置 |
-| **残すもの** | テーマ、表示倍率、ペインの表示状態と幅、ウィンドウの大きさ |
-
-設定の保存先は**テンポラリディレクトリのみ**です（Windows は `%TEMP%\MarkView\`、
-Linux は `$TMPDIR/MarkView-<uid>/`）。`%APPDATA%` にも `~/.config` にも
-レジストリにも書きません。消えても既定値で起動するだけです。
-
-ネットワークへは接続しません。更新確認もテレメトリもクラッシュレポートもありません。
-唯一の例外は、文書が `https://` の画像を参照している場合に WebView がそれを取りに行くことです。
-
-## 署名していません
-
-配布物にコード署名を行っていません。個人開発の OSS として証明書の維持費が見合わないためです。
-
-このため Windows では初回に SmartScreen の警告が出ることがあります。
-実行する場合は「詳細情報」→「実行」を選んでください。ZIP から展開したファイルに
-警告が残る場合は、ファイルのプロパティを開き「セキュリティ: このファイルは
-他のコンピューターから取得したものです」の**「ブロックの解除」**にチェックを入れます。
-
-ウイルス対策ソフトが誤検知することもあります。配布物は実行ファイル圧縮（UPX 等）を
-使っていませんが、署名のない未知の実行ファイルは検知対象になりやすいためです。
-気になる場合は `checksums.txt` の SHA-256 と照合してください。
+このため Windows では初回に SmartScreen の警告が出ることがあります。実行する場合は
+**「詳細情報」→「実行」** を選んでください。ウイルス対策ソフトが誤検知することもあります。
+リリースに添付している `checksums.txt` で配布物が改変されていないことを確認できます。
 
 ```sh
 sha256sum -c checksums.txt
@@ -147,26 +118,27 @@ sha256sum -c checksums.txt
 Get-FileHash MarkView-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
-## `.md` の関連付けについて
+詳しい手順は
+[困ったときは](https://github.com/kznagamori/go_MarkView/blob/main/docs/troubleshooting.md#windows-の警告が出る)
+を参照してください。
 
-MarkView は**関連付けを自分で登録しません**。レジストリや `~/.local/share/applications`
-への書き込みを伴い、「システムに痕跡を残さない」方針と衝突するためです。
+## ビルド方法
 
-利用者が自分で設定するのは構いません。Windows なら `.md` ファイルを右クリックして
-「プログラムから開く」→「別のプログラムを選択」から `MarkView.exe` を選びます。
-その経路で起動しても、引数付き起動として正しく動作します。
+### 必要条件
 
-## ライセンス
+- [Go](https://go.dev/dl/) 1.25 以上
+- [Wails CLI](https://wails.io/) v2 系
+- Linux では次のパッケージ
 
-MIT License。同梱している OSS のライセンス全文は、アプリ内の `F1`
-（アプリケーション情報）から読めます。
+  ```sh
+  sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
+  ```
 
-## 開発者向け
+フロントエンドにビルド工程を持たないため、**Node.js は不要**です。
 
-Go + [Wails v2](https://wails.io/) で作っています。フロントエンドに Node.js も
-バンドラも UI フレームワークも使いません。
+### ビルド手順
 
-```sh
+```bash
 git clone https://github.com/kznagamori/go_MarkView.git
 cd go_MarkView
 
@@ -176,14 +148,23 @@ wails build -platform windows/amd64 -ldflags "-s -w" -o MarkView.exe
 wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-s -w" -o MarkView
 ```
 
-Linux のビルドには `-tags webkit2_41` が必須です。付け忘れると 4.0 系にリンクされ、
-Ubuntu 24.04 で起動しない実行ファイルができます。ビルドには次のパッケージが要ります。
+実行ファイルは `build/bin/` に生成されます。
 
-```sh
-sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
-```
+> [!IMPORTANT]
+> Linux のビルドでは `-tags webkit2_41` が必須です。付け忘れると WebKitGTK 4.0 系に
+> リンクされ、Ubuntu 24.04 で起動しない実行ファイルができます。
 
-仕様書は
-[`docs/specs/`](https://github.com/kznagamori/go_MarkView/tree/main/docs/specs)
-にあります（要求・実装・表示・テストの 5 層、20 文書）。
-実装の判断はすべてそちらに根拠があります。
+Linux 版は cgo を必要とするため、Windows ホストからのクロスコンパイルはできません。
+
+## ライセンス
+
+MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
+
+同梱している OSS のライセンス全文は、アプリケーション内の `F1`（アプリケーション情報）から
+読めます。
+
+## 開発者
+
+kznagamori
+
+- GitHub: [https://github.com/kznagamori](https://github.com/kznagamori)

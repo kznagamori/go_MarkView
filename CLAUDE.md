@@ -8,11 +8,15 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 | 区分 | 内容 |
 | --- | --- |
-| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`・`pack`・`vendorupdate`）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/specs/`（仕様 20 文書）、`assets/`、`.github/workflows/`（`ci.yml`・`release.yml`）、ルート `README.md` |
+| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`・`pack`・`vendorupdate`）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/`（利用者向け 4 文書 + 仕様 20 文書）、`assets/`、`.github/workflows/`（`ci.yml`・`release.yml`）、ルート `README.md` |
 | **未実施** | **リリース CI を実地で走らせていない**（BR-050 の 6 ジョブは最初の `v*` タグで初めて動く）。**手動テスト 59 件**（41 章、E2E-205）。P4 の 41 章 G2〜G9 のうち利用者未確認の項目 |
 
 > [!IMPORTANT]
-> **ルート `README.md` は配布アーカイブに同梱され、引数なし起動で最初に表示される文書でもある**（BR-020, FR-013, E2E-211）。GitHub の顔であると同時に、受け取った人が最初に読むものになる。**配布物に無いパスへの相対リンクを書かない**（`docs/` 等は絶対 URL にする）。
+> **ルート `README.md` は配布アーカイブに同梱され、引数なし起動で最初に表示される文書でもある**（BR-020, FR-013, E2E-211）。GitHub の顔であると同時に、受け取った人が最初に読むものになる。
+>
+> - **配布物に無いパスへの相対リンクを書かない。** `docs/` への参照は絶対 URL にする。相対リンクが許されるのは、同梱される `LICENSE` だけ
+> - 利用者向けドキュメントは `docs/`（`usage.md` / `markdown.md` / `settings.md` / `troubleshooting.md` と索引の `README.md`）。**`docs/` 内どうしは相対リンクでよい**。同じ場所に一緒に置かれるため
+> - 日本語で書く。UI-024 が英語と定めているのは UI 文言・エラーメッセージ・`--help` / `--version` の出力であり、文書は含まない
 
 仕様は `specs-4.2.0` タグの時点で完成している。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直す（NFR-071）。
 
