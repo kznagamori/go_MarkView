@@ -71,9 +71,15 @@ func New() *Renderer {
 				extension.Strikethrough, // 打消し線（MD-024）
 				extension.TaskList,      // タスクリスト（MD-022）
 				extension.Linkify,       // 裸の URL の自動リンク（MD-070）
-				extension.Footnote,      // 脚注（MD-050）
-				emoji.Emoji,             // 絵文字ショートコード（MD-051）
-				meta.Meta,               // YAML Front Matter（MD-073）
+				// 脚注（MD-050）。戻りリンクの記号は goldmark 既定の
+				// U+21A9 + U+FE0E（異体字セレクタ付き）ではなく、GitHub と
+				// 同じ U+21A9 単独にする。セレクタが付くと白黒の記号として
+				// 描かれ、GitHub の色付きの矢印と見た目が変わる（MD-002）。
+				extension.NewFootnote(
+					extension.WithFootnoteBacklinkHTML("&#x21a9;"),
+				),
+				emoji.Emoji, // 絵文字ショートコード（MD-051）
+				meta.Meta,   // YAML Front Matter（MD-073）
 
 				alertExtension{}, // GitHub Alerts（IMP-112, MD-040）
 

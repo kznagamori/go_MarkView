@@ -190,7 +190,9 @@ goldmark.New(
         extension.Strikethrough, // 打消し線（MD-024）
         extension.TaskList,      // タスクリスト（MD-022）
         extension.Linkify,       // 裸の URL の自動リンク（MD-070）
-        extension.Footnote,     // 脚注（MD-050）
+        extension.NewFootnote(  // 脚注（MD-050）。戻りリンクの記号を指定する
+            extension.WithFootnoteBacklinkHTML("&#x21a9;"),
+        ),
         emoji.Emoji,            // 絵文字ショートコード（MD-051）
         meta.Meta,              // Front Matter（MD-073）
         highlighting.NewHighlighting(...), // IMP-114
@@ -212,6 +214,7 @@ goldmark.New(
 
 - **`html.WithUnsafe()` を有効にする。** 生 HTML を goldmark 段階で落とすと、`<details>` 等の許可要素（MD-072）まで失われるため。安全性の担保は後段のサニタイズ（IMP-116）に一元化する。この 2 つは必ず対で実装する。
 - **見出し ID は goldmark の `WithAutoHeadingID` を使わない。** GitHub 互換のスラッグ規則（MD-021）と生成結果が異なるため、独自の AST 変換で付与する（IMP-117）。上のコードブロックが `parser.WithASTTransformers` を渡しているのはこのためであり、`WithAutoHeadingID` を併用してはならない（後から付与される ID に上書きされる）。
+- **脚注の戻りリンクは `extension.NewFootnote(extension.WithFootnoteBacklinkHTML("&#x21a9;"))` で指定する。** goldmark の既定は `&#x21a9;&#xfe0e;` で、異体字セレクタにより白黒の記号として描かれる。GitHub はセレクタを付けないため見た目が変わる（MD-050, MD-002）。
 - TOML の Front Matter（`+++`）は `meta.Meta` が扱わないため、`Render` の前段で文字列として除去する。
 
 ### IMP-112: GitHub Alerts 拡張 **MUST**
