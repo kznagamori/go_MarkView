@@ -2,13 +2,13 @@
   {
     "name": "Mermaid",
     "version": "11.17.2",
-    "source": "https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js",
-    "fetched": "2026-09-01"
+    "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.17.2.tgz",
+    "fetched": "2026-09-02"
   },
   {
     "name": "KaTeX",
-    "version": "0.18.4",
-    "source": "https://cdn.jsdelivr.net/npm/katex@0.18.4/dist/",
-    "fetched": "2026-09-01"
+    "version": "0.18.5",
+    "source": "https://registry.npmjs.org/katex/-/katex-0.18.5.tgz",
+    "fetched": "2026-09-02"
   }
 ]

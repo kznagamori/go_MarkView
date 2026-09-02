@@ -31,7 +31,7 @@ the bundled assets are the JavaScript, CSS, font and icon files shipped inside t
 | golang.org/x/sys | v0.46.0 | BSD-3-Clause |
 | gopkg.in/yaml.v2 | v2.3.0 | Apache-2.0 |
 | Mermaid | 11.17.2 | MIT |
-| KaTeX | 0.18.4 | MIT |
+| KaTeX | 0.18.5 | MIT |
 | github-markdown-css | 5.9.0 | MIT |
 | Octicons | 19.33.0 | MIT |
 
@@ -853,7 +853,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-### KaTeX 0.18.4 (MIT)
+### KaTeX 0.18.5 (MIT)
 
 The MIT License (MIT)
 
