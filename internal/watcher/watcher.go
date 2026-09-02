@@ -1,6 +1,7 @@
 // Package watcher は表示中ファイルの変更を監視する（IMP-140 系）。
 //
-// 依存を持たない。Wails の API も呼ばない（IMP-012）。
+// internal のうち、依存を持たない葉パッケージ（applog）だけを参照する。
+// Wails の API は呼ばない（IMP-012）。
 package watcher
 
 import (
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kznagamori/go_MarkView/internal/applog"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -169,13 +172,16 @@ func (w *Watcher) run(ctx context.Context) {
 				return
 			}
 
-		case _, ok := <-w.fsw.Errors:
+		case err, ok := <-w.fsw.Errors:
 			if !ok {
 				return
 			}
 			// 監視のエラーで終了はしない。1 つのファイルを見失うだけで、
 			// 利用者は再読み込みできる（FR-111）。
-			// TODO(P3): IMP-023 の NewLogger() が決まったら記録する。
+			//
+			// 既定では何も出ない。MARKVIEW_DEBUG=1 のときだけ記録する
+			// （IMP-023, NFR-041）。判定は applog が持つ。
+			applog.New().Error("watcher error", "err", err)
 		}
 	}
 }

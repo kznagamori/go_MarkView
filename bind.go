@@ -9,6 +9,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/kznagamori/go_MarkView/internal/applog"
 	"github.com/kznagamori/go_MarkView/internal/filetree"
 	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/ostheme"
@@ -38,8 +39,10 @@ func recoverBind(err *error) {
 		return
 	}
 
-	// TODO(課題 3): IMP-023 の NewLogger() の置き場所が決まったら、
-	// 開発モードでスタックトレースを標準エラーへ出す。
+	// 開発モードでのみ、発生箇所とスタックを標準エラーへ出す
+	// （IMP-023, NFR-041）。判定は applog が持つ。
+	applog.Recovered("app.bind", r)
+
 	*err = fmt.Errorf("%w: %v", errPanic, r)
 }
 
@@ -53,6 +56,8 @@ func recoverOpen(path string, res *OpenResultDTO) {
 		return
 	}
 
+	applog.Recovered("app.open", r)
+
 	*res = OpenResultDTO{Error: newErrorDTO(path, fmt.Errorf("%w: %v", errPanic, r))}
 }
 
@@ -63,6 +68,8 @@ func recoverLink(href string, res *LinkResultDTO) {
 		return
 	}
 
+	applog.Recovered("app.link", r)
+
 	*res = LinkResultDTO{Kind: linkError, Error: newErrorDTO(href, fmt.Errorf("%w: %v", errPanic, r))}
 }
 
@@ -71,7 +78,9 @@ func recoverLink(href string, res *LinkResultDTO) {
 // エラーを返せないメソッドで使う。設定の更新やスクロール位置の記録が
 // 失敗しても、利用者の操作を妨げる理由はない。
 func recoverQuiet() {
-	_ = recover()
+	if r := recover(); r != nil {
+		applog.Recovered("app.quiet", r)
+	}
 }
 
 // GetInitialState は起動直後の状態をまとめて返す（IMP-310, FR-012, FR-013）。

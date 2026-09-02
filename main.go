@@ -27,6 +27,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
+	"github.com/kznagamori/go_MarkView/internal/applog"
 	"github.com/kznagamori/go_MarkView/internal/assetsrv"
 	"github.com/kznagamori/go_MarkView/internal/buildinfo"
 	"github.com/kznagamori/go_MarkView/internal/config"
@@ -291,8 +292,11 @@ func executableDir() string {
 // MarkView 自身は log/slog を使う（IMP-023）。標準ロガーを黙らせても
 // 自前のログには影響しない。MARKVIEW_DEBUG=1 のときは調査の助けになるため
 // そのまま出す。
+//
+// **ここでも環境変数を直接読まない。** 判定は applog が持つ（IMP-023）。
+// 判定が散れば、そのうち 1 か所が漏れて配布物が出力を始める。
 func silenceDefaultLogger() {
-	if os.Getenv("MARKVIEW_DEBUG") == "1" {
+	if applog.Enabled() {
 		return
 	}
 

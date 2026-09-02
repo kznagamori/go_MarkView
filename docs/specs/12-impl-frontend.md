@@ -139,6 +139,7 @@ UI-022 を実装する。
 | `icon-important` | Alerts: IMPORTANT | `report` |
 | `icon-warning` | Alerts: WARNING、確認画面（DSP-181） | `alert` |
 | `icon-caution` | Alerts: CAUTION、エラー画面（DSP-181） | `stop` |
+| `icon-link` | 見出しのアンカー（MD-020, IMP-227, DSP-023） | `link` |
 
 > [!IMPORTANT]
 > ここに挙げたシンボルは、いずれも**単色の SVG** であり、アプリケーションアイコン（UI-025, IMP-032）とは別物である。アプリケーションアイコンはラスタ形式の固有画像で、`/appicon.png`（IMP-160）から取得する。シンボル定義に混ぜない。
@@ -218,12 +219,16 @@ export function renderDocument(doc) // doc: DocumentDTO
 2. `#state-screen` を隠す。
 3. コピーボタンを付与する（IMP-221）。
 4. GitHub Alerts のアイコンを付与する（IMP-225）。
-5. スクロール連動の監視対象を作り直す（IMP-222）。
-6. `doc.needsMermaid` / `doc.needsKaTeX` に応じて遅延ロードを起動する（IMP-230）。
-7. スクロール位置を設定する（13 章 `ScrollDTO` の `mode` に従う）。
-8. アウトライン（IMP-224）とステータス（DSP-150）を更新する。
+5. 見出しにアンカーを付与する（IMP-227）。
+6. 画像の読み込み失敗を捉える配線を行う（IMP-226）。
+7. スクロール連動の監視対象を作り直す（IMP-222）。
+8. `doc.needsMermaid` / `doc.needsKaTeX` に応じて遅延ロードを起動する（IMP-230）。
+9. スクロール位置を設定する（13 章 `ScrollDTO` の `mode` に従う）。
+10. アウトライン（IMP-224）とステータス（DSP-150）を更新する。
 
-3 と 4 は DOM 走査を伴うため、`#markdown` を 1 回だけ走査して両方を処理してよい（NFR-011）。
+3〜6 は DOM 走査を伴うため、`#markdown` を 1 回だけ走査してまとめて処理してよい（NFR-011）。
+
+**6 は 1 より後であれば順序を問わない**が、遅らせすぎてはならない。挿入から配線までの間に読み込みが終わった画像は `error` を受け取れないため、IMP-226 は配線時にすでに失敗しているものを別途拾う。
 
 `innerHTML` に渡す HTML は Go 側でサニタイズ済みである（IMP-116）。**フロントエンドで追加のサニタイズを行わないが、Go 側を経由しない文字列を `innerHTML` に渡してはならない。** UI 文言の挿入には `textContent` を用いる。
 
@@ -298,6 +303,56 @@ export function decorateAlerts(root)
 - 各 `.markdown-alert-title` の先頭に `<svg><use href="#icon-warning"></use></svg>` を挿入する。シンボル ID は IMP-203 の一覧に従う。
 - **この処理をフロントエンドで行うのは、Go 側が出力したインライン SVG がサニタイズで除去されるためである**（IMP-112）。Go 側は種別をクラス名で伝え、フロントエンドが見た目を組み立てる。
 - 種別が既知の 5 つに一致しない場合は何も挿入しない。Go 側が未知の種別を出力することはないが、防御的に扱う。
+
+### IMP-226: 画像の読み込み失敗 **MUST**
+
+FR-022 / DSP-123 を実装する。
+
+```js
+// js/viewer.js
+export function markBrokenImages(root)
+```
+
+- `root.querySelectorAll('img')` を走査し、各要素に `error` と `load` を配線する。`error` で `is-broken` クラスを付け、`load` で外す。
+- **配線した時点ですでに失敗しているものを別途拾う。** `img.complete && img.naturalWidth === 0` なら、その場で `is-broken` を付ける。
+- **クラスを付けるだけで DOM を組み立てない。** 代替テキストの描画はブラウザ既定の `alt` 表示に任せ、枠と色は CSS が与える（DSP-123）。`alt` は文書由来の文字列であり、`innerHTML` に渡してはならない（IMP-220）。
+- ローカル画像とリモート画像（MD-071）を区別しない。FR-022 はどちらも同じ扱いと定めている。
+- 文書全体の描画は止めない（FR-022, FR-111）。
+
+> [!IMPORTANT]
+> **「配線時にすでに失敗しているもの」を拾う処理を省いてはならない。**
+> `innerHTML` で挿入した直後に配線しても、キャッシュ済みの失敗や
+> 同期的に解決される経路では `error` がすでに発火し終えている。
+> これを落とすと、**手元では再現せず実機でだけ枠が出ない**という、
+> 最も追いにくい形の不具合になる。
+>
+> CSS だけでは実装できない。読み込みに失敗した `img` を選ぶセレクタが
+> Chromium に存在しないため、この 1 か所だけ JavaScript が要る。
+
+### IMP-227: 見出しのアンカー **SHOULD**
+
+MD-020 / MD-021 / DSP-023 を実装する。
+
+```js
+// js/viewer.js
+export function decorateHeadings(root)
+```
+
+- `root.querySelectorAll('h1[id], h2[id], …, h6[id]')` を走査し、各見出しの**先頭の子**として次を挿入する。
+
+```html
+<a class="heading-anchor" href="#{id}" aria-label="…"><svg class="icon"><use href="#icon-link"></use></svg></a>
+```
+
+- `href` の値は見出しの `id`（MD-021 のスラッグ）をそのまま用いる。**Go 側が生成した ID を組み替えない。**
+- `aria-label` は `strings.js` の `headingAnchor` を `setAttribute` で与える（IMP-290, IMP-295, UI-024）。
+- **クリックの処理を書かない。** 本文中のリンクは IMP-223 が捕捉し、フラグメントは自前でスクロールに変える。ここで独自のハンドラを足すと経路が 2 つになる（AR-060）。
+- `id` を持たない見出しには付けない。Go 側は必ず付与する（IMP-117）が、防御的に扱う。
+
+> [!NOTE]
+> **アウトラインと検索に影響しない。** アウトラインは `DocumentDTO.headings` を用いて DOM を読まない（IMP-224）。検索はテキストノードを走査するが、挿入するのは `<svg><use>` だけでテキストノードを持たないため、`textContent` も走査対象も変わらない。
+>
+> MD-020 は **SHOULD** であり、この機能自体は必須ではない。それでも実装するのは、MD-021 が GitHub 互換のスラッグを自前生成しているのに、**それを利用者へ見せる入口が他に無い**ためである。
 
 ## 12.4 遅延ロード（IMP-230 系）
 
@@ -585,6 +640,9 @@ export const S = {
   // コードブロック（DSP-251）。アイコンだけのボタンに読み上げ名を与える（IMP-295）
   copy:        'Copy',
 
+  // 見出しのアンカー（IMP-227, DSP-023）。アイコンだけのリンクに読み上げ名を与える
+  headingAnchor: 'Link to this section',
+
   // ステータス領域（DSP-150）
   statusLines: (n) => `${n} lines`,
   statusZoom:  (z) => `${z}%`,
@@ -671,6 +729,8 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 | IMP-223 | リンククリックの捕捉 | MUST |
 | IMP-224 | アウトラインの構築 | MUST |
 | IMP-225 | GitHub Alerts のアイコン付与 | MUST |
+| IMP-226 | 画像の読み込み失敗 | MUST |
+| IMP-227 | 見出しのアンカー | SHOULD |
 | IMP-230 | Mermaid と KaTeX の遅延ロード | MUST |
 | IMP-231 | Mermaid の初期化 | MUST |
 | IMP-232 | KaTeX の初期化 | MUST |

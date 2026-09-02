@@ -8,7 +8,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 | 区分 | 内容 |
 | --- | --- |
-| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`・`pack`・`vendorupdate`）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/`（利用者向け 5 文書 + 仕様 20 文書）、`assets/`、`.github/workflows/`（`ci.yml`・`release.yml`）、ルート `README.md` |
+| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 12 パッケージ（`applog` は仕様のみで未実装）、`frontend/`（HTML / CSS / JS / アイコン / 同梱資産）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`・`pack`・`vendorupdate`）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/`（利用者向け 5 文書 + 仕様 20 文書）、`assets/`、`.github/workflows/`（`ci.yml`・`release.yml`）、ルート `README.md` |
 | **未実施** | **リリース CI を実地で走らせていない**（BR-050 の 6 ジョブは最初の `v*` タグで初めて動く）。**手動テスト 60 件**（41 章、E2E-205）。P4 の 41 章 G2〜G9 のうち利用者未確認の項目 |
 
 > [!IMPORTANT]
@@ -21,7 +21,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 > - **画面を説明する記述は、仕様書の図（03 章）か `frontend/index.html` を開いてから書く。** ペインの並びは `Files` → `Outline` → 本文であり、ツールバーのボタンは 6 つ（検索と倍率のボタンは無い）。**間違えても機械が教えてくれない種類の記述**である
 > - アスキーアートは組み立ててから桁を検証する。枠内は ASCII のみにする（日本語の全角幅で崩れるため）
 
-仕様は `specs-4.2.0` タグの時点で一度完成しており、その後の改訂は `docs/specs/README.md` の改訂履歴に記録する（現在 **4.3.0**）。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直し、**改訂履歴に 1 行足して版を上げる**（NFR-071）。
+仕様は `specs-4.2.0` タグの時点で一度完成しており、その後の改訂は `docs/specs/README.md` の改訂履歴に記録する（現在 **4.4.0**）。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直し、**改訂履歴に 1 行足して版を上げる**（NFR-071）。
 
 > [!IMPORTANT]
 > **進捗の唯一の状態は `workspace/plans/implementation-progress.md`**（現在地・タスク一覧・検証ログ・決定と逸脱の記録・未解決の課題）。作業を始める前に読む。手順は同じディレクトリの `implementation-prompt.md`。
@@ -34,9 +34,9 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 | 層 | 文書 | ID | 内容 |
 | --- | --- | --- | --- |
 | 要求 | 01〜07 | `FR` `UI` `MD` `AR` `BR` `NFR` | 何を満たすか（165 件） |
-| 実装 | 10〜13 | `IMP` | どう作るか（101 件） |
-| 表示 | 20〜22 | `DSP` | どう見えるか（66 件） |
-| 単体テスト | 30〜31 | `UT` | 部品が正しいか（86 件） |
+| 実装 | 10〜13 | `IMP` | どう作るか（103 件） |
+| 表示 | 20〜22 | `DSP` | どう見えるか（67 件） |
+| 単体テスト | 30〜31 | `UT` | 部品が正しいか（88 件） |
 | E2E テスト | 40〜41 | `E2E` | 配布物が動くか（83 件） |
 | 横断 | 90 | — | 要求 ↔ 実装 ↔ 表示 の対応表 |
 
@@ -50,7 +50,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 - **`internal/` は Wails に依存しない。** Wails の API を呼ぶのは `main.go` と `app.go` だけ（IMP-012）。これが崩れると単体テストに GUI 依存が付いてくる（UT-002）。
 - **判断を伴うロジックを `app.go` に置かない。** 履歴・起動時の対象解決・表示用パスの算出は `internal/session` へ（IMP-012, IMP-191, IMP-193）。
-- `internal/` 同士の依存は `document → renderer` のみ。共通処理は `app.go` で組み合わせる（IMP-012）。
+- **`internal/` 同士の依存は 2 系統のみ**（IMP-012）。`document → renderer` と、任意のパッケージ → **葉パッケージ**（`mdfile` / `localurl` / `applog`）。葉は標準ライブラリしか使わず、**葉に依存を追加してはならない**。それ以外の共通処理は `app.go` で組み合わせる。
 - フロントエンドから任意のパスを開く汎用 API を作らない。開く経路は 6 つに限る（IMP-300, IMP-192）。
 
 ### Markdown 変換
@@ -92,7 +92,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 - **Linux ビルドは `-tags webkit2_41` を必ず指定する**（AR-003, BR-010）。忘れると 4.0 系にリンクされ Ubuntu 24.04 で起動しない。
 - **UPX 等の実行ファイル圧縮を使わない**（BR-010, NFR-052）。ウイルス対策ソフトの誤検知を招く。
 - アイコンの原本は `assets/` が唯一の正。ビルド前に `build/` へ複製する（BR-013）。`assets/icon.ico` を `go:embed` しない（IMP-032）。
-- 既定ではログを出さない。`MARKVIEW_DEBUG=1` のときだけ標準エラーへ（IMP-023, NFR-041）。
+- 既定ではログを出さない。`MARKVIEW_DEBUG=1` のときだけ標準エラーへ（IMP-023, NFR-041）。**環境変数を読むのは `internal/applog` だけ**にする。`grep -rn MARKVIEW_DEBUG --include=*.go` が 1 ファイルしか返さないこと。判定が散ると、そのうち 1 か所が漏れて配布物が出力を始める。
 
 ## テストの書き方
 

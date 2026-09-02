@@ -97,6 +97,38 @@
   margin-bottom: var(--md-16);
   font-weight: 600;
   line-height: 1.25;
+  /* アンカーを左外側へ絶対配置するための基準（DSP-023） */
+  position: relative;
+}
+
+/* --- 見出しのアンカー（DSP-023, MD-020, IMP-227） --- */
+
+.markdown-body .heading-anchor {
+  position: absolute;
+  left: -1.2em;
+  /* 本文の折り返しに影響させない。見出しの文字の位置を動かさない */
+  display: inline-flex;
+  align-items: center;
+  height: 1em;
+  color: var(--color-fg-muted);
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+}
+
+/* hover に加えてキーボードでも出す（DSP-016, DSP-023） */
+.markdown-body h1:hover .heading-anchor,
+.markdown-body h2:hover .heading-anchor,
+.markdown-body h3:hover .heading-anchor,
+.markdown-body h4:hover .heading-anchor,
+.markdown-body h5:hover .heading-anchor,
+.markdown-body h6:hover .heading-anchor,
+.markdown-body .heading-anchor:focus-visible {
+  opacity: 1;
+}
+
+/* 本文中のリンクと違い、下線は引かない。アイコンだけのため意味がない */
+.markdown-body .heading-anchor:hover {
+  text-decoration: none;
 }
 
 /* h1 と h2 だけ下端に境界線を引く（MD-020, DSP-022） */
@@ -371,6 +403,19 @@
 
 /* 表の中の画像には地を敷かない。行の縞模様が途切れて見える */
 .markdown-body table img {
+  background-color: transparent;
+}
+
+/* 読み込みに失敗した画像（DSP-123, IMP-226）。
+   クラスは JavaScript が付ける。失敗した img を選ぶセレクタが Chromium に
+   存在しないため、CSS だけでは書けない。
+   代替テキストの描画はブラウザ既定の alt 表示に任せる。 */
+.markdown-body img.is-broken {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border-default);
+  color: var(--color-fg-muted);
+  /* 成功時の地は失敗時には意味がない */
   background-color: transparent;
 }
 

@@ -106,20 +106,28 @@ export function renderDocument(doc) {
   // 4. GitHub Alerts のアイコンを付与する（IMP-225）。
   decorateAlerts(markdown);
 
-  // 5. スクロール連動の監視対象を作り直す（IMP-222）。
+  // 5. 見出しにアンカーを付与する（IMP-227, MD-020）。
+  decorateHeadings(markdown);
+
+  // 6. 画像の読み込み失敗を捉える配線を行う（IMP-226, DSP-123）。
+  //    **遅らせすぎない。** 配線までに読み込みが終わった画像は error を
+  //    受け取れないため、markBrokenImages が既に失敗しているものを別途拾う。
+  markBrokenImages(markdown);
+
+  // 7. スクロール連動の監視対象を作り直す（IMP-222）。
   observeHeadings(markdown, doc.headings);
 
-  // 6. needsMermaid / needsKaTeX に応じて遅延ロードする（IMP-230, NFR-013）。
+  // 8. needsMermaid / needsKaTeX に応じて遅延ロードする（IMP-230, NFR-013）。
   //    **await しない。** 読み込みと描画で本文の表示をブロックしない（NFR-012）。
   if (doc.needsMermaid) drawMermaid(markdown);
   if (doc.needsKaTeX) drawMath(markdown);
 
-  // 7. スクロール位置を設定する（13 章 ScrollDTO）。
+  // 9. スクロール位置を設定する（13 章 ScrollDTO）。
   applyScroll(viewer, doc.scroll, previousTop);
 
-  // 8. アウトラインとステータスを更新する。
+  // 10. アウトラインとステータスを更新する。
   renderOutline(doc.headings);
-  // 7 で位置を飛ばしているため、監視の通知を待たずにここで合わせる（IMP-222）。
+  // 9 で位置を飛ばしているため、監視の通知を待たずにここで合わせる（IMP-222）。
   syncActive();
   updateStatus();
 
@@ -161,6 +169,59 @@ function symbolFor(alert) {
   }
 
   return "";
+}
+
+// decorateHeadings は見出しにアンカーを付与する（IMP-227, MD-020, DSP-023）。
+//
+// **クリックの処理は書かない。** 本文中のリンクは onLinkClick が捕捉し、
+// フラグメントは scrollToAnchor がスクロールに変える（IMP-223, AR-060）。
+// ここで独自のハンドラを足すと経路が 2 つになる。
+//
+// href に使う値は Go 側が生成した見出し ID（MD-021 のスラッグ）であり、
+// ここで組み替えない。
+export function decorateHeadings(root) {
+  for (const heading of root.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+    // Go 側は必ず ID を付ける（IMP-117）が、防御的に扱う。
+    if (!heading.id) continue;
+
+    const anchor = document.createElement("a");
+    anchor.className = "heading-anchor";
+    anchor.href = "#" + heading.id;
+    // アイコンだけのリンクに読み上げ名を与える（IMP-295, IMP-290）。
+    anchor.setAttribute("aria-label", S.headingAnchor);
+    anchor.appendChild(icon("icon-link"));
+
+    heading.insertBefore(anchor, heading.firstChild);
+  }
+}
+
+// markBrokenImages は読み込みに失敗した画像へ is-broken を付ける
+// （IMP-226, DSP-123, FR-022）。
+//
+// **CSS だけでは実装できない。** 読み込みに失敗した img を選ぶセレクタが
+// Chromium に存在しないため、この 1 か所だけ JavaScript が要る。
+//
+// **クラスを付けるだけで DOM を組み立てない。** 代替テキストの描画は
+// ブラウザ既定の alt 表示に任せ、枠と色は CSS が与える（DSP-123）。alt は
+// 文書由来の文字列であり、innerHTML に渡してはならない（IMP-220）。
+//
+// ローカル画像とリモート画像（MD-071）を区別しない。FR-022 はどちらも
+// 同じ扱いと定めている。
+export function markBrokenImages(root) {
+  for (const img of root.querySelectorAll("img")) {
+    img.addEventListener("error", () => img.classList.add("is-broken"));
+    // 再読み込みで復帰しうる。成功したら外す。
+    img.addEventListener("load", () => img.classList.remove("is-broken"));
+
+    // **配線した時点ですでに失敗しているものを拾う。**
+    //
+    // innerHTML で挿入した直後に配線しても、キャッシュ済みの失敗では
+    // error がすでに発火し終えている。これを落とすと、手元では再現せず
+    // 実機でだけ枠が出ないという、最も追いにくい形の不具合になる。
+    if (img.complete && img.naturalWidth === 0) {
+      img.classList.add("is-broken");
+    }
+  }
 }
 
 // applyScroll は ScrollDTO の mode に従って位置を決める（IMP-302）。

@@ -220,6 +220,21 @@ FR-022 を実装する。
 | 背景 | `--canvas-default`（透過 PNG の視認性のため） |
 | 読み込み失敗時 | 破線 1px の枠（`--border-default`）内に alt テキストを `--fg-muted` で表示。高さは内容に応じる |
 
+読み込み失敗のフックは **`img.is-broken`** とする。このクラスは JavaScript が付与する（IMP-226）。
+
+| 項目 | 値 |
+| --- | --- |
+| `display` | `inline-block`（枠を成立させるため） |
+| 枠 | `1px dashed var(--color-border-default)` |
+| 文字色 | `--fg-muted` |
+| 余白 | `padding: 8px 12px` |
+| 背景 | なし（`transparent`）。成功時の地は失敗時には意味がない |
+
+> [!NOTE]
+> **CSS だけでは実装できない。** 読み込みに失敗した `img` を選ぶセレクタが Chromium に存在しないため、クラスの付与に JavaScript が要る（IMP-226）。表示仕様がクラス名を名指ししているのはこのためで、`.is-broken` は 12 章と 21 章の接続点である。
+>
+> 代替テキストの描画そのものはブラウザ既定の `alt` 表示に任せる。フロントエンドで文字を組み立てない（IMP-220）。
+
 ## 21.4 コードブロック（DSP-250 系）
 
 ### DSP-250: 外観 **MUST**

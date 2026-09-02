@@ -35,6 +35,10 @@ export const S = {
   // コードブロック（DSP-251）
   copy: "Copy",
 
+  // 見出しのアンカー（IMP-227, DSP-023）。アイコンだけのリンクに
+  // 読み上げ名を与える（IMP-295）
+  headingAnchor: "Link to this section",
+
   // ステータス領域（DSP-150）
   statusLines: (n) => `${n} lines`,
   statusZoom: (z) => `${z}%`,

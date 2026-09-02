@@ -3,18 +3,18 @@
 // 変換とシンタックスハイライトは必ずこの Go 側で行う。フロントエンドに
 // Markdown パーサやハイライタを置かない（AR-031）。
 //
-// このパッケージは internal の他のパッケージに依存しない（IMP-012）。
+// internal のうち、依存を持たない葉パッケージ（localurl / applog）だけを
+// 参照する（IMP-012）。
 package renderer
 
 import (
 	"bytes"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 
+	"github.com/kznagamori/go_MarkView/internal/applog"
 	"github.com/kznagamori/go_MarkView/internal/localurl"
 
 	"github.com/microcosm-cc/bluemonday"
@@ -230,17 +230,14 @@ func firstLineIs(source []byte, fence string) bool {
 // 想定外の入力で落ちても、その文書が開けないだけで済ませる。
 //
 // スタックトレースは開発モードでのみ標準エラーへ出す（IMP-023, NFR-041）。
-// TODO(P3): IMP-023 の NewLogger() の置き場所が決まったら、環境変数の判定を
-// そちらへ寄せる。
+// 環境変数の判定は applog が持つ。ここで os.Getenv しない。
 func recoverRender(result *Result, err *error) {
 	v := recover()
 	if v == nil {
 		return
 	}
 
-	if os.Getenv("MARKVIEW_DEBUG") == "1" {
-		fmt.Fprintf(os.Stderr, "markview: recovered while rendering: %v\n%s", v, debug.Stack())
-	}
+	applog.Recovered("renderer.Render", v)
 
 	// 途中まで組み立てた結果は返さない。呼び出し側は状態画面を出す（UI-052）。
 	*result = Result{}

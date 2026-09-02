@@ -50,6 +50,9 @@ go_MarkView/
 │   ├── localurl/               AR-040（依存を持たない葉パッケージ）
 │   │   ├── localurl.go         /__local/ URL の組み立てと解読
 │   │   └── localurl_test.go
+│   ├── applog/                 IMP-023（依存を持たない葉パッケージ）
+│   │   ├── applog.go           MARKVIEW_DEBUG の判定とログの初期化
+│   │   └── applog_test.go
 │   ├── document/               IMP-100 系
 │   │   ├── document.go         Document 型、Load、サイズ判定、番兵エラー
 │   │   ├── encoding.go         BOM・改行・UTF-8 検証、行数
@@ -140,11 +143,15 @@ flowchart TD
     SESS --> MDF
     REND --> LURL["localurl"]
     ASSET --> LURL
+    REND --> ALOG["applog"]
+    WATCH --> ALOG
+    MAIN --> ALOG
 ```
 
-- `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile` / `localurl`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
+- `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile` / `localurl` / `applog`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
 - `mdfile`（IMP-105）を例外としているのは、Markdown の拡張子判定を `filetree`（IMP-132）と `session`（IMP-193）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、両者が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
 - `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
+- `applog`（IMP-023）を例外としているのは、「既定ではログを出さない」（NFR-041）が**判定を 1 か所に集めないと守れない**ためである。`MARKVIEW_DEBUG` の判定が散れば、そのうち 1 か所が漏れて配布物が出力を始める。実際に go-webview2 が標準ロガーへ直接書いていた件（IMP-023）を E2E-104 で検出しており、これは自前のコードでも同じように起こりうる。`mdfile` / `localurl` と同じく**標準ライブラリしか使わない葉**であり、**`applog` に依存を追加してはならない**。
 - `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼ぶのは `main.go` と `app.go` / `bind.go` のみとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。
 - **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に置き、`app.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
@@ -195,12 +202,32 @@ FR-111（異常終了の回避）を実装レベルで保証するため、以�
 - 環境変数 `MARKVIEW_DEBUG=1` が設定されている場合に限り、標準エラー出力へログを出す。ファイルには出力しない。
 - ログ出力には標準ライブラリの `log/slog` を用い、出力先を `os.Stderr` に固定する。
 
+配置は `internal/applog` とする。**依存を持たない葉パッケージ**であり、どのパッケージから参照してもよい（IMP-012）。
+
 ```go
-// internal/buildinfo などから参照する共通のログ初期化
-func NewLogger() *slog.Logger  // MARKVIEW_DEBUG が未設定なら io.Discard を出力先とする
+package applog
+
+// Enabled は MARKVIEW_DEBUG=1 かを返す。
+//
+// **環境変数を読むのはこの関数だけとする。** 他のどこでも os.Getenv しない。
+// 判定が散れば、そのうち 1 か所が漏れて配布物が出力を始める。
+func Enabled() bool
+
+// New は出力先を固定したロガーを返す。
+// Enabled() が false なら io.Discard を出力先とする。
+func New() *slog.Logger
+
+// Recovered は recover した値とスタックトレースを記録する（IMP-022）。
+// where は "renderer.Render" のような発生箇所。
+func Recovered(where string, v any)
 ```
 
-- **標準の `log` パッケージの出力先も捨てる。** 「ログを出さない」は自分が書かなければ満たせるものではなく、**依存ライブラリが標準ロガーへ直接書く**。`go-webview2` は環境の初期化に成功したことを `log.Printf` で報告しており（v1.0.22 の `pkg/edge/chromium.go`）、そのままだと配布物が起動のたびに標準エラーへ 1 行出す。ウィンドウを起動する経路の入口で `log.SetOutput(io.Discard)` を呼ぶ（`MARKVIEW_DEBUG=1` のときは呼ばない）。MarkView 自身は `log/slog` を使うため、これで自前のログが消えることはない。
+- 関数名を `NewLogger` としない。パッケージ名と語が重複する（IMP-020）。
+- **`"1"` 以外はすべて無効とする。** `0` / `true` / 空文字 / 未設定のいずれでも出力しない。ここを緩めると、意図しない値で出力が復活する（UT-806）。
+- `Recovered` は `recover` した直後に呼ぶ。スタックは巻き戻ると取れないため、呼び出し側で `debug.Stack()` を持ち回らない。
+- 検査は機械的に行える。`grep -rn 'MARKVIEW_DEBUG' --include=*.go` が `internal/applog` の 1 ファイルだけを返すこと。
+
+- **標準の `log` パッケージの出力先も捨てる。** 「ログを出さない」は自分が書かなければ満たせるものではなく、**依存ライブラリが標準ロガーへ直接書く**。`go-webview2` は環境の初期化に成功したことを `log.Printf` で報告しており（v1.0.22 の `pkg/edge/chromium.go`）、そのままだと配布物が起動のたびに標準エラーへ 1 行出す。ウィンドウを起動する経路の入口で `log.SetOutput(io.Discard)` を呼ぶ（`applog.Enabled()` が true のときは呼ばない）。MarkView 自身は `log/slog` を使うため、これで自前のログが消えることはない。**ここでも環境変数を直接読まず `applog.Enabled()` を使う**（判定を 1 か所に保つため）。
   - 2026-09-02 に E2E-104 のケース 5 で検出した。**要求としては最初から MUST だったが、誰も確かめていなかった。**
 
 ### IMP-024: 並行性 **MUST**
@@ -290,6 +317,7 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 | `assetsrv` | 拡張子の許可・拒否、パス正規化、ヘッダ | AR-041, NFR-031 |
 | `opener` | 引数の組み立て（実際の起動は行わない） | FR-053 |
 | `ostheme` | レジストリ値と gsettings 出力の解釈（実際の問い合わせは行わない） | FR-071 |
+| `applog` | `MARKVIEW_DEBUG` の判定と出力先の切り替え（`"1"` 以外はすべて無効） | NFR-041 |
 
 ### IMP-041: ゴールデンテスト **SHOULD**
 
