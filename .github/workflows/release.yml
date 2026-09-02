@@ -353,7 +353,45 @@ jobs:
       - name: Compose release notes
         run: |
           tag="${{ github.ref_name }}"
-          previous="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+
+          # 変更点の基準とするタグを選ぶ（BR-051）。
+          #
+          # **git describe を使ってはならない。** 返るのは「そのコミットから
+          # 到達できる」最も近いタグであり、前のリリースへ到達できるとは
+          # 限らない。vendor-update が作る資産更新のコミット（BR-043）は
+          # 既定ブランチへ取り込めないことがあり、その場合タグは本流から
+          # 外れた枝に残る。実際に v0.1.0-rc.2 で基準が specs-4.2.0 まで
+          # 落ち、変更点に全履歴が並んだ。
+          #
+          # 代わりにタグの一覧から選ぶ。到達可能性に依存しない。
+          #
+          #   プレリリース: 直前のタグ（rc を含む）
+          #   本リリース  : 直前の本リリース（rc を除く）
+          #
+          # 本タグで rc を基準にすると、rc と本タグの間に別の変更を入れない
+          # 運用（E2E-205）のため変更点が空になる。
+          #
+          # 並べ替えは作成日時とする。版番号順（-v:refname）は rc の扱いに
+          # versionsort.suffix の設定が要り、設定を忘れると v1.0.0-rc.1 が
+          # v1.0.0 より後ろに来る。
+          #
+          # **自分より後に作られたタグを候補から外す。** 単に「自分以外で
+          # 最も新しい」とすると、古いタグでワークフローを再実行したときに
+          # 未来のタグを掴み、変更点が空になる。
+          self="$(git for-each-ref --format='%(creatordate:unix)' "refs/tags/${tag}")"
+          tags="$(
+            git for-each-ref --sort=-creatordate \
+              --format='%(creatordate:unix) %(refname:short)' 'refs/tags/v*' \
+              | awk -v self="$self" '$1 <= self { print $2 }' \
+              | grep -vFx "$tag" || true
+          )"
+          if [ "${{ needs.vendor-update.outputs.prerelease }}" != "true" ]; then
+            tags="$(printf '%s\n' "$tags" | grep -v -- '-rc\.' || true)"
+          fi
+          previous="$(printf '%s\n' "$tags" | grep -v '^$' | head -n 1 || true)"
+
+          echo "タグ: ${tag}"
+          echo "基準: ${previous:-（見つからないため直近のコミットを列挙する）}"
 
           {
             echo "## 変更点"
