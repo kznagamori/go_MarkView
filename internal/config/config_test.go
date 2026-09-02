@@ -49,14 +49,12 @@ func TestDefault(t *testing.T) {
 		want any
 	}{
 		{"テーマは OS 追従（空文字）", d.Theme, ""},
-		{"表示倍率", d.Zoom, 100},
 		{"アウトラインは表示", d.OutlineVisible, true},
 		{"ファイルツリーは非表示", d.FileTreeVisible, false},
 		{"アウトライン幅", d.OutlineWidth, 240},
 		{"ファイルツリー幅", d.FileTreeWidth, 260},
 		{"ウィンドウ幅", d.WindowWidth, 1280},
 		{"ウィンドウ高さ", d.WindowHeight, 860},
-		{"最大化しない", d.WindowMaximized, false},
 	}
 
 	for _, tt := range tests {
@@ -86,10 +84,10 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"theme": true, "zoom": true,
+		"theme":          true,
 		"outlineVisible": true, "fileTreeVisible": true,
 		"outlineWidth": true, "fileTreeWidth": true,
-		"windowWidth": true, "windowHeight": true, "windowMaximized": true,
+		"windowWidth": true, "windowHeight": true,
 	}
 
 	for k := range m {
@@ -106,6 +104,7 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 	// 具体的に禁じられているキーは名指しでも見る。
 	for _, ng := range []string{
 		"x", "y", "positionX", "positionY", "windowX", "windowY",
+		"zoom", "windowMaximized",
 		"path", "file", "lastFile", "recent", "history", "treeRoot", "search",
 	} {
 		if _, ok := m[ng]; ok {
@@ -114,17 +113,19 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 	}
 }
 
-// TestLoad_IgnoresForbiddenKeys は UT-505 ケース 3 を検証する。
+// TestLoad_IgnoresForbiddenKeys は UT-505 ケース 5 を検証する。
 //
-// 位置を含む JSON を読み込んでも、構造体にフィールドがないため無視される。
+// 位置・倍率・最大化状態を含む JSON を読み込んでも、構造体にフィールドが
+// ないため無視される（UI-111, UI-115）。
 func TestLoad_IgnoresForbiddenKeys(t *testing.T) {
 	isolateTempDir(t)
-	writeConfig(t, `{"zoom":150,"x":100,"y":200,"lastFile":"/secret/a.md"}`)
+	writeConfig(t, `{"theme":"dark","zoom":150,"windowMaximized":true,`+
+		`"x":100,"y":200,"lastFile":"/secret/a.md"}`)
 
 	c := Load()
 
-	if c.Zoom != 150 {
-		t.Errorf("Zoom = %d, want 150（既知の項目は読める）", c.Zoom)
+	if c.Theme != "dark" {
+		t.Errorf("Theme = %q, want dark（既知の項目は読める）", c.Theme)
 	}
 
 	// 読み込んだ設定を書き出しても、禁じた項目は現れない。
@@ -132,7 +133,9 @@ func TestLoad_IgnoresForbiddenKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, ng := range []string{`"x"`, `"y"`, "lastFile", "secret"} {
+	for _, ng := range []string{
+		`"x"`, `"y"`, "lastFile", "secret", "zoom", "windowMaximized",
+	} {
 		if strings.Contains(string(data), ng) {
 			t.Errorf("書き出した設定に %q が含まれている: %s", ng, data)
 		}
@@ -159,7 +162,7 @@ func TestLoad_Fallback(t *testing.T) {
 		{"配列", "[1,2,3]", true},
 		// 有効な項目を読んだ後に型が違う項目が来る。途中まで反映した値を
 		// そのまま返す実装は、ここで落ちる。
-		{"途中まで有効な JSON", `{"theme":"dark","zoom":"abc"}`, true},
+		{"途中まで有効な JSON", `{"theme":"dark","outlineWidth":"abc"}`, true},
 		{"数値", "42", true},
 	}
 
@@ -192,26 +195,26 @@ func TestLoad_Partial(t *testing.T) {
 				if c.Theme != "dark" {
 					t.Errorf("Theme = %q, want dark", c.Theme)
 				}
-				if c.Zoom != Default().Zoom {
-					t.Errorf("Zoom = %d, want 既定値 %d", c.Zoom, Default().Zoom)
-				}
 				if c.OutlineWidth != Default().OutlineWidth {
 					t.Errorf("OutlineWidth = %d, want 既定値", c.OutlineWidth)
+				}
+				if c.WindowWidth != Default().WindowWidth {
+					t.Errorf("WindowWidth = %d, want 既定値", c.WindowWidth)
 				}
 			},
 		},
 		{
 			name:    "未知のキーを含む",
-			content: `{"zoom":150,"unknownKey":"x","another":123}`,
+			content: `{"outlineWidth":300,"unknownKey":"x","another":123}`,
 			check: func(t *testing.T, c Config) {
-				if c.Zoom != 150 {
-					t.Errorf("Zoom = %d, want 150（未知のキーは無視する）", c.Zoom)
+				if c.OutlineWidth != 300 {
+					t.Errorf("OutlineWidth = %d, want 300（未知のキーは無視する）", c.OutlineWidth)
 				}
 			},
 		},
 		{
 			name:    "型の違う値",
-			content: `{"zoom":"abc"}`,
+			content: `{"outlineWidth":"abc"}`,
 			check: func(t *testing.T, c Config) {
 				if c != Default() {
 					t.Errorf("Load() = %+v, want 既定値 %+v", c, Default())
@@ -219,13 +222,24 @@ func TestLoad_Partial(t *testing.T) {
 			},
 		},
 		{
+			// UT-503 ケース 4: 保存しない項目のキーが混ざっていても、
+			// 無視したうえで他の項目を正しく読む（UI-111, UI-115）。
+			name:    "保存しない項目のキーを含む",
+			content: `{"zoom":150,"windowMaximized":true,"theme":"dark"}`,
+			check: func(t *testing.T, c Config) {
+				if c.Theme != "dark" {
+					t.Errorf("Theme = %q, want dark（他の項目は読める）", c.Theme)
+				}
+				if c != withTheme(Default(), "dark") {
+					t.Errorf("Load() = %+v, want テーマ以外は既定値", c)
+				}
+			},
+		},
+		{
 			// 読み込みの経路でも Normalize が働くことを見る（UI-113）。
 			name:    "範囲外の値は丸められる",
-			content: `{"zoom":9999,"outlineWidth":-5,"theme":"blue"}`,
+			content: `{"outlineWidth":-5,"theme":"blue"}`,
 			check: func(t *testing.T, c Config) {
-				if c.Zoom != Default().Zoom {
-					t.Errorf("Zoom = %d, want 既定値 %d", c.Zoom, Default().Zoom)
-				}
 				if c.OutlineWidth != Default().OutlineWidth {
 					t.Errorf("OutlineWidth = %d, want 既定値 %d", c.OutlineWidth, Default().OutlineWidth)
 				}
@@ -274,29 +288,23 @@ func TestNormalize(t *testing.T) {
 		// アウトラインが毎回開いてしまう（UT-503 の「false を明示した項目」）。
 		{"ゼロ値の構造体", Config{}, zeroNormalized()},
 
-		// UT-504 ケース 1・2: 表示倍率
-		{"倍率が 0", withZoom(d, 0), d},
-		{"倍率が負", withZoom(d, -100), d},
-		{"倍率が上限超え", withZoom(d, 1000), d},
-		{"倍率が下限未満", withZoom(d, MinZoom-1), d},
-
-		// UT-504 ケース 3: 境界値はそのまま
-		{"倍率が下限ちょうど", withZoom(d, MinZoom), withZoom(d, MinZoom)},
-		{"倍率が上限ちょうど", withZoom(d, MaxZoom), withZoom(d, MaxZoom)},
-
-		// UT-504 ケース 4・5: ペイン幅
+		// UT-504 ケース 1〜3: アウトライン幅
 		{"アウトライン幅が負", withOutlineWidth(d, -10), d},
 		{"アウトライン幅が下限未満", withOutlineWidth(d, MinPaneWidth-1), d},
 		{"アウトライン幅が下限ちょうど", withOutlineWidth(d, MinPaneWidth), withOutlineWidth(d, MinPaneWidth)},
-		{"ツリー幅が下限未満", withFileTreeWidth(d, 10), d},
 
-		// UT-504 ケース 6: ウィンドウサイズ
-		{"ウィンドウ幅が下限未満", withWindowSize(d, 100, d.WindowHeight), d},
+		// UT-504 ケース 4: ツリー幅
+		{"ツリー幅が 0", withFileTreeWidth(d, 0), d},
+		{"ツリー幅が下限未満", withFileTreeWidth(d, MinPaneWidth-1), d},
+		{"ツリー幅が下限ちょうど", withFileTreeWidth(d, MinPaneWidth), withFileTreeWidth(d, MinPaneWidth)},
+
+		// UT-504 ケース 5〜7: ウィンドウサイズ
+		{"ウィンドウ幅が下限未満", withWindowSize(d, MinWindowW-1, d.WindowHeight), d},
 		{"ウィンドウ幅が下限ちょうど", withWindowSize(d, MinWindowW, d.WindowHeight), withWindowSize(d, MinWindowW, d.WindowHeight)},
-		{"ウィンドウ高さが下限未満", withWindowSize(d, d.WindowWidth, 100), d},
+		{"ウィンドウ高さが下限未満", withWindowSize(d, d.WindowWidth, MinWindowH-1), d},
 		{"ウィンドウ高さが下限ちょうど", withWindowSize(d, d.WindowWidth, MinWindowH), withWindowSize(d, d.WindowWidth, MinWindowH)},
 
-		// UT-504 ケース 7: テーマ
+		// UT-504 ケース 8: テーマ
 		{"未知のテーマ", withTheme(d, "blue"), d},
 		{"テーマが light", withTheme(d, "light"), withTheme(d, "light")},
 		{"テーマが dark", withTheme(d, "dark"), withTheme(d, "dark")},
@@ -328,7 +336,6 @@ func zeroNormalized() Config {
 	return c
 }
 
-func withZoom(c Config, v int) Config          { c.Zoom = v; return c }
 func withTheme(c Config, v string) Config      { c.Theme = v; return c }
 func withOutlineWidth(c Config, v int) Config  { c.OutlineWidth = v; return c }
 func withFileTreeWidth(c Config, v int) Config { c.FileTreeWidth = v; return c }
@@ -341,7 +348,7 @@ func TestSave(t *testing.T) {
 
 		want := Default()
 		want.Theme = "dark"
-		want.Zoom = 150
+		want.OutlineWidth = 300
 		want.FileTreeVisible = true
 
 		if err := Save(want); err != nil {
@@ -356,19 +363,19 @@ func TestSave(t *testing.T) {
 		isolateTempDir(t)
 
 		first := Default()
-		first.Zoom = 150
+		first.OutlineWidth = 300
 		if err := Save(first); err != nil {
 			t.Fatal(err)
 		}
 
 		second := Default()
-		second.Zoom = 200
+		second.OutlineWidth = 400
 		if err := Save(second); err != nil {
 			t.Fatal(err)
 		}
 
-		if got := Load(); got.Zoom != 200 {
-			t.Errorf("Zoom = %d, want 200", got.Zoom)
+		if got := Load(); got.OutlineWidth != 400 {
+			t.Errorf("OutlineWidth = %d, want 400", got.OutlineWidth)
 		}
 	})
 

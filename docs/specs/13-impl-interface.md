@@ -75,13 +75,14 @@ type InitialStateDTO struct {
 
 type ConfigDTO struct {
     Theme           string `json:"theme"`           // "light" | "dark"（解決済み。FR-071）
-    Zoom            int    `json:"zoom"`
     OutlineVisible  bool   `json:"outlineVisible"`
     FileTreeVisible bool   `json:"fileTreeVisible"`
     OutlineWidth    int    `json:"outlineWidth"`
     FileTreeWidth   int    `json:"fileTreeWidth"`
 }
 ```
+
+**表示倍率を含めない。** 倍率は保存しない（UI-111, UI-115）ため、往路では渡すものがなく、復路でも Go 側に受け取る先がない（IMP-150）。倍率はフロントエンドの `state` だけが持つ（IMP-210, IMP-242）。ウィンドウの大きさと最大化状態も同様に含めない（サイズは Go 側が Wails のランタイムから直接読む。IMP-194）。
 
 `Theme` は Go 側で OS 設定への追従（FR-071）まで解決済みの値を返す。OS 設定の取得は `ostheme`（IMP-175）が行う。フロントエンドで `prefers-color-scheme` を判定して上書きしない。
 

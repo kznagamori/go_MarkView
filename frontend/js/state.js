@@ -31,10 +31,11 @@ export const state = {
 // 「まだ選んでいない」状態が最初の保存で失われ、以後 OS 設定を変えても
 // 追従しなくなる。ペイン幅の一時抑制と同じく、利用者の意思を別に持つ
 // （IMP-246）。
+// **state.zoom は含めない。** 倍率は保存しないため Go 側に対応するフィールドが
+// なく、ConfigDTO にも無い（UI-111, UI-115, IMP-150, IMP-303）。
 export function configPatch() {
   return {
     theme: state.themeExplicit ? state.theme : "",
-    zoom: state.zoom,
     outlineVisible: state.outlineVisible,
     fileTreeVisible: state.fileTreeVisible,
     outlineWidth: state.outlineWidth,
@@ -52,7 +53,7 @@ let queued = false;
 //
 // バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、
 // 立て続けに 2 つ投げると **到着順が入れ替わりうる**。実際、ペインの開閉と
-// 倍率の変更を続けて行うと、先に投げたほうが後に処理され、新しい倍率が
+// 別の設定変更を続けて行うと、先に投げたほうが後に処理され、新しい値が
 // 古い値で上書きされた。前の応答を待ってから次を送ることで順序を保つ。
 //
 // 送信待ちが既にあるときは新たに積まない。ConfigDTO は差分ではなく状態の

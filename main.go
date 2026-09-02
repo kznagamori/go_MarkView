@@ -25,6 +25,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"github.com/kznagamori/go_MarkView/internal/assetsrv"
 	"github.com/kznagamori/go_MarkView/internal/buildinfo"
@@ -132,8 +133,8 @@ func launch(startup session.Startup, startupErr error) error {
 		MinWidth:  640, // UI-011
 		MinHeight: 480,
 
-		// 最大化状態は復元する。位置は復元しない（UI-110, UI-111）。
-		WindowStartState: startState(cfg),
+		// WindowStartState は指定しない。最大化状態も位置も復元しないため、
+		// 常に既定の options.Normal で開く（UI-111, UI-115）。
 
 		AssetServer: &assetserver.Options{
 			// Assets を渡さず Handler だけを使う。埋め込み資産の
@@ -161,15 +162,27 @@ func launch(startup session.Startup, startupErr error) error {
 		// Windows は実行ファイルのリソースからアイコンを取るため指定不要。
 		// Linux は埋め込んだ PNG を明示的に渡す（IMP-032）。
 		Linux: &linux.Options{Icon: appIconPNG},
-	})
-}
 
-// startState は起動時のウィンドウ状態を返す（UI-110）。
-func startState(cfg config.Config) options.WindowStartState {
-	if cfg.WindowMaximized {
-		return options.Maximised
-	}
-	return options.Normal
+		// WebView2 のユーザデータ領域をテンポラリへ寄せる（AR-004, NFR-033）。
+		//
+		// **指定しないと %APPDATA%\MarkView.exe が使われる。** 既定値は
+		// go-webview2 が os.Getenv("AppData") と実行ファイル名から組み立てる。
+		// 数十 MB になりうるため、設定ファイル（IMP-152）と同じ %TEMP%\MarkView
+		// の下にまとめ、利用者が 1 か所を消せば痕跡が残らない状態にする。
+		//
+		// **環境変数では代替できない。** go-webview2 は環境生成の直前に
+		// WEBVIEW2_USER_DATA_FOLDER を自身の計算値で上書きするため、外から
+		// 与えた値もレジストリの設定も効かない。このオプションが唯一の手段。
+		//
+		// config.Dir() を使わず os.TempDir() から直接組み立てる。config.Dir()
+		// はディレクトリを作成しエラーを返しうるが、ここは起動を止めてはならない
+		// （FR-012）。ディレクトリは WebView2 が自分で作る。
+		//
+		// Linux には対応するオプションが無く、WebKitGTK の既定に従う（AR-004）。
+		Windows: &windows.Options{
+			WebviewUserDataPath: filepath.Join(os.TempDir(), "MarkView", "webview2"),
+		},
+	})
 }
 
 // frontendAssets は埋め込みの frontend/ を根とした FS を返す。

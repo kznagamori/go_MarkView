@@ -12,33 +12,42 @@ import (
 )
 
 // 値の範囲（IMP-153）。
+//
+// **倍率の範囲と刻みはここに置かない。** 倍率は保存されず（UI-111）Normalize の
+// 対象にならない。範囲と刻みは操作の上限・下限としてフロントエンドだけが持つ
+// （IMP-242, FR-081）。
 const (
 	MinPaneWidth = 160 // UI-030, UI-040
-	MinZoom      = 50  // FR-081
-	MaxZoom      = 300
-	ZoomStep     = 10
 	MinWindowW   = 640 // UI-011
 	MinWindowH   = 480
 )
 
 // Config は保存する設定（IMP-150, UI-110）。
 //
-// **ウィンドウ位置（X, Y）のフィールドを定義しない。** 構造体に存在しなければ、
-// 保存も復元も起こり得ない（UI-111）。モニタ構成が変わったときにウィンドウが
-// 画面外へ配置される事故を、構造として防いでいる。
+// **次のフィールドを定義しない。** 構造体に存在しなければ、保存も復元も
+// 起こり得ない（UI-111）。
+//
+//   - ウィンドウ位置（X, Y）……モニタ構成が変わったときにウィンドウが画面外へ
+//     配置される事故を、構造として防ぐ
+//   - 表示倍率（Zoom）……セッション内の値であり、フロントエンドだけが持つ
+//     （UI-115, IMP-242）
+//   - 最大化状態（WindowMaximized）……起動時は常に通常状態（UI-115）
+//
+// 倍率と最大化状態を外したのは多重起動のためである（UI-115）。設定ファイルは
+// 全インスタンスで共有され、保存は構造体まるごとの後勝ちになる。ウィンドウごとに
+// 変えて使う値を保存すると、最後に終了したウィンドウの状態が以後すべての
+// ウィンドウの初期値になってしまう。
 //
 // 同じ理由で、表示していたファイルのパス・ツリールート・履歴・検索語も持たない
 // （NFR-042）。
 type Config struct {
 	Theme           string `json:"theme"` // "light" | "dark" | ""（OS 追従）
-	Zoom            int    `json:"zoom"`  // 50..300
 	OutlineVisible  bool   `json:"outlineVisible"`
 	FileTreeVisible bool   `json:"fileTreeVisible"`
 	OutlineWidth    int    `json:"outlineWidth"`
 	FileTreeWidth   int    `json:"fileTreeWidth"`
 	WindowWidth     int    `json:"windowWidth"`
 	WindowHeight    int    `json:"windowHeight"`
-	WindowMaximized bool   `json:"windowMaximized"`
 }
 
 // Default は UI-110 の既定値を返す（IMP-151）。
@@ -48,14 +57,12 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Theme:           "",
-		Zoom:            100,
 		OutlineVisible:  true,
 		FileTreeVisible: false,
 		OutlineWidth:    240,
 		FileTreeWidth:   260,
 		WindowWidth:     1280,
 		WindowHeight:    860,
-		WindowMaximized: false,
 	}
 }
 
@@ -138,9 +145,6 @@ func (c *Config) Normalize() {
 
 	if c.Theme != "light" && c.Theme != "dark" {
 		c.Theme = d.Theme
-	}
-	if c.Zoom < MinZoom || c.Zoom > MaxZoom {
-		c.Zoom = d.Zoom
 	}
 	if c.OutlineWidth < MinPaneWidth {
 		c.OutlineWidth = d.OutlineWidth

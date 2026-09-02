@@ -164,7 +164,8 @@ export const state = {
 };
 ```
 
-- 状態の**正**は Go 側（IMP-190）に置く。フロントエンドの `state` は描画のための写しであり、永続化に関わる値（テーマ・倍率・ペイン幅・表示状態）を変更したときは Go 側へ通知する（IMP-310）。
+- 状態の**正**は Go 側（IMP-190）に置く。フロントエンドの `state` は描画のための写しであり、永続化に関わる値（テーマ・ペイン幅・表示状態）を変更したときは Go 側へ通知する（IMP-310）。
+- **`state.zoom` は例外で、フロントエンドだけが持つ。** 倍率は保存しないため（UI-111, UI-115）Go 側に対応するフィールドがなく、`configPatch` にも含めない。
 - 表示中の文書パスをフロントエンドで `localStorage` 等に保存しない（NFR-042）。
 - **保存しない一時的な状態は `state` に置かない。** 幅不足によるアウトラインの一時的な非表示（IMP-246）は `panes.js` のモジュール変数とする。`state` は「Go 側の状態の写し」であり、そこに保存しない値を混ぜると、`configPatch` が何を送るべきかが読めなくなる。
 
@@ -176,7 +177,7 @@ export function configPatch()   // ConfigDTO（IMP-303）を組み立てる
 export function saveConfig()    // 現在の状態を Go 側へ通知する
 ```
 
-- **`api.updateConfig` を直接呼ばない。** バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、立て続けに 2 つ投げると**到着順が入れ替わりうる**。実際に、ペインの開閉と倍率の変更を続けて行うと先に投げたほうが後に処理され、新しい倍率が古い値で上書きされた。`saveConfig` は前の応答を待ってから次を送ることで順序を保つ。
+- **`api.updateConfig` を直接呼ばない。** バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、立て続けに 2 つ投げると**到着順が入れ替わりうる**。実際に、ペインの開閉と別の設定変更を続けて行うと先に投げたほうが後に処理され、新しい値が古い値で上書きされた。`saveConfig` は前の応答を待ってから次を送ることで順序を保つ。
 - 送信待ちが既にあるときは新たに積まない。`ConfigDTO` は差分ではなく状態の全体であり、待っている 1 つが送信時点の最新を読めば足りる。
 - **`configPatch` の `theme` は、利用者が自分で切り替えるまで空文字とする**（FR-071, IMP-303）。`state.theme` は Go 側が OS 設定まで解決した値であり、それをそのまま返すと「まだ選んでいない」状態が最初の保存で失われ、以後 OS 設定を変えても追従しなくなる。
 
@@ -187,8 +188,7 @@ export function saveConfig()    // 現在の状態を Go 側へ通知する
 async function boot() {
   const init = await api.getInitialState(); // 13 章 InitialStateDTO
   applyTheme(init.config.theme);
-  applyZoom(init.config.zoom);
-  applyPanes(init.config);
+  applyPanes(init.config);       // 倍率は復元しない。常に 100 %（UI-111, IMP-242）
   initToolbar(); initTooltip(); initFileTree(); initOutline(); initViewer(); initPanes();
   initSearch(); initZoom(); initOverlay(); initDnd(); initShortcuts();
   subscribe();                              // Go からのイベント購読（IMP-322）
@@ -408,17 +408,20 @@ FR-081 を実装する。
 
 ```js
 // js/zoom.js
-export function applyZoom(percent) // 画面へ反映するだけ。保存しない
-export function setZoom(percent)   // 50..300、10 刻みに丸めて反映し、保存する
+function applyZoom(percent)        // 画面へ反映する。**公開しない**
+export function setZoom(percent)   // 50..300、10 刻みに丸めて反映する
 export function stepZoom(delta)    // +1 / -1（1 段 = 10 %）
 export function initZoom()         // Ctrl + ホイールを配線する
 ```
 
+**倍率は設定に保存しない**（UI-111, UI-115）。`state.zoom` はセッション内でのみ保持し、`saveConfig`（IMP-210）を呼ばない。`ConfigDTO` にも含めない（IMP-303）。起動時は常に 100 % から始まる。
+
 - 適用は `#markdown` の CSS カスタムプロパティ `--zoom` を更新することで行い、`font-size` を `calc(16px * var(--zoom) / 100)` として与える（DSP-021）。
 - ツールバー・サイドペイン・ステータスには適用しない（FR-081）。
 - `Ctrl` + ホイールは `wheel` イベントで `ctrlKey` を見て処理し、`preventDefault()` でブラウザ既定のズームを抑止する。リスナは `window` に置く。本文の外（ペインやツールバーの上）でも WebView 既定の拡大が起きてはならない（AR-060）。
-- **起動時の適用と操作による変更を別の関数に分ける。** `applyZoom` は反映のみを行い、保存は `setZoom` から `saveConfig`（IMP-210）を呼ぶ。起動時に保存すると、利用者が変更していない値を書き戻すことになる。
-- 値が変わらないときは何もしない。上限・下限に張り付いた状態でキーを押し続けたときに、同じ値の保存を送り続けない。
+- **範囲（50〜300）と刻み（10）はこのモジュールが持つ。** 倍率は保存されないため、`config` パッケージ側に対応する定数を置かない（IMP-153）。
+- **反映と丸めを別の関数に分ける。** `applyZoom` は渡された値をそのまま反映し、`setZoom` は 10 の倍数へ丸めて範囲へ収めてから `applyZoom` を呼ぶ。**`applyZoom` は公開しない。** 操作の入口を `setZoom` / `stepZoom` に限ることを、モジュールの外から呼べないことで保証する。倍率を復元しなくなった（UI-111）ため、丸めを経ない反映を外部から行う理由がなくなった。
+- 値が変わらないときは何もしない。上限・下限に張り付いた状態でキーを押し続けたときに、同じ値の反映とステータス更新を繰り返さない。
 - 100 % 以外のときだけステータス領域へ倍率を出す（FR-081, DSP-150）。
 
 ### IMP-243: テーマ **MUST**

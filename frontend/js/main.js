@@ -9,7 +9,7 @@ import { errorText } from "./strings.js";
 import { initToolbar } from "./toolbar.js";
 import { initTooltip } from "./tooltip.js";
 import { applyTheme, toggleTheme } from "./theme.js";
-import { applyZoom, initZoom, setZoom, stepZoom } from "./zoom.js";
+import { initZoom, setZoom, stepZoom } from "./zoom.js";
 import { applyPanes, initPanes, togglePane } from "./panes.js";
 import { initFileTree, loadTreeRoot, revealCurrent } from "./filetree.js";
 import { initOutline } from "./outline.js";
@@ -75,7 +75,10 @@ async function boot() {
 
   // テーマの適用を最優先で行い、既定色から切り替わるちらつきを防ぐ（UI-105）。
   applyTheme(init.config.theme);
-  applyZoom(init.config.zoom);
+
+  // 倍率は復元しない。常に 100 % から始まる（UI-111, UI-115, IMP-242）。
+  // state.zoom の初期値が 100 であり、--zoom も未設定時は 100 として効く
+  // （DSP-021）ため、起動時に適用する処理は要らない。
   applyPanes(init.config);
 
   initToolbar({

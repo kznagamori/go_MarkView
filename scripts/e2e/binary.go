@@ -145,6 +145,7 @@ func skipRunChecks(result *report, why string) {
 		{"E2E-104", 3, "README.md を指定して起動"},
 		{"E2E-104", 4, "docs/ を指定して起動"},
 		{"E2E-104", 5, "標準エラーに自前のログが無い"},
+		{"E2E-104", 6, "WebView のデータが %APPDATA% に無い"},
 		{"E2E-105", 1, "存在しないパス"},
 		{"E2E-105", 2, "デバイスファイル"},
 		{"E2E-105", 3, "権限のないファイル"},
@@ -216,6 +217,9 @@ func checkStartup(result *report, exe, data string, alive time.Duration) {
 		{4, "docs/ を指定して起動", []string{"docs"}},
 	}
 
+	// ケース 6 は起動の前後を比べる必要があるため、先に現状を控える。
+	before := snapshotAppDataDir(exe)
+
 	var stderrs []string
 
 	for i, c := range cases {
@@ -256,6 +260,95 @@ func checkStartup(result *report, exe, data string, alive time.Duration) {
 
 	result.verify("E2E-104", 5, "標準エラーに自前のログが無い", len(ours) == 0,
 		emptyOr(ours, fmt.Sprintf("自前のログ 0 行 / OS 側 %d 行", othersCount), "自前のログ: "))
+
+	checkWebviewDataPath(result, exe, before)
+}
+
+// webviewDataState は %APPDATA%\<実行ファイル名>\EBWebView の状態（E2E-104 ケース 6）。
+type webviewDataState struct {
+	path    string
+	exists  bool
+	modTime time.Time
+}
+
+// snapshotAppDataDir は既定の WebView2 データ領域の現状を控える。
+//
+// **見るのは親ではなく `EBWebView` である。** WebView2 が書くのはその配下で
+// あり、親ディレクトリの更新時刻は最初の作成時から動かない。
+func snapshotAppDataDir(exe string) webviewDataState {
+	appData := os.Getenv("AppData")
+	if runtime.GOOS != "windows" || appData == "" {
+		return webviewDataState{}
+	}
+
+	// go-webview2 の既定値は %APPDATA%\<実行ファイル名>（IMP-193）。
+	path := filepath.Join(appData, filepath.Base(exe), "EBWebView")
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return webviewDataState{path: path}
+	}
+
+	return webviewDataState{path: path, exists: true, modTime: info.ModTime()}
+}
+
+// checkWebviewDataPath は WebView2 のデータ領域が %APPDATA% に作られて
+// いないことを確かめる（E2E-104 ケース 6。AR-004, NFR-033, IMP-193）。
+//
+// **`WebviewUserDataPath` の指定漏れを機械的に検出する唯一の手段である。**
+// 指定を落としても画面は何も壊れず、%APPDATA% に数十 MB が書かれるだけで
+// あるため、人が見て気づくことはまずない。
+//
+// 既にある古いディレクトリで落ちないよう、**存在の有無ではなく起動の前後で
+// 変化したか**を見る。開発機には修正前の残骸があることがある。
+func checkWebviewDataPath(result *report, exe string, before webviewDataState) {
+	const (
+		id   = "E2E-104"
+		num  = 6
+		name = "WebView のデータが %APPDATA% に無い"
+	)
+
+	if runtime.GOOS != "windows" {
+		result.skip(id, num, name, "Linux には指定手段が無く、既定に従う（AR-004）")
+
+		return
+	}
+
+	if before.path == "" {
+		result.skip(id, num, name, "AppData 環境変数が無い")
+
+		return
+	}
+
+	after := snapshotAppDataDir(exe)
+
+	// 指定が効いていれば、テンポラリ側に作られる（AR-004）。
+	wanted := filepath.Join(os.TempDir(), "MarkView", "webview2")
+	_, tempErr := os.Stat(wanted)
+	inTemp := tempErr == nil
+
+	switch {
+	case !before.exists && after.exists:
+		result.verify(id, num, name, false,
+			"起動で "+after.path+" が作られた。WebviewUserDataPath の指定漏れ（IMP-193）")
+	case before.exists && !after.modTime.Equal(before.modTime):
+		result.verify(id, num, name, false,
+			"起動で "+after.path+" が更新された。WebviewUserDataPath の指定漏れ（IMP-193）")
+	case !inTemp:
+		result.verify(id, num, name, false,
+			wanted+" が作られていない。WebView2 のデータ領域の位置を確認すること")
+	default:
+		result.verify(id, num, name, true, "データ領域は "+wanted+" 配下"+staleNote(before.exists))
+	}
+}
+
+// staleNote は %APPDATA% 側に古い残骸がある場合の但し書きを返す。
+func staleNote(stale bool) string {
+	if stale {
+		return "（%APPDATA% 側に残骸があるが、この起動では触られていない）"
+	}
+
+	return ""
 }
 
 // goLogPrefix は標準 log パッケージの既定の接頭辞（"2026/09/02 02:47:44 "）。

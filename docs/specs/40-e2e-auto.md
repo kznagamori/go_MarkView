@@ -189,7 +189,7 @@ go run ./scripts/e2e binary   -archive dist/MarkView-v1.0.0-rc.1-linux-amd64.tar
 | 4 | `MarkView -h` | 同じ出力 |
 
 ### E2E-104: 起動と終了
-根拠: FR-012, FR-013, NFR-050
+根拠: FR-012, FR-013, AR-004, NFR-033, NFR-050
 
 **ウィンドウ内の操作は行わない。** 起動して一定時間後に終了させ、異常終了していないことを確認する。
 
@@ -200,6 +200,12 @@ go run ./scripts/e2e binary   -archive dist/MarkView-v1.0.0-rc.1-linux-amd64.tar
 | 3 | `MarkView README.md` | 同上 |
 | 4 | `MarkView docs/` | 同上 |
 | 5 | 起動時の標準エラー出力 | MarkView 自身のログ出力がない（NFR-041。`MARKVIEW_DEBUG` は未設定）。GTK・WebKitGTK など OS 側のライブラリが出す警告は対象外とする |
+| 6 | 起動後の `%APPDATA%\<実行ファイル名>`（Windows のみ） | **存在しない。** WebView2 のユーザデータ領域が `%TEMP%` 配下へ寄っている（AR-004, NFR-033） |
+
+> [!IMPORTANT]
+> ケース 6 は、**`WebviewUserDataPath` の指定漏れ（IMP-193）を機械的に検出する唯一の手段**である。指定を落としても画面上は何も壊れず、`%APPDATA%` に数十 MB が書かれるだけなので、人が見て気づくことはまずない。
+>
+> 見るのは**実行ファイル名と同じ名前のディレクトリ**である。go-webview2 の既定値が `%APPDATA%\<実行ファイル名>` であり、配布物の名前は `MarkView.exe` だが、検証時のファイル名から組み立てて判定する。Linux は指定手段が無いため（AR-004）、このケースを実行しない。
 
 実行方法:
 

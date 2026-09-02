@@ -171,17 +171,21 @@ func (a *App) persistConfig() {
 	_ = config.Save(cfg)
 }
 
-// captureWindowState はウィンドウの大きさと最大化状態を設定へ取り込む
-// （IMP-194, UI-110）。
+// captureWindowState はウィンドウの大きさを設定へ取り込む（IMP-194, UI-110）。
 //
-// これらはフロントエンドから通知されない（ConfigDTO に含まれない。IMP-303）
+// これはフロントエンドから通知されない（ConfigDTO に含まれない。IMP-303）
 // ため、保存の直前に Wails のランタイムから読み出す。
 //
-// **最大化中のサイズは保存しない。** 保存すると、次回に最大化を解除したときの
-// ウィンドウが画面いっぱいのままになる。最大化フラグだけを保存し、幅と高さは
-// 最大化する前の値を保つ。
+// **最大化中のサイズは取り込まない。** 最大化中は画面いっぱいの値が返るため、
+// 保存すると次回のウィンドウが画面いっぱいの大きさで開く。幅と高さは最大化
+// する前の値を保つ。
 //
-// ウィンドウ位置は取得しない。構造体にフィールドが存在しない（IMP-150, UI-111）。
+// 最大化しているかどうかも読むが、これは**保存しないと決めるための判定**で
+// あって、保存する値ではない。最大化状態そのものを保存しないため、次回は常に
+// 通常状態で開く（UI-111, UI-115）。
+//
+// ウィンドウ位置と最大化状態は保存しない。構造体にフィールドが存在しない
+// （IMP-150, UI-111）。
 func (a *App) captureWindowState() {
 	// ウィンドウの状態を読む API は、ウィンドウの生存に依存する。取りこぼしても
 	// 保存そのものは続ける（FR-111, IMP-022）。
@@ -192,20 +196,16 @@ func (a *App) captureWindowState() {
 		return
 	}
 
-	maximized := runtime.WindowIsMaximised(ctx)
-
-	var width, height int
-	if !maximized {
-		width, height = runtime.WindowGetSize(ctx)
+	if runtime.WindowIsMaximised(ctx) {
+		return
 	}
+
+	width, height := runtime.WindowGetSize(ctx)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.cfg.WindowMaximized = maximized
-	if !maximized {
-		a.cfg.WindowWidth, a.cfg.WindowHeight = width, height
-	}
+	a.cfg.WindowWidth, a.cfg.WindowHeight = width, height
 }
 
 // scheduleSave は設定の保存を予約する（UI-114）。

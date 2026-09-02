@@ -292,9 +292,12 @@ func (a *App) SetScrollTop(top int) {
 
 // UpdateConfig は設定を更新する（IMP-310, UI-110, UI-114）。
 //
-// ウィンドウの大きさと最大化状態は ConfigDTO に含まれない。これらは保存の
-// 直前に Wails のランタイムから読み出す（IMP-194）。ここで書き換えないため、
-// 保存済みの値がフロントエンド経由で失われることはない。
+// ウィンドウの大きさは ConfigDTO に含まれない。保存の直前に Wails のランタイム
+// から読み出す（IMP-194）。ここで書き換えないため、保存済みの値がフロントエンド
+// 経由で失われることはない。
+//
+// 表示倍率と最大化状態は保存しないため、そもそも受け取る先がない
+// （UI-111, UI-115, IMP-150）。
 func (a *App) UpdateConfig(patch ConfigDTO) {
 	defer recoverQuiet()
 
@@ -302,7 +305,6 @@ func (a *App) UpdateConfig(patch ConfigDTO) {
 	defer a.mu.Unlock()
 
 	a.cfg.Theme = patch.Theme
-	a.cfg.Zoom = patch.Zoom
 	a.cfg.OutlineVisible = patch.OutlineVisible
 	a.cfg.FileTreeVisible = patch.FileTreeVisible
 	a.cfg.OutlineWidth = patch.OutlineWidth

@@ -530,18 +530,24 @@ package config
 
 type Config struct {
     Theme           string `json:"theme"`           // "light" | "dark"
-    Zoom            int    `json:"zoom"`            // 50..300
     OutlineVisible  bool   `json:"outlineVisible"`
     FileTreeVisible bool   `json:"fileTreeVisible"`
     OutlineWidth    int    `json:"outlineWidth"`
     FileTreeWidth   int    `json:"fileTreeWidth"`
     WindowWidth     int    `json:"windowWidth"`
     WindowHeight    int    `json:"windowHeight"`
-    WindowMaximized bool   `json:"windowMaximized"`
 }
 ```
 
-**ウィンドウ位置（X, Y）のフィールドを定義しない。** 構造体に存在しなければ、保存も復元も起こり得ない（UI-111）。
+**次のフィールドを定義しない。** 構造体に存在しなければ、保存も復元も起こり得ない（UI-111）。
+
+| 定義しないもの | 根拠 |
+| --- | --- |
+| ウィンドウ位置（`X`, `Y`） | UI-111。起動時は常にプライマリモニタの中央 |
+| 表示倍率（`Zoom`） | UI-111, UI-115。セッション内の値であり、フロントエンドだけが持つ（IMP-242） |
+| 最大化状態（`WindowMaximized`） | UI-111, UI-115。起動時は常に通常状態 |
+
+倍率と最大化状態は「保存しないだけ」であり、セッション内では機能する。**保存しないことを構造で保証する**という点で、ウィンドウ位置と同じ扱いにする。
 
 ### IMP-151: 読み書き **MUST**
 
@@ -586,13 +592,12 @@ func Path() (string, error) // Dir() + "/config.json"
 ```go
 const (
     MinPaneWidth = 160  // UI-030, UI-040
-    MinZoom      = 50   // FR-081
-    MaxZoom      = 300
-    ZoomStep     = 10
     MinWindowW   = 640  // UI-011
     MinWindowH   = 480
 )
 ```
+
+**倍率の範囲（50〜300、10 刻み）は `config` に置かない。** 倍率は保存されず（UI-111）、`Normalize` の対象にならない。範囲と刻みは操作の上限・下限としてフロントエンドだけが持つ（IMP-242, FR-081）。
 
 `Normalize` は、範囲外・ゼロ値・負値をすべて `Default()` の対応する値へ置き換える。**最小値・最大値へ切り詰めない。** 範囲外の値が保存されているのはファイルが壊れた場合であり、その値を元に復元するより既定値から始めるほうが確実である。
 
@@ -970,7 +975,25 @@ func ResolveStartup(args []string, cwd, exeDir string) (Startup, error)
 func FindReadme(dir string) (string, bool)
 ```
 
-**設定は `main.go` が Wails の起動前に読む**（`config.Load`）。ウィンドウの初期サイズと最大化状態（UI-110）が `wails.Run` のオプションとして必要であり、`App` の生成より先に確定していなければならないためである。`Load` はエラーを返さない。設定がない・壊れている場合も既定値で起動する（UI-113, IMP-151）。
+**設定は `main.go` が Wails の起動前に読む**（`config.Load`）。ウィンドウの初期サイズ（UI-110）が `wails.Run` のオプションとして必要であり、`App` の生成より先に確定していなければならないためである。**`WindowStartState` は指定しない。** 最大化状態は復元しないため、常に既定の `options.Normal` で開く（UI-111, UI-115）。`Load` はエラーを返さない。設定がない・壊れている場合も既定値で起動する（UI-113, IMP-151）。
+
+**Windows では WebView2 のユーザデータ領域をテンポラリへ寄せる**（AR-004, NFR-033）。`options.App` に次を渡す。
+
+```go
+// AR-004。この下に WebView2 が EBWebView を作る。
+// 設定ファイル（IMP-152）と同じ %TEMP%\MarkView の下にまとめる
+Windows: &windows.Options{
+    WebviewUserDataPath: filepath.Join(os.TempDir(), "MarkView", "webview2"),
+},
+```
+
+- **指定しないと `%APPDATA%\MarkView.exe` が使われる。** 既定値は go-webview2 が `filepath.Join(os.Getenv("AppData"), <実行ファイル名>)` で組み立てており、NFR-033 に反する。
+- **環境変数では代替できない。** go-webview2 は環境生成の直前に `preventEnvAndRegistryOverrides` で `WEBVIEW2_USER_DATA_FOLDER` を自身の計算値へ上書きするため、外から与えた値もレジストリの設定も効かない。このオプションが唯一の手段である。
+- パスは `config.Dir()`（IMP-152）を使わず `os.TempDir()` から直接組み立てる。`config.Dir()` はディレクトリを作成しエラーを返しうるが、ここは `wails.Run` のオプション値であり、失敗しても起動を止めてはならない（FR-012）。ディレクトリは WebView2 が自分で作る。
+- Linux には対応するオプションが無い。`linux.Options` には渡さない（AR-004）。
+
+> [!IMPORTANT]
+> **指定したパスが使えないと、WebView2 の環境生成に失敗して `os.Exit(1)` する**（go-webview2 の `Embed` → `errorCallback`）。これは FR-111 が禁じる異常終了に当たるが、**指定しない場合も `%APPDATA%` が書けなければ同じ結果になる**ため、この変更が新たな失敗経路を作るわけではない。むしろ書き込み先が UI-112 と同じテンポラリに揃い、前提が 1 つ減る。
 
 起動時の表示対象が読み込めない場合も、**ウィンドウは必ず開く**（FR-012）。エラーの種類に応じて `InitialStateDTO.StateKind` を設定し、状態画面を初期表示とする（IMP-303）。
 
@@ -991,7 +1014,7 @@ func FindReadme(dir string) (string, bool)
 - `config.Save` を呼ぶ（UI-114）。失敗しても終了を妨げない。
 - 履歴・表示中パスは保存しない（NFR-042）。
 
-**ウィンドウのサイズと最大化状態は Go 側で取得する。** これらはフロントエンドから通知されない（`ConfigDTO` に含まれない。IMP-303）ため、保存の直前に Wails のランタイムから読み出す。
+**ウィンドウのサイズは Go 側で取得する。** フロントエンドから通知されない（`ConfigDTO` に含まれない。IMP-303）ため、保存の直前に Wails のランタイムから読み出す。最大化しているかどうかも同時に読むが、これは**保存しないと決めるための判定**であって、保存する値ではない（UI-111）。
 
 > [!IMPORTANT]
 > **取得は `OnBeforeClose` で行う。`OnShutdown` では取得できない。**
@@ -1015,18 +1038,17 @@ func FindReadme(dir string) (string, bool)
 ```go
 // OnBeforeClose と、保存の予約から呼ぶ
 func (a *App) captureWindowState() {
+    // 最大化中は画面いっぱいの値が返るため、サイズを取り込まない。
+    // 最大化していること自体は保存しない（UI-111, IMP-150）
     if runtime.WindowIsMaximised(a.ctx) {
-        a.cfg.WindowMaximized = true
-        // 最大化中のサイズは保存しない。復元時に元のサイズが失われるため
         return
     }
-    a.cfg.WindowMaximized = false
     a.cfg.WindowWidth, a.cfg.WindowHeight = runtime.WindowGetSize(a.ctx)
 }
 ```
 
-- 最大化状態で終了した場合、**そのときの画面いっぱいのサイズを保存しない。** 保存すると、次回に最大化を解除したときのウィンドウが画面いっぱいのままになる。最大化フラグのみを保存し、幅と高さは最大化する前の値を保つ。
-- ウィンドウ位置は取得しない。構造体にフィールドが存在しない（IMP-150, UI-111）。
+- 最大化状態で終了した場合、**そのときの画面いっぱいのサイズを保存しない。** 保存すると、次回のウィンドウが画面いっぱいの大きさで開く。幅と高さは最大化する前の値を保つ。**最大化状態そのものは保存しないため、次回は通常状態で開く**（UI-111, UI-115）。
+- ウィンドウ位置と最大化状態は保存しない。構造体にフィールドが存在しない（IMP-150, UI-111）。
 
 ## 11.12 要求一覧
 

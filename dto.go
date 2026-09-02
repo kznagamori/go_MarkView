@@ -121,11 +121,14 @@ type DocumentDTO struct {
 
 // ConfigDTO はフロントエンドへ渡す設定（IMP-303）。
 //
-// **ウィンドウの大きさと最大化状態は含めない。** これらは Wails の API で
-// 適用するものであり、フロントエンドが読む必要がない（IMP-194）。
+// **表示倍率を含めない。** 倍率は保存しない（UI-111, UI-115）ため、往路では
+// 渡すものがなく、復路でも Go 側に受け取る先がない（IMP-150）。倍率は
+// フロントエンドの state だけが持つ（IMP-210, IMP-242）。
+//
+// **ウィンドウの大きさも含めない。** 保存の直前に Wails のランタイムから
+// 直接読み出す（IMP-194）。最大化状態はそもそも保存しない（UI-111）。
 type ConfigDTO struct {
 	Theme           string `json:"theme"` // "light" | "dark"（解決済み。FR-071）
-	Zoom            int    `json:"zoom"`
 	OutlineVisible  bool   `json:"outlineVisible"`
 	FileTreeVisible bool   `json:"fileTreeVisible"`
 	OutlineWidth    int    `json:"outlineWidth"`
@@ -307,7 +310,6 @@ func newTreeNodeDTOs(nodes []filetree.Node) []TreeNodeDTO {
 func newConfigDTO(cfg config.Config, theme string) ConfigDTO {
 	return ConfigDTO{
 		Theme:           theme,
-		Zoom:            cfg.Zoom,
 		OutlineVisible:  cfg.OutlineVisible,
 		FileTreeVisible: cfg.FileTreeVisible,
 		OutlineWidth:    cfg.OutlineWidth,
