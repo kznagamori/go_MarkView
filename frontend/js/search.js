@@ -308,8 +308,17 @@ function createButton(id, symbol, label, handler) {
 
   button.addEventListener("click", () => {
     handler();
+
     // 操作の続きをキーボードで行えるよう、入力欄へ戻す（UI-080）。
-    if (state.search.open) $("search-input").focus();
+    //
+    // **preventScroll を外さない**（IMP-241）。focus() は既定で対象を可視域へ
+    // スクロールし、jump() が行った移動を打ち消す。FR-080 は「移動時は該当箇所まで
+    // スクロールする」と定めており、**それを自分で取り消してはならない。**
+    //
+    // 検索バーは常に見えている（IMP-202 の受け皿）ため、いまは focus() が
+    // スクロールを起こす条件が無い。それでも書くのは、**レイアウトを変えたときに
+    // 同じ罠へ戻らないようにするため**である。
+    if (state.search.open) $("search-input").focus({ preventScroll: true });
   });
 
   return button;
