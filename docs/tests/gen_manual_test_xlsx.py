@@ -43,14 +43,20 @@ DEFAULT_OUT_DIR = HERE / "results"
 
 # --- Markdown のパース -------------------------------------------------------
 
-RE_GROUP_HEADING = re.compile(r"^##\s+41\.\d+\s+(G\d+\s+.+?)\s*$")
-RE_OTHER_HEADING = re.compile(r"^##\s+41\.\d+\s+")
+# 節見出し。**節番号を当てにしない**（E2E-200）。グループを増やすと後続の節
+# 番号がずれるため、番号で探すと「ケースを 1 つ足しただけで生成が止まる」。
+# 番号が付いていてもいなくても、見出しの文言だけを取り出す。
+RE_SECTION_HEADING = re.compile(r"^##\s+(?:\d+(?:\.\d+)*\s+)?(.+?)\s*$")
+# グループの節は見出しの `Gn` で見分ける（E2E-200）。
+RE_GROUP_TITLE = re.compile(r"^G\d+\s+.+$")
+# 一覧の節は見出しの文言で探す（E2E-200）。
+INDEX_HEADING = "テストケース一覧"
 RE_CASE_HEADING = re.compile(r"^###\s+(E2E-\d{3}):\s*(.+?)\s*$")
 RE_FIELD = re.compile(r"^-\s+\*\*(環境|優先度|関連要求|概要|前提条件)\*\*:\s*(.+?)\s*$")
 RE_BLOCK = re.compile(r"^-\s+\*\*(手順|確認内容)\*\*:\s*$")
 RE_STEP = re.compile(r"^\s+\d+\.\s+(.+?)\s*$")
 RE_BULLET = re.compile(r"^\s+-\s+(.+?)\s*$")
-# 41.17 節の一覧行: | E2E-211 | G1 | 概要 | 高 |
+# 「テストケース一覧」節の行: | E2E-211 | G1 | 概要 | 高 |
 RE_INDEX_ROW = re.compile(r"^\|\s*(E2E-\d{3})\s*\|\s*(G\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*$")
 
 FIELD_ATTR = {
@@ -60,6 +66,17 @@ FIELD_ATTR = {
     "概要": "summary",
     "前提条件": "precondition",
 }
+
+
+def section_title(line: str) -> str | None:
+    """`## 41.3 G1 起動と終了` から `G1 起動と終了` を取り出す。
+
+    節番号が付いていてもいなくても同じ結果を返す。**番号は当てにしない**
+    （E2E-200）。`##` の見出しでなければ None を返す。
+    """
+    m = RE_SECTION_HEADING.match(line)
+
+    return m.group(1) if m else None
 
 
 @dataclass
@@ -94,10 +111,11 @@ class Case:
 
 
 def parse_cases(lines: list[str]) -> list[Case]:
-    """41.3〜41.15 節のケース定義を読み取る。
+    """グループの節のケース定義を読み取る。
 
-    グループ見出し（`## 41.n Gn 名称`）の下にあるものだけをケースとして扱う。
-    41.1 節の E2E-200 系は方針の定義であり、記録用の行にしない。
+    **グループの見出しは `Gn` で見分ける**（E2E-200）。その下にあるものだけを
+    ケースとして扱い、それ以外の節（E2E-200 系の方針や要求一覧）からは
+    記録用の行を作らない。**節番号は見ない。**
     """
     cases: list[Case] = []
     group = ""
@@ -107,12 +125,10 @@ def parse_cases(lines: list[str]) -> list[Case]:
     for raw in lines:
         line = raw.rstrip("\n")
 
-        m = RE_GROUP_HEADING.match(line)
-        if m:
-            current, block, group = None, "", m.group(1)
-            continue
-        if RE_OTHER_HEADING.match(line):
-            current, block, group = None, "", ""
+        title = section_title(line)
+        if title is not None:
+            current, block = None, ""
+            group = title if RE_GROUP_TITLE.match(title) else ""
             continue
 
         m = RE_CASE_HEADING.match(line)
@@ -154,25 +170,34 @@ def parse_cases(lines: list[str]) -> list[Case]:
 
 
 def parse_index(lines: list[str]) -> list[tuple[str, str, str, str]]:
-    """41.17 節のケース一覧を読み取る（突き合わせ用）。"""
+    """「テストケース一覧」節のケース一覧を読み取る（突き合わせ用）。
+
+    **節番号ではなく見出しの文言で探す**（E2E-200）。
+    """
     rows = []
     in_index = False
+
     for raw in lines:
         line = raw.rstrip("\n")
-        if line.startswith("## 41.17"):
-            in_index = True
+
+        title = section_title(line)
+        if title is not None:
+            # 一覧の節に入ったあと、次の見出しが来たらそこで終わる。
+            if in_index:
+                break
+            in_index = title == INDEX_HEADING
             continue
-        if in_index and line.startswith("## "):
-            break
+
         if in_index:
             m = RE_INDEX_ROW.match(line)
             if m:
                 rows.append(m.groups())
+
     return rows
 
 
 def verify(cases: list[Case], index: list[tuple[str, str, str, str]]) -> list[str]:
-    """ケース定義と 41.17 節の一覧を突き合わせ、食い違いを返す。"""
+    """ケース定義と「テストケース一覧」節を突き合わせ、食い違いを返す。"""
     problems: list[str] = []
 
     for case in cases:
@@ -186,14 +211,14 @@ def verify(cases: list[Case], index: list[tuple[str, str, str, str]]) -> list[st
         problems.append(f"ID が重複している: {', '.join(duplicates)}")
 
     if not index:
-        problems.append("41.17 節のケース一覧を読み取れなかった")
+        problems.append(f"「{INDEX_HEADING}」節を読み取れなかった")
         return problems
 
     defined, listed = set(ids), {row[0] for row in index}
     for missing_id in sorted(listed - defined):
-        problems.append(f"{missing_id}: 41.17 節にあるが、ケース定義がない")
+        problems.append(f"{missing_id}: 「{INDEX_HEADING}」節にあるが、ケース定義がない")
     for extra_id in sorted(defined - listed):
-        problems.append(f"{extra_id}: ケース定義はあるが、41.17 節の一覧にない")
+        problems.append(f"{extra_id}: ケース定義はあるが、「{INDEX_HEADING}」節にない")
 
     by_id = {c.id: c for c in cases}
     for case_id, group, summary, priority in index:
