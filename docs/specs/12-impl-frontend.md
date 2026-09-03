@@ -88,9 +88,11 @@ export function initToolbar(deps) { /* … */ }
     <div id="resizer-outline" class="resizer"></div>
 
     <section id="viewer" class="viewer" tabindex="-1">
+      <div class="searchbar-anchor">
+        <div id="searchbar" class="searchbar" hidden></div>
+      </div>
       <article id="markdown" class="markdown-body"></article>
       <div id="state-screen" class="state-screen" hidden></div>
-      <div id="searchbar" class="searchbar" hidden></div>
     </section>
   </main>
 
@@ -111,6 +113,32 @@ export function initToolbar(deps) { /* … */ }
 - テーマは `#app` の `data-theme` 属性で切り替える（DSP-011）。
 - 本文は `.markdown-body` に挿入する。`github-markdown-css` が想定するクラス名に合わせる。
 - `#viewer` に `tabindex="-1"` を与える。検索バーを閉じたときにフォーカスを本文へ戻す（UI-080）ために必要であり、負値のため `Tab` の巡回順には入らない。
+- **`#searchbar` は `.searchbar-anchor` の中へ入れ、`#viewer` の先頭に置く**（DSP-160）。
+  受け皿は**高さ 0 の `position: sticky`** とする。`#viewer` は `overflow-y: auto` の
+  スクロールする器であり、**その中の絶対配置は内容と一緒に流れて画面外へ出る。**
+
+  ```css
+  .searchbar-anchor { position: sticky; top: 0; height: 0; z-index: var(--z-search); }
+  ```
+
+  - **`sticky` なので本文をスクロールしても留まる**（DSP-160）。
+  - **高さ 0 なので本文を押し下げない**（UI-080）。
+  - **受け皿は `#viewer` の内容領域に置かれる。** その右端はスクロールバーの内側であり、
+    `.searchbar` の `right` がそのまま DSP-160 の「スクロールバーの内側」の意味になる。
+    **補正が要らない。**
+  - **`#viewer` の外へ出してはならない。** 外の器に置くと `right` の基準がスクロールバーの
+    **外側**へ移り、その幅だけ内側が詰まる（実測 31px → 16px）。
+    **その幅を CSS だけで得る手段は無い**（2026-09-03 に実測。JS で測って CSS 変数へ渡すことになる）。
+  - **`#viewer` の先頭に置く。** 後ろに置くと、スクロールし切るまで現れない。
+  - **受け皿に `z-index: var(--z-search)` を与える**（DSP-015 の 20）。
+    **`position: sticky` は、`z-index` の指定に関わらず重ね合わせ文脈を作る。**
+    与えないと受け皿は `z-index: auto` の層に落ち、**中の `.searchbar` の `z-index: 20` は
+    受け皿の中でしか効かない。** 本文のコードブロック（`position: relative`）や
+    コピーボタン（`z-index: 10`）が検索バーの手前に来て、**クリックが届かなくなる**
+    （2026-09-03 に実機で発生。当たり判定を `elementFromPoint` で確認した）。
+- **`#state-screen` は `#viewer` の中に残す。** `inset: 0` で本文領域を覆う必要があり、
+  状態画面を出すときは本文を空にする（IMP-250）ためスクロールが起きない。**同じ絶対配置でも
+  条件が違う。**
 
 ### IMP-203: アイコン **MUST**
 
@@ -505,6 +533,19 @@ export function isSearchOpen()   // 開いているか（Esc の振り分けに�
 - `find` の直後は、**本文ペインの上端以降にある最初のヒット**を現在位置とする。常に先頭へ戻すと、入力を 1 文字足すたびに文書の冒頭へ引き戻される。
 - `jump` は端で反対側へ回り込む。ヒットが 1 件でも操作が空振りしない。
 - **検索を開いていないときの `jump` は何もせず、`false` を返す**（IMP-244）。`Enter` は検索が閉じていてもこの経路へ来るため、`preventDefault` してしまうとフォーカス中のボタンを `Enter` で実行できなくなる（UI-021）。
+- **移動は「前へ」「次へ」のボタンでも起こる**（FR-080）。`Enter` / `Shift+Enter` と
+  **同じ経路を通す。** 片方だけに処理を足すと、もう片方だけが壊れたときに気づきにくい。
+- **移動のあとにフォーカスを操作する場合、スクロールを巻き戻してはならない。**
+  `HTMLElement.focus()` は既定で対象を可視域へスクロールするため、`jump` が行った移動を
+  打ち消しうる。フォーカスを戻すなら `focus({ preventScroll: true })` とする。
+  **UI-080 が求めているのは「表示と同時に」入力欄へフォーカスを移すことであり、
+  移動のたびに戻すことではない。**
+
+> [!IMPORTANT]
+> **この 2 つは対で意味を持つ。** 検索バーが本文と一緒に流れる状態（DSP-160 の違反）では、
+> `focus()` が「見せるために」スクロールを先頭側へ巻き戻し、**ボタンからの移動だけが効かなくなる。**
+> `Enter` は同じ `jump` を呼びながらフォーカスを操作しないため動いてしまい、**症状が片側にしか
+> 出ないので原因を取り違えやすい。** 実際に起きた（[調査報告](../bugs/2026-09-03-search-jump-buttons.md)）。
 
 ### IMP-242: 表示倍率 **MUST**
 

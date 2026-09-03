@@ -167,7 +167,7 @@ stateDiagram-v2
     open --> typing: 文字入力
     typing --> hits: 1 件以上ヒット
     typing --> no_hits: 0 件
-    hits --> hits: Enter / Shift+Enter で移動
+    hits --> hits: Enter / Shift+Enter / バーのボタンで移動
     hits --> typing: 検索語の変更
     no_hits --> typing: 検索語の変更
     hits --> closed: Esc / 閉じる
@@ -184,6 +184,13 @@ stateDiagram-v2
 | `typing` | 入力に応じてインクリメンタルに更新 |
 | `hits` | `3 / 12` を表示、全ヒットを強調、現在位置を別色 |
 | `no_hits` | `No results` を `--danger-fg` で表示、ハイライトなし |
+
+> [!IMPORTANT]
+> **移動の手段は 2 つある**（FR-080）。`Enter` / `Shift+Enter` と、検索バーの「前へ」「次へ」
+> ボタンである。**どちらも同じ遷移**であり、片方だけを書かない。
+>
+> 片方だけを書くと、**片方だけが壊れている状態を検証で通してしまう。**
+> 実際に起きた（[調査報告](../bugs/2026-09-03-search-jump-buttons.md)）。
 
 ### DSP-361: 検索状態のリセット **MUST**
 
