@@ -90,7 +90,7 @@ MarkView --help            # 使い方を表示して終了する
 
 ```text
 +--------------------------------------------------------------------+
-| Open  Reload  Theme  Outline  Files                          About |
+| Open  Reload  Theme  Outline  Files  Edit                    About |
 +-------------+-------------+----------------------------------------+
 | Files       | Outline     |                                        |
 | go_MarkView |             |  # MarkView                            |
