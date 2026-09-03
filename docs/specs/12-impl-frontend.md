@@ -36,7 +36,7 @@ frontend/
 │   ├── shortcuts.js        キーボードショートカット
 │   ├── tooltip.js          ツールバーのツールチップ（IMP-247）
 │   ├── dnd.js              ドラッグ＆ドロップ
-│   ├── lazy.js             Mermaid / KaTeX の遅延ロード
+│   ├── lazy.js             Mermaid / KaTeX / PlantUML の遅延ロード
 │   ├── status.js           ステータス領域
 │   ├── overlay.js          情報ダイアログ・エディタ選択ダイアログ・状態画面
 │   ├── editors.js          エディタ選択ダイアログの中身（IMP-252）
@@ -164,7 +164,7 @@ export const state = {
   outlineWidth: 240,
   fileTreeWidth: 260,
   search: { open: false, query: '', hits: [], index: -1 },
-  lazy: { mermaid: false, katex: false }, // 読み込み済みか
+  lazy: { mermaid: false, katex: false, plantuml: false }, // 読み込み済みか
 };
 ```
 
@@ -225,7 +225,7 @@ export function renderDocument(doc) // doc: DocumentDTO
 5. 見出しにアンカーを付与する（IMP-227）。
 6. 画像の読み込み失敗を捉える配線を行う（IMP-226）。
 7. スクロール連動の監視対象を作り直す（IMP-222）。
-8. `doc.needsMermaid` / `doc.needsKaTeX` に応じて遅延ロードを起動する（IMP-230）。
+8. `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` に応じて遅延ロードを起動する（IMP-230）。
 9. スクロール位置を設定する（13 章 `ScrollDTO` の `mode` に従う）。
 10. アウトライン（IMP-224）とステータス（DSP-150）を更新する。
 
@@ -246,7 +246,7 @@ export function attachCopyButtons(root) // root は #markdown
 
 - `root.querySelectorAll('.code-block')` を走査し、各要素に `<button class="copy-btn">` を追加する。
 - コピー対象の取得順序:
-  1. `data-source` 属性があればその値（Mermaid ブロック。描画後に `<pre>` が SVG へ置き換わるため必須。IMP-115）
+  1. `data-source` 属性があればその値（Mermaid / PlantUML ブロック。描画後に `<pre>` が SVG へ置き換わるため必須。IMP-115, IMP-119）
   2. なければ `pre code` の `textContent`
 - 末尾の改行 1 つを除去してから渡す（FR-061）。
 - クリップボードへの書き込みは **Go 側の API を経由する**（AR-062, IMP-311）。`navigator.clipboard` は権限や実行文脈によって失敗しうるため、これを既定経路にしない。
@@ -359,19 +359,21 @@ export function decorateHeadings(root)
 
 ## 12.4 遅延ロード（IMP-230 系）
 
-### IMP-230: Mermaid と KaTeX **MUST**
+### IMP-230: Mermaid・KaTeX・PlantUML **MUST**
 
-AR-021 / MD-061 / MD-082 / NFR-013 を実装する。
+AR-021 / MD-061 / MD-082 / MD-085 / NFR-013 を実装する。
 
 ```js
 // js/lazy.js
 export async function ensureMermaid()  // 未読込なら <script> を挿入して初期化
 export async function ensureKaTeX()    // 未読込なら <script> と <link> を挿入
+export async function ensurePlantUML() // 未読込なら viz-global.js → plantuml.js の順で読む
 ```
 
 - 読み込みは `frontend/vendor/` 配下への相対パスで行う。外部 URL を参照しない（AR-020）。
 - 一度読み込んだら `state.lazy` に記録し、以降は再読み込みしない（AR-021）。
-- `doc.needsMermaid` / `doc.needsKaTeX` が false の文書では**呼び出さない**。この条件分岐が NFR-013 の実体である。
+- `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` が false の文書では**呼び出さない**。この条件分岐が NFR-013 の実体である。
+- **`ensurePlantUML()` は読み込む順序を守る**。`viz-global.js` を先に、`plantuml.js` を後にする（AR-020, IMP-233）。**前者の読み込みに失敗したら、後者を読まないで false を返す。** Graphviz 不在のまま描こうとすると処理系ごと止まる（IMP-233 の 4）。
 - 読み込みと描画は本文の表示をブロックしない。`renderDocument` の完了後に非同期で実行する（NFR-012）。
 
 ### IMP-231: Mermaid の初期化 **MUST**
@@ -412,6 +414,50 @@ document.querySelectorAll('#markdown .math-inline, #markdown .math-block')
 - **`errorColor` を必ず渡す。** 省略すると KaTeX が既定の `#cc0000` を**インラインスタイル**として書き込み、CSS からは `!important` なしに上書きできない。テーマにも追従しなくなる。トークンを参照する式（`var(--danger-fg)`）をそのまま渡せば、解決は要素の位置で起きるため Light / Dark の双方に追従する。
 - テーマ切り替えでの再描画は不要とする。KaTeX の出力は文字色を継承させる（DSP-271）ため、CSS の切り替えだけで追随する。この点が Mermaid（再描画が必要。IMP-231）と異なる。
 
+### IMP-233: PlantUML の初期化と描画 **MUST**
+
+FR-024 / MD-083 / MD-084 を実装する。**Mermaid とは API の形が違うため、同じやり方では書けない。**
+
+```js
+// js/lazy.js
+// 順序を守る。viz-global.js がグローバルに Viz を置き、plantuml.js がそれを見る。
+await load("vendor/plantuml/viz-global.js");   // 1
+const puml = await import("vendor/plantuml/plantuml.js");  // 2
+
+puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark" });
+```
+
+**実装で押さえる点は 4 つある。**
+
+| # | 処理系の振る舞い | 実装への帰結 |
+| --- | --- | --- |
+| 1 | **`render()` は `undefined` を返し、Promise も返さない。** SVG はあとから対象要素へ書き込まれる | **完了を DOM で見るしかない。** `MutationObserver` で対象要素を監視し、**タイムアウトを設ける**。`await` して終わりにはできない。**SVG 以外が書き込まれたら、タイムアウトを待たずに短い猶予で切り上げる**（下記） |
+| 2 | **出力先を要素の id で指定する。** 要素そのものを渡せない | 図ごとに一意な id を振る。**文書を切り替えても衝突しない値にする** |
+| 3 | `renderToString` も export されているが、**どの引数の組でも `undefined` を返す** | 現状使えない。`render()` 経由でのみ取得する |
+| 4 | **Graphviz を要する図を Graphviz 無しで描こうとすると、処理系ごと止まる。** その図だけでなく**以降のすべての描画が返ってこなくなる** | **`viz-global.js` の読み込みに失敗したら、PlantUML の描画を一切行わない。** 全ブロックをソースのまま残し、理由を表示する |
+
+- 描画対象は `.code-block[data-plantuml] pre.plantuml-source`。**`data-puml-error` を持つブロックは描画しない**（IMP-119 が拒んだもの）。
+- **描画結果は `.plantuml-rendered` の中へ入れ、描かなかった理由は `.plantuml-error` へ出す。** Mermaid の `.mermaid-rendered` / `.mermaid-error`（IMP-231）と同じ形にそろえる。**この 2 つの名前は描画スモークテストが見る**（BR-054, E2E-109）ため、変えるときは `scripts/smoke/harness.js` も同じ変更で直す。
+- 描画に失敗したブロックは、元のソースをコードブロックとして残し、理由を併記する。**1 つの失敗が他のブロックの描画を止めない**（IMP-231 と同じ）。
+- **取り込み指令で拒まれたブロックの理由は、資産を読まずに表示する**（IMP-119, DSP-272）。それらは `needsPlantUML` を立てないため、**`needsPlantUML` を条件に描画関数を呼ぶと理由が出ない。** 描画関数を「描くものが無ければ資産を読まずに戻る」形にし、**条件を付けずに呼ぶ**。NFR-013 は早期の戻りで保たれる。
+- **構文エラーは失敗ではない。** PlantUML はエラーを描いた SVG を返すので、**そのまま出す**（FR-024）。行番号と該当行を含むため、こちらで書き直すより情報量が多い。
+- **4096 px を超える図は SVG ではなく例外のテキストが返る**（`Diagram too large for browser rendering: ... (max 4096)`）。これを検知して FR-110 の表示に回す。テキストをそのまま本文へ出さない（UI 文言は `strings.js`。IMP-290）。
+- テーマ切り替え時は、保存しておいた `data-source` から `{ dark: ... }` を変えて**描き直す**（FR-070, IMP-243）。
+- **フロントエンドが図のソースから独自に HTML を組み立てて挿入しない**（IMP-220, MD-084）。DOM へ書くのは処理系であり、こちらは対象要素を用意して id を渡すだけにする。
+
+> [!IMPORTANT]
+> **SVG 以外が書き込まれたら、タイムアウトを待たずに切り上げる。** 処理系は「描けない」と
+> 答えるときも対象要素へ何かを書くが、それは SVG にならない。**描画は逐次であるため**（下記）、
+> 待ち続けると描けない図 1 枚が後続の図をタイムアウトいっぱい待たせる。
+>
+> 実測では `@startditaa` が内容を即座に返しながら SVG にならず、**猶予を設けない実装では
+> 1 枚で 30 秒を空費した**（2026-09-03。猶予を入れて文書全体が 31.4 秒 → 1.9 秒）。
+>
+> 猶予を 0 にしない。処理系が入れ物を先に置いてから SVG を入れる場合に早合点するため。
+
+> [!IMPORTANT]
+> **描画は逐次行う。** Graphviz を要する図は 1 枚 400〜700 ms かかる（NFR-011）。全部を一気に投げても処理系はコルーチンで細切れに実行するため UI は固まらないが（メインスレッドの最大停止は 4 ms）、**完了検知の監視対象が図の数だけ同時に存在する状態を作らない**。
+
 ## 12.5 操作（IMP-240 系）
 
 ### IMP-240: ペインの開閉とリサイズ **MUST**
@@ -448,7 +494,7 @@ export function isSearchOpen()   // 開いているか（Esc の振り分けに�
 
 - **本文を表示している状態でのみ開く。** 状態画面を表示中（`welcome` / `confirm-large` / `too-large` / `render-error`）は `Ctrl+F` を無視する（DSP-300）。
 - 走査対象は `#markdown` のテキストノードのみ。`<script>` や属性値は対象外。
-- **フロントエンドが後から描いた領域を走査から外す。** 対象は `svg`（Mermaid の描画結果。HTML の `<mark>` を差し込むと図が壊れる）と `.katex`（KaTeX の描画結果。MathML と HTML に同じ文字が二重に入っており、包むと数式が崩れるうえ件数も倍になる）。どちらも Go が出力した本文ではなく、原文は `data-source` と TeX ソースとして別に残っている。
+- **フロントエンドが後から描いた領域を走査から外す。** 対象は `svg`（**Mermaid と PlantUML の描画結果**。HTML の `<mark>` を差し込むと図が壊れる）と `.katex`（KaTeX の描画結果。MathML と HTML に同じ文字が二重に入っており、包むと数式が崩れるうえ件数も倍になる）。いずれも Go が出力した本文ではなく、原文は `data-source` と TeX ソースとして別に残っている。**PlantUML の図は文字を多く含む**ため、除外を忘れると図の中の語が大量にヒットする。
 - **テキストノードは先にすべて集めてから包む。** 包む処理はテキストノードを分割するため、走査しながら変更すると同じ箇所を二重に処理する。
 - 解除時は、`<mark>` を外したあとに親要素へ `normalize()` を呼び、分割したテキストノードを 1 つへ結合し直す。これを省くと、次の検索で分割の境界をまたぐ語が見つからなくなる。
 - ハイライトは `<mark class="search-hit">` で包む方式とし、原文の DOM 構造を壊さないよう、テキストノードの分割のみで実現する。要素の入れ子構造を変更しない。
@@ -493,7 +539,7 @@ export function toggleTheme()      // 切り替えて反映し、保存する
 ```
 
 - `#app` の `data-theme` 属性を書き換えるだけで全体に反映する。CSS 変数の切り替えで完結させ、要素の再生成や本文の再変換を行わない（UI-105）。これにより DSP-370 が求める維持（スクロール位置・検索状態・ツリー・アウトライン・倍率）は、何もしなくても成り立つ。
-- Mermaid のみ再描画が必要（IMP-231）。再描画は待たない。図の描画で画面全体の切り替えを遅らせない。
+- Mermaid（IMP-231）と PlantUML（IMP-233）は再描画が必要。**どちらも待たない。** 図の描画で画面全体の切り替えを遅らせない。PlantUML は Graphviz を要する図で 1 枚 1 秒近くかかる（NFR-011）。
 - **起動時の適用と切り替えを別の関数に分ける。** `applyTheme` は反映のみを行う。起動時にここが保存すると、利用者が選んでいないテーマが記録され、OS 設定への追従（FR-071）が失われる。
 - `toggleTheme` は `state.themeExplicit` を立ててから `saveConfig`（IMP-210）を呼ぶ。**この印が立つまで設定にテーマを書かない。**
 - **属性を書き換える前後だけトランジションを止める。** ツールバーのボタンは背景色を 80ms でフェードさせるため（DSP-050）、そのままではテーマ切り替え時に ON のトグルの背景だけが遅れて追いつく。DSP-011 の「即時に完了させる」を満たすため、`#app` に一時的なクラスを付けて `transition: none` を効かせ、レイアウトを 1 度確定させてから外す。
@@ -690,6 +736,11 @@ export const S = {
   tooLarge:       (limit) => `Maximum size is ${limit}.`,
   renderError:    'Failed to render this document.',
 
+  // PlantUML の図を描かなかった理由（FR-024, DSP-272）。図の代わりに本文中へ併記する
+  pumlInclude:     'Include directives are not supported.',
+  pumlUnsupported: 'This diagram could not be rendered.',
+  pumlFailed:      'Failed to render this diagram.',
+
   // 情報ダイアログ（DSP-171）
   appName:      'MarkView',                    // 見出し。固有名だが画面に出る
   aboutVersion: (v, c) => `Version ${v} (${c})`,
@@ -774,9 +825,10 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 | IMP-225 | GitHub Alerts のアイコン付与 | MUST |
 | IMP-226 | 画像の読み込み失敗 | MUST |
 | IMP-227 | 見出しのアンカー | SHOULD |
-| IMP-230 | Mermaid と KaTeX の遅延ロード | MUST |
+| IMP-230 | Mermaid・KaTeX・PlantUML の遅延ロード | MUST |
 | IMP-231 | Mermaid の初期化 | MUST |
 | IMP-232 | KaTeX の初期化 | MUST |
+| IMP-233 | PlantUML の初期化と描画 | MUST |
 | IMP-240 | ペインの開閉とリサイズ | MUST |
 | IMP-241 | 検索 | MUST |
 | IMP-242 | 表示倍率 | MUST |

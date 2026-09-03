@@ -39,20 +39,21 @@ package document
 
 // Document は表示対象の 1 文書を表す。
 type Document struct {
-    Path         string            // 絶対パス（IMP-025）
-    Size         int64             // ファイルの実バイト数
-    HTML         string            // サニタイズ済みの本文 HTML
-    Headings     []renderer.Heading // アウトライン（FR-040）
-    LineCount    int               // 総行数（UI-060 の表示に使う）
-    NeedsMermaid bool              // Mermaid の遅延ロード判定（AR-021）
-    NeedsKaTeX   bool              // KaTeX の遅延ロード判定（AR-021）
-    Warnings     []Warning         // 描画は継続するが利用者に伝える事象
+    Path          string             // 絶対パス（IMP-025）
+    Size          int64              // ファイルの実バイト数
+    HTML          string             // サニタイズ済みの本文 HTML
+    Headings      []renderer.Heading // アウトライン（FR-040）
+    LineCount     int                // 総行数（UI-060 の表示に使う）
+    NeedsMermaid  bool               // Mermaid の遅延ロード判定（AR-021）
+    NeedsKaTeX    bool               // KaTeX の遅延ロード判定（AR-021）
+    NeedsPlantUML bool               // PlantUML の遅延ロード判定（AR-021, MD-085）
+    Warnings      []Warning          // 描画は継続するが利用者に伝える事象
 }
 
 // Warning は FR-110 のうち「描画を継続する」事象を表す。
 type Warning struct {
-    Kind    WarningKind
-    Detail  string
+    Kind   WarningKind
+    Detail string
 }
 
 type WarningKind int
@@ -159,10 +160,11 @@ type Heading struct {
 }
 
 type Result struct {
-    HTML         string
-    Headings     []Heading
-    NeedsMermaid bool
-    NeedsKaTeX   bool
+    HTML          string
+    Headings      []Heading
+    NeedsMermaid  bool
+    NeedsKaTeX    bool
+    NeedsPlantUML bool // AR-021, MD-085
 }
 
 type Renderer struct {
@@ -202,6 +204,7 @@ goldmark.New(
         &alertExtension{},      // GitHub Alerts（IMP-112）
         &mathExtension{},       // 数式の保護（IMP-113）
         &mermaidExtension{},    // Mermaid ブロックの取り出し（IMP-115）
+        &plantumlExtension{},   // PlantUML ブロックの取り出し（IMP-119）
     ),
     goldmark.WithParserOptions(
         // parser.WithAutoHeadingID() は使用しない（理由は後述）。
@@ -327,6 +330,7 @@ FR-060 / MD-080 を実装する。すべてのコードブロックを共通の�
 - ラッパが出すのは `<div class="code-block">` だけであり、内側の `<pre>` / `<code>` は chroma が出力する。ハイライトできない場合（言語指定なし・未知の言語）は chroma を通らないため、ラッパ側で `<pre><code>` を補う。`chroma` クラスが付くのは `<pre>` であり、ハイライトされたブロックに限る。
 - `mermaid` ブロックを 1 つ以上出力した場合、`Result.NeedsMermaid = true` とする。
 - `math` 言語のコードブロックは Mermaid ではなく数式として扱う（IMP-113）。
+- `plantuml` / `puml` 言語のコードブロックは PlantUML として扱う（IMP-119）。ラッパの形は同じであり、属性だけが違う。
 
 ### IMP-116: サニタイズ **MUST**
 
@@ -343,8 +347,8 @@ func Policy() *bluemonday.Policy
 - `img` には `src` / `alt` / `title` / `width` / `height` を許可する。`src` は `http`, `https`, および内部アセットサーバのパス（`/__local/`）のみ許可する。
 - `abbr` には `title` を許可する。これがないと許可要素として意味を持たない。
 - `a` には `href` / `title` を許可する。`href` は `http`, `https`, `mailto`, 相対パス、`#` アンカーのみ許可する。`javascript:` 等は除去する。
-- コードブロックとハイライトのために、`span` / `code` / `pre` / `div` の `class` 属性を許可する。ただし許可する値は接頭辞で制限する（`chroma`, `code-block`, `markdown-alert`, `math-` など）。任意のクラス名を通さない。
-- `data-lang` / `data-mermaid` / `data-source` / `id`（見出しアンカーと脚注）を許可する。
+- コードブロックとハイライトのために、`span` / `code` / `pre` / `div` の `class` 属性を許可する。ただし許可する値は接頭辞で制限する（`chroma`, `code-block`, `markdown-alert`, `math-`, `mermaid-source`, `plantuml-source`）。**「など」で濁さず、自前で出力するものをすべて列挙する。** 任意のクラス名を通さない。
+- `data-lang` / `data-mermaid` / **`data-plantuml`** / **`data-puml-error`** / `data-source` / `id`（見出しアンカーと脚注）を許可する。**PlantUML の 2 つを落とすと、描画対象と拒んだブロックがフロントエンドから見えなくなる**（IMP-119, IMP-233）。
 - 表の桁揃えのため `th` / `td` の `align`（`left` / `center` / `right`）を許可する。goldmark に align 属性で出力させることで、`style` 属性を許可せずに MD-024 を満たす（IMP-111）。
 - タスクリスト（MD-022）のため `input` の `type="checkbox"` / `checked` / `disabled` を許可する。MD-072 の許可要素に `input` はないが、これがないとタスクリストが描画されない。**bluemonday では属性を許可した要素が許可要素になる**ため、要素の一覧には足さず、この属性指定だけで例外を閉じ込める。
 - 脚注の `role`（`doc-*`）を許可する。
@@ -373,8 +377,8 @@ func (s *slugger) Slug(text string) string
 
 1. 見出しの AST からインライン記法を除いたプレーンテキストを組み立てる。
 2. Unicode の小文字化を行う（`strings.ToLower`）。
-3. 空白（連続を含む）を単一の `-` に置換する。
-4. 英数字・`-`・`_`・非 ASCII 文字以外を除去する。
+3. **前後の空白を落としたうえで、残った空白（`unicode.IsSpace`）1 つにつき `-` を 1 つ書く。** **連続をまとめない**（MD-021 の 3）。まとめると、記号を除いた跡に並んだ空白が 1 つのハイフンになり、GitHub と食い違う。
+4. **英数字・`-`・`_` と、`unicode.IsLetter` / `unicode.IsDigit` に当たる文字だけを残す。** それ以外は除去する（MD-021 の 4）。**「非 ASCII なら残す」と書かない。** 全角の括弧・中黒・矢印まで残り、GitHub と違うアンカーになる。
 5. 重複時に連番を付与する。
 
 同じ処理で得たプレーンテキストを `Heading.Text` にも用いる（FR-040）。
@@ -395,6 +399,47 @@ func rewriteImageURL(src, baseDir string) string
 - URL の組み立ては `internal/localurl` の `Encode` を使う（IMP-012）。**接頭辞とエスケープ規則を `renderer` 側に書かない。**解く側（IMP-161）と規則が食い違えば、ローカル画像がすべて 404 になる。
 - 宛先は URL であるため、`%20` のような百分率エンコードを解いてからパスとして解決する。
 - リンク（`a href`）は書き換えない。クリック時にフロントエンドが捕捉して Go 側へ渡すため（AR-060）、元の値のまま保持する。
+
+### IMP-119: PlantUML ブロックの取り出し **MUST**
+
+FR-024 / MD-083 / MD-084 を実装する。IMP-115 のラッパの上に乗り、Mermaid と同じ形で出力する。
+
+```html
+<div class="code-block" data-lang="plantuml" data-plantuml="1"
+     data-source="@startuml&#10;Alice -&gt; Bob&#10;@enduml">
+  <pre class="plantuml-source">@startuml
+Alice -&gt; Bob
+@enduml</pre>
+</div>
+```
+
+- 対象は言語指定が `plantuml` または `puml` のフェンス。**大文字小文字を区別しない**（chroma の言語名解決と揃える）。**`uml` は対象としない**（MD-083）。
+- **`data-source` を付ける**。描画後に `<pre>` が SVG へ置き換わり原文が失われるためであり、理由は IMP-115 と同じである（コピーボタンとテーマ切り替え時の再描画）。
+- **`data-plantuml` を付けたブロック**を 1 つ以上出力した場合、`Result.NeedsPlantUML = true` とする（下記の検査で拒んだブロックは数えない）。
+
+**取り込み指令の検査**（MD-084, NFR-032）
+
+```go
+// hasIncludeDirective は PlantUML ソースが外部を取り込む指令を含むかを返す。
+func hasIncludeDirective(source string) bool
+```
+
+| 規則 | 内容 |
+| --- | --- |
+| 対象の指令 | `!include` / `!includeurl` / `!includesub` / `!import` と、**`from` を伴う `!theme`** |
+| 位置 | **行頭**（前に空白があってもよい）にあるものだけを見る。PlantUML のプリプロセッサは行頭でしか効かない |
+| 大文字小文字 | 区別しない |
+| `!includesub` の前方一致 | **`!include` の検出で巻き込めない。** `!includesub` は `!include` で始まるが、`!includeurl` とともに別の指令である。どれも拒むため結果は同じだが、**将来 `!include` だけを許すことになったときに壊れる** |
+| `!theme` | **`from` を伴わない `!theme plain` は拒まない**（組み込みテーマ。MD-083 で使えると定めている） |
+| コメント | `'` で始まる行は検査の対象外とする |
+
+- 検査に引っかかったブロックは、`data-plantuml` を**付けず**、`data-puml-error="include"` を付けて出力する。フロントエンドはこれを見て理由を表示し（FR-110）、**描画を試みない**。
+- **引っかかったブロックは `NeedsPlantUML` を立てない。** 全部のブロックが拒まれた文書で 5 MiB の資産を読むのは無駄である（NFR-013）。
+
+> [!IMPORTANT]
+> **判定を Go 側に置くのは、描画処理系の振る舞いに依存しないためである**（MD-084, AR-031）。資産は BR-043 で自動更新されるため、上流がリモート取得を有効化してもこちらは気づかない。
+>
+> **フロント側で `XMLHttpRequest` を一時的に潰す方式は採らない。** 描画中だけ差し替える実装は副作用が読みにくく、描画が非同期（IMP-233）であるため元に戻す契機も定まらない。
 
 ## 11.4 filetree パッケージ（IMP-130 系）
 
@@ -847,10 +892,13 @@ BR-042 / UI-100 の `Bundled` 行を実装する。
 
 ```go
 type VendorEntry struct {
-    Name    string `json:"name"`
-    Version string `json:"version"`
-    Source  string `json:"source"`
-    Fetched string `json:"fetched"`
+    Name      string `json:"name"`
+    Version   string `json:"version"`             // 分からない場合は空（BR-042）
+    SPDX      string `json:"spdx"`                // ライセンス種別。NFR-051 の判定に使う
+    License   string `json:"license"`             // 全文の位置。frontend/vendor/ からの相対パス
+    Source    string `json:"source"`
+    Fetched   string `json:"fetched"`
+    BundledIn string `json:"bundledIn,omitempty"` // 同梱元の資産名。最上位なら空
 }
 
 // SetVendorJSON は埋め込んだ vendor.json を登録する。main.go が起動時に
@@ -859,14 +907,20 @@ type VendorEntry struct {
 func SetVendorJSON(data []byte)
 
 // Vendors は登録された vendor.json を解析して返す。**常に非 nil を返す。**
+// 記録をそのまま返し、絞り込まない。
 func Vendors() []VendorEntry
+
+// Bundled は Bundled 行（UI-100）に出す資産だけを返す。BundledIn が空のもの。
+func Bundled() []VendorEntry
 
 // Environment は "windows/amd64  Go 1.24.0  WebView2 120.x" 形式の文字列を返す。
 // WebView のバージョンが取得できない場合、その区画ごと省く。
 func Environment(webviewVersion string) string
 ```
 
-- `vendor.json` の形式は `VendorEntry` の配列とする（BR-042）。
+- `vendor.json` の形式は `VendorEntry` の配列とする（BR-042）。**全エントリが同じ形を持つ。** 同梱物の中に含まれるもの（Viz.js / Graphviz / Expat）だけを別の形にしない。
+- **`SPDX` と `License` はアプリケーションの実行時には使わない。** 全文は `THIRD_PARTY.md` へ取り込み済みであり（FR-101）、この 2 つを読むのは `genlicenses`（BR-040）と `vendorupdate`（BR-043）である。**それでも同じ構造体に持たせるのは、`vendor.json` の形を 1 つに保つためである。**
+- **`Bundled` の絞り込みをここ 1 か所に置く。** フロントエンドで絞ると、絞り方が 2 つに分かれる（IMP-306）。
 - `Vendors` は解析に失敗しても**空スライスを返し、エラーにしない**（FR-111）。情報表示が欠けるだけで、文書の閲覧は続けられる。JSON の `null` は解析に成功したうえで nil を書き込むため、そこも空スライスへ揃える。
 - `Environment` の WebView 名は OS で異なる（Windows: `WebView2`、Linux: `WebKitGTK`）。バージョンが空のときに「`WebView2 `」とだけ書かれた区画は情報として役に立たないため、区画ごと省く。
 
@@ -1185,6 +1239,7 @@ func (a *App) captureWindowState() {
 | IMP-116 | サニタイズ | MUST |
 | IMP-117 | 見出しアンカーの生成 | MUST |
 | IMP-118 | 画像 URL の書き換え | MUST |
+| IMP-119 | PlantUML ブロックの取り出し | MUST |
 | IMP-130 | filetree 型定義 | MUST |
 | IMP-131 | 読み込み | MUST |
 | IMP-132 | フィルタ規則 | MUST |

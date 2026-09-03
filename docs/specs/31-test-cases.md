@@ -127,13 +127,19 @@
 | 1 | `Hello World` | `hello-world` |
 | 2 | `What's New?` | `whats-new` |
 | 3 | `概要` | `概要`（非 ASCII は保持） |
-| 4 | `a   b`（連続空白） | `a-b` |
+| 4 | `a   b`（連続空白 3 つ） | `a---b`。**空白 1 つにつき `-` 1 つ。まとめない**（MD-021 の 3） |
 | 5 | `1. はじめに` | `1-はじめに` |
 | 6 | `foo_bar-baz` | `foo_bar-baz`（`_` と `-` は保持） |
 | 7 | 同一文書内で `Test` が 3 回 | `test`, `test-1`, `test-2` |
 | 8 | `**強調**を含む` | `強調を含む`（インライン記法を除去） |
 | 9 | `` `code` を含む `` | `code-を含む` |
-| 10 | 空の見出し | 空文字または連番のみ（実装の定義に従い、固定する） |
+| 10 | `正引き（要求 → 実装・表示）` | `正引き要求--実装表示`（**全角の括弧・矢印・中黒は除去される**。MD-021 の 4）。**`→` を落とした跡に空白が 2 つ並ぶため、ハイフンも 2 つになる** |
+| 11 | `a ! b` | `a--b`（同上。記号を落とした跡の空白は詰めない） |
+| 12 | `概要　詳細`（全角空白） | `概要-詳細`（全角空白も区切りとして扱う） |
+| 13 | 空の見出し | 空文字または連番のみ（実装の定義に従い、固定する） |
+
+> [!IMPORTANT]
+> **ケース 4・10・11 を欠かさない。** 「非 ASCII をすべて残す」実装でもケース 3・5・8・9 は通り、「連続する空白をまとめる」実装でもケース 1・2・5 は通る。**どちらの誤りも、全角記号を含む見出しへのリンクが GitHub と食い違う形で現れる。** 本仕様書 90 章のアンカー（`#903-正引き要求--実装表示` ほか 3 本）が実際にこれに当たり、**2 つの規則が両方そろって初めて解決する**（MD-021）。
 
 ### UT-203: 見出しの抽出
 対象: `renderer.Render` の `Headings`　根拠: FR-040 / IMP-110, IMP-117
@@ -231,7 +237,8 @@
 | 9 | `<div class="attacker-defined">` | `class` が除去されるか、許可接頭辞でないため落ちる |
 | 10 | 正常な変換結果 | `code-block` / `markdown-alert` / `math-*` / `chroma` のクラスが**残る** |
 | 11 | 見出しの `id` 属性 | 残る（アンカーのため） |
-| 12 | `data-mermaid` / `data-source` / `data-lang` | 残る |
+| 12 | `data-mermaid` / `data-plantuml` / `data-puml-error` / `data-source` / `data-lang` | 残る |
+| 13 | `pre class="mermaid-source"` / `pre class="plantuml-source"` | `class` が**残る**（IMP-116 の接頭辞） |
 
 > [!IMPORTANT]
 > ケース 10〜12 は、サニタイズを厳しくしすぎて自前の出力まで落としていないかの確認である。1〜9 だけを書くと、「すべて除去する」実装でもテストが通ってしまう。**両方向を必ず書く。**
@@ -261,17 +268,19 @@
 | 5 | `---` が閉じていない | 本文として描画するか、全体を除去するか——**どちらかに固定し、テストで明示する** |
 
 ### UT-212: 遅延ロードのフラグ
-対象: `renderer.Render` の `NeedsMermaid` / `NeedsKaTeX`　根拠: AR-021, NFR-013 / IMP-113, IMP-115
+対象: `renderer.Render` の `NeedsMermaid` / `NeedsKaTeX` / `NeedsPlantUML`　根拠: AR-021, MD-085, NFR-013 / IMP-113, IMP-115, IMP-119
 
 | # | 入力 | 期待 |
 | --- | --- | --- |
-| 1 | プレーンな Markdown | 両方 false |
+| 1 | プレーンな Markdown | 3 つとも false |
 | 2 | Mermaid のみ | `NeedsMermaid` のみ true |
 | 3 | 数式のみ | `NeedsKaTeX` のみ true |
-| 4 | 両方を含む | 両方 true |
-| 5 | コードブロック内に `mermaid` の文字列 | `NeedsMermaid` は **false**（言語指定でなければ対象外） |
+| 4 | PlantUML のみ | `NeedsPlantUML` のみ true |
+| 5 | 3 つとも含む | 3 つとも true |
+| 6 | コードブロック内に `mermaid` の文字列 | `NeedsMermaid` は **false**（言語指定でなければ対象外） |
+| 7 | コードブロック内に `plantuml` の文字列 | `NeedsPlantUML` は **false**（同上） |
 
-このフラグが誤って true になると、遅延ロードの効果（NFR-013）が失われる。ケース 1 と 5 が要である。
+このフラグが誤って true になると、遅延ロードの効果（NFR-013）が失われる。ケース 1・6・7 が要である。**PlantUML は資産が最も大きいため（MD-085）、誤検知の代償も最も大きい。**
 
 ### UT-213: 異常入力で落ちないこと
 対象: `renderer.Render`　根拠: FR-111, NFR-050 / IMP-022
@@ -293,6 +302,47 @@
 - `testdata/showcase.md`（全対応記法を含む）を変換し、`testdata/showcase.golden.html` と比較する。
 - 差分がある場合は失敗させ、`-update` フラグで再生成できるようにする。
 - **更新時は差分を必ず読む**（UT-039）。
+
+### UT-215: PlantUML ブロック
+対象: `renderer.Render`　根拠: FR-024, MD-083 / IMP-119
+
+| # | 入力 | 期待 |
+| --- | --- | --- |
+| 1 | ` ```uml ` ブロック | **PlantUML として扱わない**（MD-083。境界） |
+| 2 | ` ```plantuml2 ` ブロック | **PlantUML として扱わない**（前方一致で拾わない。境界） |
+| 3 | ` ```plantuml ` ブロック | `data-plantuml` 属性を持つ |
+| 4 | ` ```puml ` ブロック | 同上（別名。MD-083） |
+| 5 | ` ```PlantUML ` ブロック | 同上（大小を区別しない） |
+| 6 | 同上 | **`data-source` 属性に元のソースが入る**（IMP-119） |
+| 7 | 同上 | `<pre class="plantuml-source">` に元のソースが入る |
+| 8 | ソースに `<` `>` `&` を含む | 属性・本文とも正しくエスケープされる |
+| 9 | PlantUML を含む文書 | `Result.NeedsPlantUML` が true |
+| 10 | PlantUML を含まない文書 | `Result.NeedsPlantUML` が **false** |
+| 11 | ` ```mermaid ` ブロック | PlantUML として扱わない（`data-plantuml` を持たない） |
+
+### UT-216: PlantUML の取り込み指令の検査
+対象: `renderer.Render`　根拠: MD-084, NFR-032 / IMP-119
+
+**拒むべきものと拒んではいけないものが隣り合う**。境界を先に置く（UT-013）。
+
+| # | 入力（PlantUML ブロック内の行） | 期待 |
+| --- | --- | --- |
+| 1 | `!theme plain`（`from` なし） | **拒まない。** `data-plantuml` を持つ（MD-083 が組み込みテーマを許す。境界） |
+| 2 | `Alice -> Bob : !include a` | **拒まない**（行頭でなければ指令ではない。境界） |
+| 3 | `' !include a`（コメント行） | **拒まない**（境界） |
+| 4 | `!include foo.puml` | `data-plantuml` を**持たず**、`data-puml-error="include"` を持つ |
+| 5 | `  !include foo.puml`（行頭に空白） | 同上（前の空白は許す） |
+| 6 | `!INCLUDE FOO.PUML` | 同上（大小を区別しない） |
+| 7 | `!includeurl http://example.com/a` | 同上 |
+| 8 | `!includesub a.puml!X` | 同上。**`!include` の前方一致ではなく、独立した指令として判定する** |
+| 9 | `!import a.puml` | 同上 |
+| 10 | `!theme x from https://example.com/` | 同上（`from` を伴う） |
+| 11 | `!include <C4/C4_Container>`（標準ライブラリ） | 同上（MD-083。描けないものをエラー図ではなく理由で返す） |
+| 12 | 指令を含むブロック**だけ**の文書 | **`NeedsPlantUML` が false**（IMP-119。読む必要の無い 5 MiB を読ませない） |
+| 13 | 指令を含むブロックと正常なブロックの両方 | `NeedsPlantUML` が true。**指令のブロックだけが除外される** |
+
+> [!IMPORTANT]
+> **ケース 1・2・3 を欠かさない。** 「`!include` という文字列があれば拒む」実装でもケース 4〜11 はすべて通る。**拒んではいけないものを拒んだことは、拒む側のケースでは検出できない。**
 
 ## 31.4 filetree パッケージ（UT-3xx）
 
@@ -670,13 +720,20 @@ OS 依存のケースは `runtime.GOOS` で対象を分ける。
 ## 31.9 buildinfo / session / applog（UT-8xx）
 
 ### UT-801: vendor.json の解析
-対象: `buildinfo.Vendors`　根拠: BR-042 / IMP-181
+対象: `buildinfo.Vendors` / `buildinfo.Bundled`　根拠: BR-042, UI-100 / IMP-181
 
 | # | 入力 | 期待 |
 | --- | --- | --- |
-| 1 | 正常な vendor.json | 各エントリの名称・バージョンが読める |
+| 1 | 正常な vendor.json | 各エントリの名称・バージョン・`spdx`・`license` が読める |
 | 2 | 壊れた JSON | 空スライスを返す。panic しない |
 | 3 | エントリが 0 件 | 空スライス |
+| 4 | `version` が空のエントリ | **読める。落とさない**（Graphviz / Expat は版を持たない。BR-042） |
+| 5 | `bundledIn` を持つエントリを含む | `Vendors` は**すべて**返す |
+| 6 | 同上 | `Bundled` は **`bundledIn` が空のものだけ**を返す（UI-100） |
+| 7 | 全エントリが `bundledIn` を持つ | `Bundled` は空スライス。`nil` を返さない |
+
+> [!IMPORTANT]
+> **ケース 4 が要である。** 「版が無いものは不完全だから捨てる」という実装は、`Bundled` 行では正しく見えるが、**ライセンス一覧から Graphviz が消える**（BR-040, NFR-051）。版は再頒布の条件ではない。
 
 ### UT-802: README の探索
 対象: `session.FindReadme`　根拠: FR-013 / IMP-193
@@ -795,6 +852,7 @@ UT-061 に基づき、**すべての要求 ID について**単体テストの�
 | FR-021 | UT-101, UT-102, UT-103 | |
 | FR-022 | UT-210, UT-601 | 読み込み失敗時の表示（IMP-226）はフロント側 |
 | FR-023 | UT-207 | 描画自体はフロント側 |
+| FR-024 | UT-215 | 描画自体はフロント側 |
 | FR-030 | UT-803 | 起動時の決定。以降の不変条件は GUI 操作 |
 | FR-031 | UT-105, UT-301, UT-302 | |
 | FR-032 | UT-303, UT-304, UT-305 | |
@@ -883,6 +941,9 @@ UT-061 に基づき、**すべての要求 ID について**単体テストの�
 | MD-080 | UT-207 | |
 | MD-081 | — (GUI) | Mermaid の設定値はフロント側 |
 | MD-082 | UT-212 | |
+| MD-083 | UT-215 | 描ける図種別は処理系の振る舞い。対象の取り出しまでを見る |
+| MD-084 | UT-216 | |
+| MD-085 | UT-212 | |
 | AR-001 | — (DESIGN) | 方式の決定 |
 | AR-002 | — (DESIGN) | 選定根拠 |
 | AR-003 | — (BUILD) | ビルドタグとリンク先 |
@@ -938,7 +999,7 @@ UT-061 に基づき、**すべての要求 ID について**単体テストの�
 | NFR-022 | UT-402 | ポーリングしないこと（デバウンス） |
 | NFR-030 | UT-209, UT-701 | |
 | NFR-031 | UT-602 | |
-| NFR-032 | — (ABSENCE) | 通信しないことの証明は困難。レビューで担保 |
+| NFR-032 | UT-216 | **取り込み指令を弾くこと**は検証できる（IMP-119）。通信しないこと自体の証明は困難で、そこはレビューで担保 |
 | NFR-033 | UT-501 | |
 | NFR-034 | — (BUILD) | 脆弱性検査は CI |
 | NFR-035 | UT-701, UT-702, UT-704 | 起動経路の 3 つすべて。とくに UT-704 の 1〜6 |
@@ -1001,6 +1062,8 @@ UT-061 に基づき、**すべての要求 ID について**単体テストの�
 | UT-212 | 遅延ロードのフラグ | MUST |
 | UT-213 | 異常入力で落ちないこと | MUST |
 | UT-214 | ゴールデンテスト | SHOULD |
+| UT-215 | PlantUML ブロック | MUST |
+| UT-216 | PlantUML の取り込み指令の検査 | MUST |
 | UT-301 | フィルタ規則 | MUST |
 | UT-302 | 並び順 | MUST |
 | UT-303 | 件数の上限 | MUST |

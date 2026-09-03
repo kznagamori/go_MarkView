@@ -26,18 +26,19 @@
 
 ```go
 type DocumentDTO struct {
-    Path         string             `json:"path"`         // 絶対パス
-    DisplayPath  string             `json:"displayPath"`  // ステータス表示用（UI-060）
-    Name         string             `json:"name"`         // ベース名（UI-013 のタイトル）
-    OutsideTree  bool               `json:"outsideTree"`  // FR-052
-    HTML         string             `json:"html"`         // サニタイズ済み（IMP-116）
-    Headings     []renderer.Heading `json:"headings"`     // FR-040
-    LineCount    int                `json:"lineCount"`    // UI-060
-    Encoding     string             `json:"encoding"`     // 常に "UTF-8"
-    NeedsMermaid bool               `json:"needsMermaid"` // AR-021
-    NeedsKaTeX   bool               `json:"needsKaTeX"`   // AR-021
-    Scroll       ScrollDTO          `json:"scroll"`       // 描画後のスクロール指示
-    Warnings     []string           `json:"warnings"`     // 警告の Kind（IMP-315）
+    Path          string             `json:"path"`          // 絶対パス
+    DisplayPath   string             `json:"displayPath"`   // ステータス表示用（UI-060）
+    Name          string             `json:"name"`          // ベース名（UI-013 のタイトル）
+    OutsideTree   bool               `json:"outsideTree"`   // FR-052
+    HTML          string             `json:"html"`          // サニタイズ済み（IMP-116）
+    Headings      []renderer.Heading `json:"headings"`      // FR-040
+    LineCount     int                `json:"lineCount"`     // UI-060
+    Encoding      string             `json:"encoding"`      // 常に "UTF-8"
+    NeedsMermaid  bool               `json:"needsMermaid"`  // AR-021
+    NeedsKaTeX    bool               `json:"needsKaTeX"`    // AR-021
+    NeedsPlantUML bool               `json:"needsPlantUML"` // AR-021, MD-085
+    Scroll        ScrollDTO          `json:"scroll"`        // 描画後のスクロール指示
+    Warnings      []string           `json:"warnings"`      // 警告の Kind（IMP-315）
 }
 
 type ScrollDTO struct {
@@ -146,6 +147,8 @@ type AboutDTO struct {
     Licenses    string              `json:"licenses"`     // THIRD_PARTY.md の全文（FR-101）
 }
 ```
+
+- **`Vendors` には `buildinfo.Bundled()` の結果を入れる**（IMP-181）。`Vendors()` の全体ではない。同梱物の中に含まれるもの（Viz.js / Graphviz / Expat）は `Bundled` 行に出さず、`Licenses` の中に全文として現れる（UI-100）。
 
 ### IMP-307: ErrorDTO **MUST**
 
@@ -363,7 +366,7 @@ FR-014 を実装する。
 
 - ペイロードの `Scroll.Mode` は **`keep`** とする（IMP-302）。位置はフロントエンドが保持している現在値を用い、Go 側は `Top` を設定しない。
 - 再描画時、フロントエンドは検索状態をリセットし（FR-080）、ツリーの展開状態は維持する（FR-014）。
-- 再描画後、Mermaid・KaTeX の描画も再実行する。資産の再読み込みは行わない（AR-021）。
+- 再描画後、Mermaid・KaTeX・PlantUML の描画も再実行する。資産の再読み込みは行わない（AR-021）。
 
 ### IMP-322: イベントの購読解除 **SHOULD**
 

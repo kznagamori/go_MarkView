@@ -62,6 +62,7 @@ go_MarkView/
 │   │   ├── alerts.go           GitHub Alerts 拡張
 │   │   ├── math.go             数式ノードの保護
 │   │   ├── mermaid.go          mermaid ブロックの取り出し
+│   │   ├── plantuml.go         plantuml ブロックの取り出しと指令の検査
 │   │   ├── highlight.go        chroma 設定
 │   │   ├── anchor.go           見出しスラッグ生成
 │   │   ├── sanitize.go         bluemonday ポリシー
@@ -86,7 +87,7 @@ go_MarkView/
 │   │   ├── open_other.go       xdg-open（IMP-031, IMP-170）
 │   │   ├── presets_windows.go  既知パスの探索（IMP-031, IMP-172）
 │   │   └── presets_other.go    $PATH の探索（IMP-031, IMP-172）
-│   ├── ostheme/                IMP-175（依存を持たない葉パッケージ）
+│   ├── ostheme/                IMP-175（`app.go` からのみ使う。IMP-012 の例外の葉ではない）
 │   │   ├── ostheme.go          OS のテーマの取得と、値の解釈
 │   │   ├── ostheme_windows.go  レジストリ（IMP-031, IMP-175）
 │   │   ├── ostheme_other.go    gsettings（IMP-031, IMP-175）
@@ -105,6 +106,8 @@ go_MarkView/
 │   ├── js/
 │   ├── icons/
 │   └── vendor/
+│       ├── vendor.json        名称・版・SPDX・全文の位置・取得元・取得日（BR-042）
+│       └── plantuml/licenses/ Viz.js / Graphviz / Expat の全文（バンドルに入っていない）
 ├── assets/                     アプリケーションアイコンの原本（UI-025, BR-013）
 │   ├── icon.ico                Windows: 実行ファイル・ウィンドウ
 │   ├── icon.png                Linux ウィンドウ / 情報ダイアログ
@@ -315,7 +318,7 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 | --- | --- | --- |
 | `mdfile` | 拡張子の判定（大小の別、多重拡張子、境界） | FR-010, FR-031 |
 | `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類 | FR-021, FR-016, FR-110 |
-| `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・サニタイズ・アンカー生成 | MD-020〜MD-082 |
+| `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・**PlantUML 抽出と指令の検査**・サニタイズ・アンカー生成 | MD-020〜MD-085 |
 | `filetree` | フィルタ規則、除外ディレクトリ、並び順、件数上限 | FR-031, FR-032 |
 | `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め | UI-112, UI-113 |
 | `watcher` | デバウンス、削除とリネームの区別、監視対象の切り替え | FR-014, AR-070 |

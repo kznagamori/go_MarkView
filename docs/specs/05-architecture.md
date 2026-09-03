@@ -13,7 +13,7 @@
 | 層 | 技術 | 役割 |
 | --- | --- | --- |
 | アプリケーション層 | Go | ファイル入出力、Markdown → HTML 変換、シンタックスハイライト、サニタイズ、ファイル監視、設定管理 |
-| 表示層 | OS の WebView + HTML / CSS / JavaScript | 描画、ペインのレイアウト、スクロール、Mermaid・数式のレンダリング、ユーザ操作の受付 |
+| 表示層 | OS の WebView + HTML / CSS / JavaScript | 描画、ペインのレイアウト、スクロール、Mermaid・PlantUML・数式のレンダリング、ユーザ操作の受付 |
 | 橋渡し | Wails のバインディング機構 | Go の関数を JavaScript から呼び出す／Go からイベントを送出する |
 
 ### AR-002: 選定根拠 **MUST**
@@ -73,7 +73,7 @@ flowchart TB
     subgraph Frontend["表示層 (WebView)"]
         UI["UI シェル<br/>ツールバー / ペイン / 検索"]
         VIEW["本文ビュー<br/>コピーボタン / スクロール連動"]
-        LAZY["遅延ローダ<br/>Mermaid / KaTeX"]
+        LAZY["遅延ローダ<br/>Mermaid / KaTeX / PlantUML"]
     end
 
     subgraph Backend["アプリケーション層 (Go)"]
@@ -120,6 +120,7 @@ go_MarkView/
 │   │   ├── alerts.go          GitHub Alerts 拡張（MD-040）
 │   │   ├── math.go            数式ノードの保護（MD-060）
 │   │   ├── mermaid.go         mermaid ブロックの取り出し（MD-080）
+│   │   ├── plantuml.go        plantuml ブロックの取り出しと指令の検査（MD-083, MD-084）
 │   │   ├── highlight.go       chroma 設定（MD-030）
 │   │   └── sanitize.go        許可リスト（MD-072）
 │   ├── filetree/              ファイルツリーの遅延展開（FR-032）
@@ -135,9 +136,11 @@ go_MarkView/
 │   ├── css/                   アプリ UI と GitHub 準拠スタイル
 │   ├── js/                    UI ロジック（ビルド不要の素の JavaScript）
 │   └── vendor/                リポジトリで管理する埋め込み資産（BR-042）
-│       ├── vendor.json        資産ごとのバージョン・取得元・取得日
+│       ├── vendor.json        名称・版・SPDX・全文の位置・取得元・取得日（BR-042）
 │       ├── mermaid/           mermaid.min.js（ライセンス表記込み）
-│       └── katex/             katex.min.js / katex.min.css / フォント
+│       ├── katex/             katex.min.js / katex.min.css / フォント
+│       └── plantuml/          plantuml.js / viz-global.js（ライセンス表記込み）
+│           └── licenses/      Viz.js / Graphviz / Expat の全文（BR-042。バンドルに入っていない）
 ├── assets/                    アプリケーションアイコンの原本（UI-025, BR-013）
 │   ├── icon.ico               Windows: 実行ファイル・ウィンドウ
 │   ├── icon.png               Linux: ウィンドウ / 情報ダイアログ表示用
@@ -167,11 +170,14 @@ go_MarkView/
 | アイコン（インライン SVG） | 10 KB 未満 | ツールバー（UI-022） |
 | `mermaid.min.js` | 約 3 MB | Mermaid 図（MD-080） |
 | KaTeX（JS + CSS + フォント） | 約 1.3 MB | 数式（MD-060） |
-| ライセンス全文 | 200 KB 未満 | 情報ウィンドウ（FR-101） |
+| `plantuml.js` | 約 3.7 MB | PlantUML 図（MD-083） |
+| `viz-global.js` | 約 1.4 MB | PlantUML の Graphviz を要する図（MD-083） |
+| ライセンス全文 | 200 KB 未満 | 情報ウィンドウ（FR-101）。**`viz-global.js` が同梱する 3 件はバンドルに入っていないため別に持つ**（BR-042） |
 | 内蔵の操作案内 Markdown | 5 KB 未満 | 引数なし起動時（FR-013） |
-| `vendor.json`（資産のバージョン情報） | 1 KB 未満 | 情報ウィンドウの `Bundled` 行（UI-100） |
+| `vendor.json`（資産の記録） | 2 KB 未満 | 情報ウィンドウの `Bundled` 行（UI-100）と、ライセンス一覧の生成（BR-040） |
 
-- Mermaid と KaTeX の実ファイルはリポジトリで管理し、ビルド時に取得しない。バージョンの決定と更新の運用は BR-042・BR-043 に従う。
+- Mermaid・KaTeX・PlantUML の実ファイルはリポジトリで管理し、ビルド時に取得しない。バージョンの決定と更新の運用は BR-042・BR-043 に従う。
+- **PlantUML の 2 ファイルは読み込む順序が決まっている**。`viz-global.js` を先に、`plantuml.js` を後に読む（IMP-233）。逆にすると Graphviz が見つからない。
 - CDN からの読み込み、実行ファイル外のファイル参照、自動ダウンロードのいずれも行わない。
 - フォントファイルは埋め込まない（KaTeX が必要とする数式フォントのみ例外）。本文・コードは OS のフォントを使用する（MD-010）。
 
@@ -183,8 +189,9 @@ go_MarkView/
 | --- | --- |
 | Mermaid | 変換結果に `mermaid` ブロックが 1 つ以上含まれるとき |
 | KaTeX | 変換結果に数式要素が 1 つ以上含まれるとき |
+| PlantUML | 変換結果に `plantuml` / `puml` ブロックが 1 つ以上含まれるとき |
 
-- 判定は Go 側の変換時に行い、フロントエンドへ「Mermaid が必要」「KaTeX が必要」というフラグとともに HTML を渡す。
+- 判定は Go 側の変換時に行い、フロントエンドへ「Mermaid が必要」「KaTeX が必要」「PlantUML が必要」というフラグとともに HTML を渡す（IMP-302）。
 - 一度読み込んだ資産はプロセス終了まで保持し、文書を切り替えるたびに再読み込みしない。
 - 読み込みは埋め込み資産を配信する内部 HTTP 経由（AR-040）で行う。
 
@@ -216,7 +223,7 @@ sequenceDiagram
     SAN-->>DOC: 安全な HTML
     DOC->>DOC: アウトライン抽出 (FR-040)
     DOC-->>FE: HTML + アウトライン + 必要資産フラグ
-    FE->>FE: 描画 / コピーボタン付与 / Mermaid・KaTeX の実行
+    FE->>FE: 描画 / コピーボタン付与 / Mermaid・KaTeX・PlantUML の実行
 ```
 
 ### AR-031: 変換に関する制約 **MUST**
@@ -224,7 +231,7 @@ sequenceDiagram
 - **Markdown から HTML への変換をフロントエンドで行ってはならない。** JavaScript の Markdown パーサを埋め込むと、サイズ・メモリ・変換速度のいずれにも不利となるため。
 - **シンタックスハイライトも Go 側で行う。** ブラウザ用ハイライトライブラリは埋め込まない。
 - サニタイズは変換パイプラインの最後段に固定で組み込み、迂回できる経路を設けない。
-- Mermaid と KaTeX のみ、性質上フロントエンドで実行する。
+- Mermaid・KaTeX・PlantUML のみ、性質上フロントエンドで実行する。
 
 ### AR-032: 採用ライブラリ **SHOULD**
 
@@ -241,23 +248,34 @@ sequenceDiagram
 | ファイル監視 | `github.com/fsnotify/fsnotify` | BSD-3-Clause |
 | Mermaid | `mermaid`（埋め込み JS。バージョン管理は BR-042） | MIT |
 | 数式 | `KaTeX`（埋め込み JS/CSS/フォント。バージョン管理は BR-042） | MIT |
+| PlantUML | `@plantuml/core`（埋め込み JS。バージョン管理は BR-042） | **MIT（1.2026.6 以降）** |
+| PlantUML の Graphviz | `Viz.js`（`viz-global.js`。埋め込み JS） | MIT |
+| └ 同梱される Graphviz 本体 | `viz-global.js` に**オブジェクトコードで**含まれる | **EPL-2.0**（NFR-051） |
+| └ 同梱される Expat | 同上 | MIT |
 | 本文スタイル | `github-markdown-css` | MIT |
 | アイコン | Octicons 等の MIT ライセンスのアイコンセット | MIT |
 
 - GitHub Alerts（MD-040）および数式ノードの保護（MD-060）に相当する goldmark 拡張は、要件を満たす既存拡張がなければ自前で実装する。いずれも AST 変換で実現でき、依存の追加を避けられる。
-- 依存の追加は「サイズへの寄与」と「保守されているか」の両面で評価する。ライセンスは MIT / BSD / Apache-2.0 等の再配布可能なものに限る（NFR-051）。
+- 依存の追加は「サイズへの寄与」と「保守されているか」の両面で評価する。ライセンスは MIT / BSD / Apache-2.0 / EPL-2.0 等の再配布可能なものに限る（NFR-051）。
+
+> [!WARNING]
+> **`@plantuml/core` は 1.2026.5 以前が GPL-3.0-or-later である。** MIT になったのは **1.2026.6 から**であり、NFR-051 は GPL 系の同梱を禁じている。**版を下げると即座に違反する。** 資産は BR-043 で自動更新されるため、取得した版のライセンスを確かめる手順を BR-043 に定めている。
+>
+> **`viz-global.js` は 3 つのプロジェクトを含む**。先頭の告知に `This distribution contains other software in object code form: Graphviz / Expat` とあるとおりであり、**Graphviz は EPL-2.0**である。NFR-051 で許容するが、**改変しないこと**がその前提になる（BR-042）。
 
 ### AR-033: chroma のサイズ最適化 **SHOULD**
 
 chroma はすべての言語定義を含めると数 MB のサイズ寄与となる。MD-031 に列挙した言語に限定して登録することでサイズを削減してよい。その場合、未登録の言語が指定されたときはハイライトなしで表示する（MD-030 の規定どおり）。
 
 > [!NOTE]
-> **実装時の判断（2026-08-31）: 限定しない。** 実測でのサイズ寄与は 3.7 MB であり、NFR-021 の上限（実行ファイル 25 MB）に対して余裕がある。加えて、限定には次の 2 つの障害がある。
+> **実装時の判断（2026-08-31）: 限定しない。** 実測でのサイズ寄与は 3.7 MB であり、NFR-021 の上限（実行ファイル 30 MB）に対して余裕がある。加えて、限定には次の 2 つの障害がある。
 > 
 > - IMP-114 が採用する `goldmark-highlighting` は `lexers.Get`（chroma のグローバル登録簿）を直接呼ぶ。自前の登録簿に差し替える手段がなく、限定するにはこのライブラリを使わない構成が必要になる。
 > - chroma v2 は 257 個の言語定義を 1 つの `embed.FS` に持つ。限定は XML の複製と chroma 更新への追随を意味し、「エイリアス解決は chroma の機能に委ねる」（IMP-114）とも両立しない。
 > 
 > P6 で配布物を実測し、上限を超える場合に再検討する。
+>
+> **再検討の契機は近づいた（2026-09-03）。** P6 の実測は 21.87 MB であったが、PlantUML の同梱（AR-020）で約 27.2 MB になる。**上限 30 MB に対する余裕は 2.8 MB** であり、chroma の寄与（3.7 MB）はそれを上回る。それでも限定しない判断を変えないのは、上記 2 つの障害が解消されていないためである。**削るなら chroma より先に検討すべきものがある**（`emoji.js` は既に同梱していない。AR-020）。
 
 ## 5.5 ローカルファイルの配信（AR-040 系）
 
