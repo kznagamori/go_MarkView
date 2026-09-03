@@ -51,6 +51,10 @@ build/bin/
 build/appicon.png
 build/windows/icon.ico
 
+# 配布アーカイブ（BR-020）。scripts/pack の既定の出力先であり、リリース CI が
+# 成果物を置く場所でもある。手元で E2E を回すと数 MB の zip が残る
+dist/
+
 # E2E の検証用データのうち、検証のたびに生成するもの（E2E-012）
 # 巨大ファイルはリポジトリに含めない。go run ./scripts/gentestdata で作る
 testdata/e2e/generated/
