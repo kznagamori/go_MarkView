@@ -16,6 +16,7 @@ export const S = {
   tipThemeLight: "Light theme / ライトテーマ",
   tipOutline: "Outline / アウトライン",
   tipFileTree: "File tree / ファイルツリー",
+  tipEdit: "Edit / 編集",
   tipAbout: "About / アプリケーション情報",
 
   // それ以外はすべて英語（UI-024）
@@ -42,6 +43,9 @@ export const S = {
   // ステータス領域（DSP-150）
   statusLines: (n) => `${n} lines`,
   statusZoom: (z) => `${z}%`,
+  // エディタの起動に成功したときだけ出す（FR-090, DSP-151）。**背面の
+  // ウィンドウで開くことがあり、何も出ないと「押しても無反応」に見える**
+  statusEditor: (name) => `Opened in ${name}`,
 
   // 状態画面（DSP-181）
   welcomeTitle: "Open a Markdown file",
@@ -66,6 +70,19 @@ export const S = {
   aboutLicenses: "Third-party licenses",
   close: "Close",
 
+  // エディタ選択ダイアログ（UI-103, DSP-172）
+  //
+  // **エディタ名をここに置かない。** 一覧に出る名前は固有名詞であり、
+  // Go 側のプリセット表（IMP-172）から EditorDTO.name で届く。写すと
+  // 定義が 2 か所になり、片方だけ増えたときに一覧から名前が消える
+  editorTitle: "Choose an editor",
+  editorOther: "Other...",
+  editorMissing: "(not installed)", // 検出できなかった行に添える
+  editorNone: "(no file chosen)", // Other... をまだ選んでいないとき
+  editorBrowse: "Browse",
+  editorOpen: "Open", // ダイアログのボタン。tipOpen とは別物
+  cancel: "Cancel",
+
   // エラー（IMP-315 の Kind に対応）
   errNotFound: (p) => `File not found: ${p}`,
   errPermission: (p) => `Cannot access: ${p}`,
@@ -73,6 +90,10 @@ export const S = {
   errLinkNotFound: (h) => `Link target not found: ${h}`,
   errClipboard: "Failed to copy.",
   errRemoved: (p) => `File was deleted: ${p}`,
+  // パスを伴う上の文言と違い、**どちらもパスを含めない。** ここに載せられる対象は
+  // エディタの実行ファイルのパスしかなく、画面へ出してはならない（NFR-035 の 3）
+  errEditorFailed: "Failed to start the editor.",
+  errEditorSelf: "MarkView cannot be used as an editor.",
   warnEncoding: "Some characters were replaced.",
 };
 
@@ -88,6 +109,8 @@ const statusText = {
   "link-not-found": (e) => S.errLinkNotFound(e.path),
   clipboard: () => S.errClipboard,
   removed: (e) => S.errRemoved(e.path),
+  "editor-failed": () => S.errEditorFailed,
+  "editor-self": () => S.errEditorSelf,
   encoding: () => S.warnEncoding,
 };
 

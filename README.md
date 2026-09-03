@@ -15,7 +15,7 @@ MarkView は、**Markdown ドキュメントを受け取った側が、追加の
 
 MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown と一緒に配れば、受け取った側は
 ダブルクリックするだけで読める。** インストールも、ランタイムの導入も、ネットワーク接続も
-要りません。書く道具は既にあるので、MarkView は書きません。読むことだけをします。
+要りません。書く道具は既にあるので、MarkView は書きません。読むことと、**書く道具へ渡すこと**だけをします。
 
 > **MarkView** is a lightweight, single-executable Markdown viewer for Windows and Linux.
 > No installation, no runtime, no network access. It renders Markdown the way GitHub does.
@@ -36,6 +36,7 @@ MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown
 - Light / Dark テーマ。**初回は OS の設定に追従**し、一度切り替えるとその選択を記憶
 - コードブロックのコピーボタン
 - 表示中のファイルが外部で保存されると、**スクロール位置を保ったまま自動で再描画**
+- 表示中のファイルを**使い慣れたエディタで開く**ボタン（編集は外部に委ね、MarkView 自身は書かない）
 - 外部 URL は既定のブラウザ、画像は OS の既定アプリへ委譲。ウィンドウ内で遷移しない
 - 開いたファイルのパス・表示履歴・検索語を**ディスクのどこにも書かない**
 

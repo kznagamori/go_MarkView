@@ -81,8 +81,11 @@ go_MarkView/
 │   │   └── assetsrv.go         埋め込み資産とローカル画像の配信
 │   ├── opener/                 IMP-170 系
 │   │   ├── opener.go           既定ブラウザ・既定アプリへの委譲
+│   │   ├── editor.go           選ばれたエディタの起動（IMP-171）
 │   │   ├── open_windows.go     rundll32.exe（IMP-031, IMP-170）
-│   │   └── open_other.go       xdg-open（IMP-031, IMP-170）
+│   │   ├── open_other.go       xdg-open（IMP-031, IMP-170）
+│   │   ├── presets_windows.go  既知パスの探索（IMP-031, IMP-172）
+│   │   └── presets_other.go    $PATH の探索（IMP-031, IMP-172）
 │   ├── ostheme/                IMP-175（依存を持たない葉パッケージ）
 │   │   ├── ostheme.go          OS のテーマの取得と、値の解釈
 │   │   ├── ostheme_windows.go  レジストリ（IMP-031, IMP-175）
@@ -310,14 +313,18 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 
 | パッケージ | 主なテスト対象 | 対応要求 |
 | --- | --- | --- |
+| `mdfile` | 拡張子の判定（大小の別、多重拡張子、境界） | FR-010, FR-031 |
 | `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類 | FR-021, FR-016, FR-110 |
 | `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・サニタイズ・アンカー生成 | MD-020〜MD-082 |
 | `filetree` | フィルタ規則、除外ディレクトリ、並び順、件数上限 | FR-031, FR-032 |
 | `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め | UI-112, UI-113 |
+| `watcher` | デバウンス、削除とリネームの区別、監視対象の切り替え | FR-014, AR-070 |
 | `assetsrv` | 拡張子の許可・拒否、パス正規化、ヘッダ | AR-041, NFR-031 |
-| `opener` | 引数の組み立て（実際の起動は行わない） | FR-053 |
+| `opener` | 引数の組み立てと起動前の検査（実際の起動は行わない） | FR-053, FR-090 |
 | `ostheme` | レジストリ値と gsettings 出力の解釈（実際の問い合わせは行わない） | FR-071 |
 | `applog` | `MARKVIEW_DEBUG` の判定と出力先の切り替え（`"1"` 以外はすべて無効） | NFR-041 |
+| `buildinfo` | `vendor.json` の解析と環境情報の組み立て | BR-042, UI-100 |
+| `session` | 表示履歴、起動時の対象解決、表示用パスの算出 | FR-051, FR-013, FR-052 |
 
 ### IMP-041: ゴールデンテスト **SHOULD**
 

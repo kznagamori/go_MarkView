@@ -4,6 +4,9 @@
 
 本文書は `internal/` 配下の各パッケージと `app.go` の実装仕様を定める。型定義・シグネチャは実装の指針であり、同等の結果が得られる範囲での変更を妨げない（IMP-002）。
 
+> [!NOTE]
+> 本文書の節はパッケージの依存順（葉から先）に並べており、ID の番号順とは一致しない。`mdfile`（IMP-105）を先頭に置いているのは、**依存を持たない葉パッケージ**であり `document` / `filetree` / `session` が参照するためである（IMP-012）。
+
 ## 11.1 mdfile パッケージ（IMP-105）
 
 責務: Markdown ファイルの拡張子判定。**依存を一切持たない葉パッケージ**であり、`document` / `filetree` / `session` / `app.go` のいずれからも直接参照してよい（IMP-012）。
@@ -536,8 +539,11 @@ type Config struct {
     FileTreeWidth   int    `json:"fileTreeWidth"`
     WindowWidth     int    `json:"windowWidth"`
     WindowHeight    int    `json:"windowHeight"`
+    Editor          string `json:"editor"`          // 実行ファイルの絶対パス（UI-116）
 }
 ```
+
+`Editor` だけ性格が異なる。**他の 7 項目は「表示の快適性に関わる値」だが、これは「起動されるプログラム」である**（NFR-035）。絶対パス以外を保持しないことを `Normalize` で保証する（IMP-153）。
 
 **次のフィールドを定義しない。** 構造体に存在しなければ、保存も復元も起こり得ない（UI-111）。
 
@@ -600,6 +606,8 @@ const (
 **倍率の範囲（50〜300、10 刻み）は `config` に置かない。** 倍率は保存されず（UI-111）、`Normalize` の対象にならない。範囲と刻みは操作の上限・下限としてフロントエンドだけが持つ（IMP-242, FR-081）。
 
 `Normalize` は、範囲外・ゼロ値・負値をすべて `Default()` の対応する値へ置き換える。**最小値・最大値へ切り詰めない。** 範囲外の値が保存されているのはファイルが壊れた場合であり、その値を元に復元するより既定値から始めるほうが確実である。
+
+`Editor` は、**絶対パスでなければ空にする**（UI-116, NFR-035）。相対パスやコマンド名を残すと、`$PATH` や作業ディレクトリの内容によって起動されるプログラムが変わる。存在するかどうかはここでは見ない。設定を読むのは起動時の 1 回だけであり（UI-115）、その後にアンインストールされうるためである。**存在の確認は起動の直前に行う**（IMP-171）。
 
 対象は数値と文字列に限る。**真偽値は対象としない。** 真偽値にはゼロ値と「利用者が false を選んだ状態」の区別がなく、ゼロ値を既定値へ戻すと、閉じたペインが毎回開くことになる（UI-113 の「一部の項目のみが存在する場合、欠けている項目は既定値を用いる」は、`Default()` を初期値として `json.Unmarshal` することで満たす。IMP-151）。ペイン幅の上限（ウィンドウ幅の 40 %）は実行時のウィンドウ幅に依存するため、フロントエンド側で制限する（IMP-240）。
 
@@ -677,7 +685,7 @@ var allowedImageExt = map[string]string{
 
 ### IMP-170: 外部委譲 **MUST**
 
-FR-050 / FR-053 を実装する。Wails に依存しない（IMP-012）。
+FR-050 / FR-053 を実装する。Wails に依存しない（IMP-012）。**利用者が選んだエディタの起動（FR-090）も本パッケージに置く**（IMP-171）。プロセス起動の実装を 1 か所に保つためである。`internal/` 同士の依存は 2 系統に限られており（IMP-012）、別パッケージからは呼べない。
 
 ```go
 package opener
@@ -696,6 +704,93 @@ func OpenFile(path string) error
 
 - 引数は必ず `exec.Command` の可変長引数として渡し、シェルを経由しない。文字列連結でコマンドを組み立てない。
 - URL は事前にスキームを検査し、`http` / `https` / `mailto` 以外を拒否する。
+
+### IMP-171: エディタの起動 **MUST**
+
+FR-090 と [NFR-035](07-nonfunctional.md) を実装する。
+
+```go
+// 番兵エラー（IMP-021）。
+var (
+    ErrNotAbsolute = errors.New("editor path must be absolute")
+    ErrSelf        = errors.New("MarkView cannot be used as an editor")
+)
+
+// OpenWith は指定した実行ファイルでファイルを開く（FR-090）。
+//
+// editor / path はいずれも絶対パスであること。渡す引数は path 1 つだけとする。
+func OpenWith(editor, path string) error
+```
+
+検査の順序は次のとおり。**どれかで落ちたら起動しない。**
+
+| # | 検査 | 返すエラー | 根拠 |
+| --- | --- | --- | --- |
+| 1 | `editor` が絶対パスである | `ErrNotAbsolute` | NFR-035 の 5 |
+| 2 | `editor` が存在する | `ErrNotFound` | UI-116 |
+| 3 | `editor` が MarkView 自身でない | `ErrSelf` | NFR-035 の 6 |
+| 4 | `path` が絶対パスで、存在する | `ErrNotFound` | — |
+| 5 | `exec.Command(editor, path).Start()` が成功する | 起動時のエラー | — |
+
+`path` は **`App` が保持する画面の対象**（`target`。IMP-190）であり、フロントエンドから受け取らない（NFR-035 の 2 と 3）。**相対パスは、実在していても拒む。**
+
+- **3 の比較は `filepath.EvalSymlinks` で両者を解決してから行う。** シンボリックリンクやジャンクション経由の指定を素通しさせない。`os.Executable()` を基準とする。
+- 大文字小文字の扱いは IMP-025 に従う（Windows では区別しない）。ただし **`session.SamePath` は使えない。** `internal/` 同士の依存は 2 系統に限られており（IMP-012）、`opener` から `session` を呼べないためである。**同じ規則を `opener` の非公開関数として持つ。** 判定の内容が食い違わないよう、変更するときは両方を見る。
+- 起動後は待たない。`OpenURL` / `OpenFile` と同じく、別のゴルーチンで `Wait` を呼んでゾンビを回収する（NFR-020）。
+- **`OpenFile`（FR-053）と統合しない。** あちらは OS の既定アプリケーションへ委譲するもので、何が起動されるかを MarkView が知らない。検査すべき対象も内容も異なる。
+
+### IMP-172: プリセットの検出 **MUST**
+
+[UI-103](03-ui.md) の一覧を作る。
+
+```go
+// Editor は既知のエディタ 1 件。
+type Editor struct {
+    ID   string // "vscode" 等。**設定には保存しない**（UI-116）
+    Name string // 画面に出す表示名。英語（UI-024）
+    Path string // 見つかった絶対パス。見つからなければ空
+}
+
+// Editors は既知のエディタを定義順に返す。
+// **見つからなかったものも Path が空の状態で含める**（UI-103）。
+func Editors() []Editor
+```
+
+- **順序を定義順に固定する。** 見つかったものを前へ並べ替えない（UI-103）。並びが環境や起動のたびに変わると、位置で覚えられなくなる。
+- **検出は `os.Stat`（Windows）と `exec.LookPath`（Linux）だけで行う。レジストリを読まない。** 依存が増えるうえ、「レジストリに触らない」という製品の性格（NFR-033）と一貫しなくなる。
+- **`ID` に `custom` を使わない。** フロントエンドとの間で「任意指定」を表す予約語である（IMP-309）。
+- **探索処理は変数として差し替えられるようにする**（`runCommand` と同じ流儀。UT-705）。実際にエディタがインストールされているかどうかに依存するテストを書かないためである（UT-035）。
+
+#### Windows（`presets_windows.go`）
+
+| ID | 表示名 | 探す場所（先に見つかったものを採る） |
+| --- | --- | --- |
+| `notepad` | Notepad | `%WINDIR%\system32\notepad.exe` |
+| `vscode` | Visual Studio Code | `%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe`、`%PROGRAMFILES%\Microsoft VS Code\Code.exe` |
+| `notepadpp` | Notepad++ | `%PROGRAMFILES%\Notepad++\notepad++.exe`、`%PROGRAMFILES(X86)%\Notepad++\notepad++.exe` |
+| `hidemaru` | Hidemaru | `%PROGRAMFILES%\Hidemaru\Hidemaru.exe`、`%PROGRAMFILES(X86)%\Hidemaru\Hidemaru.exe` |
+| `sakura` | sakura editor | `%PROGRAMFILES(X86)%\sakura\sakura.exe`、`%PROGRAMFILES%\sakura\sakura.exe` |
+
+**環境変数が空の環境では、その候補ごと落とす。** そのまま連結すると相対パスになり、作業ディレクトリに置かれた実行ファイルを起動しうる（NFR-035 の 5）。`PROGRAMFILES(X86)` が存在しない構成はありうる。
+
+#### Linux（`presets_other.go`）
+
+`exec.LookPath` で `$PATH` から探す。返る絶対パスをそのまま `Path` とする。**絶対パスで返らなかった候補は採らない。** `$PATH` に相対パスの項目が含まれていると `exec.LookPath` は相対パスを返し、作業ディレクトリの内容で起動対象が変わる（NFR-035 の 5）。
+
+| ID | 表示名 | コマンド |
+| --- | --- | --- |
+| `gnome-text-editor` | GNOME Text Editor | `gnome-text-editor` |
+| `gedit` | gedit | `gedit` |
+| `kate` | Kate | `kate` |
+| `mousepad` | Mousepad | `mousepad` |
+| `vscode` | Visual Studio Code | `code` |
+| `gvim` | gVim | `gvim` |
+
+> [!IMPORTANT]
+> **端末エディタ（`vim` / `nano` / `emacs -nw`）をプリセットに入れない。** `exec.Command("vim", path)` は端末を持たないため、GUI から起動しても何も起きないまま終わる。**利用者からは「押しても無反応」に見える。** 引数を渡さない設計（NFR-035 の 2）のため `Other...` でラッパを指定することもできず、**この用途には対応しない。**
+
+> [!NOTE]
+> **「OS の既定アプリケーション」をプリセットに入れない。** 利用者が `.md` を MarkView に関連付けている場合（`docs/usage.md` がその手順を案内している）、押すたびに新しい MarkView が開く。NFR-035 の 6 が拒めるのは実行ファイルの直接指定だけであり、既定アプリ経由はその検査をすり抜ける。
 
 ## 11.9 ostheme パッケージ（IMP-175 系）
 
@@ -802,6 +897,11 @@ type App struct {
     current  *document.Document   // 表示中の文書。未表示なら nil
     history  *session.History     // 表示履歴（IMP-191）
 
+    // target は画面がいま対象にしているファイルの絶対パス。
+    // 本文を表示していればその文書、状態画面を出していればその対象。
+    // 文書未表示（welcome）なら空。「エディタで開く」が使う（FR-090）。
+    target string
+
     // 確認画面を表示中のファイル（FR-016）。OpenConfirmed が受け付ける
     // 対象をこの 1 つに限定するために保持する（IMP-314）。
     pendingConfirm string
@@ -811,6 +911,11 @@ type App struct {
 
 - すべての状態変更は `mu` で保護する（IMP-024）。
 - **ファイルパスの履歴やツリールートをディスクへ書き出す経路を持たない**（NFR-042）。`config.Config` にそれらのフィールドが存在しないことで構造的に保証する（IMP-150）。
+
+> [!IMPORTANT]
+> **`target` と `current` を取り違えない。** `current` は「読み込みと変換に成功した文書」であり、状態画面（`confirm-large` / `too-large` / `render-error`）を出している間は**前に開いていた文書のまま残る**（IMP-192）。一方 `target` は画面が示している対象であり、**ウィンドウタイトル（UI-013）およびステータスのパス表示（DSP-302）と常に一致する。**
+>
+> 「エディタで開く」（FR-090）は `target` を使う。ここで `current` を渡すと、利用者が `big.md — too large` の画面を見ながら押したのに前の文書が開き、**エラーも出ないため気づけない**（NFR-035 の 2）。
 
 ### IMP-191: 表示履歴 **MUST**
 
@@ -914,6 +1019,15 @@ func (a *App) open(req openRequest) (*DocumentDTO, error)
 - **Wails の呼び出し（`tree:root-changed` の送出）もロックの外で行う。** ツリールートが変わったかどうかはロックの内側で判定し、送出は解いた後に行う。
 - ツリールートが変わるのは `filepath.Dir` を取った結果が現在の値と異なる場合に限る。比較は `session.SamePath` で行う（IMP-191）。
 - 確認待ちのパス（`pendingConfirm`）はこの処理の中でのみ更新する。`ErrNeedsConfirm` で立て、**開けたときと、確認以外の失敗のときに消す**（IMP-314）。残したままにすると、確認画面を閉じたあとの操作で開けてしまう。
+- **画面の対象（`target`。IMP-190）もこの処理の中でのみ更新する。** 規則はウィンドウタイトル（UI-013）とまったく同じで、**画面の対象が変わったときだけ**書き換える。
+
+| 結果 | `target` |
+| --- | --- |
+| 読み込みに成功した | 開いた文書の絶対パス |
+| 状態画面を出した（`confirm-large` / `too-large` / `render-error`） | **その対象の絶対パス。** 描画していなくても書き換える |
+| 表示を変えない失敗（`not-found` / `permission` / `not-markdown`） | **変えない。** FR-110 が「直前の内容を維持」と定めており、画面の対象も変わっていない |
+
+  **判定はタイトル更新と同じ条件で行い、2 か所に分けて書かない。** 片方だけ直すと、タイトルと「エディタで開く」の対象が食い違う。
 - 監視対象の切り替え（`watcher.Watch`）もここで行う。監視は常に 1 つ以下とし、失敗しても開く操作は成功とする。自動更新が効かなくなるだけで、利用者は再読み込みできる（FR-014, FR-015, FR-111）。
 
 ### IMP-193: 起動シーケンス **MUST**
@@ -1008,6 +1122,8 @@ Windows: &windows.Options{
 
 `confirm-large` で起動した場合、`pendingConfirm`（IMP-190）にそのパスを設定し、`OpenConfirmed` を受け付けられる状態にする。
 
+**`StateKind` が `welcome` 以外のとき、`target`（IMP-190）にもそのパスを設定する。** 起動直後に「エディタで開く」を押せる状態にするためであり、規則は IMP-192 と同一である。`welcome` のときは空のままとする。
+
 ### IMP-194: 終了処理 **MUST**
 
 - `watcher` を停止し、ゴルーチンを終了させる。
@@ -1084,6 +1200,8 @@ func (a *App) captureWindowState() {
 | IMP-161 | ローカル配信の検査順序 | MUST |
 | IMP-162 | 応答ヘッダ | MUST |
 | IMP-170 | 外部委譲 | MUST |
+| IMP-171 | エディタの起動 | MUST |
+| IMP-172 | プリセットの検出 | MUST |
 | IMP-175 | OS のテーマ設定の取得 | MUST |
 | IMP-180 | バージョン情報 | MUST |
 | IMP-181 | 同梱資産の情報 | MUST |

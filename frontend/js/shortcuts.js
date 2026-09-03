@@ -22,6 +22,7 @@ export const SHORTCUTS = [
   { id: "theme", keys: ["Ctrl+Shift+t"], label: "Ctrl+Shift+T" },
   { id: "outline", keys: ["Ctrl+Shift+o"], label: "Ctrl+Shift+O" },
   { id: "filetree", keys: ["Ctrl+Shift+e"], label: "Ctrl+Shift+E" },
+  { id: "edit", keys: ["Ctrl+e"], label: "Ctrl+E" },
   { id: "search", keys: ["Ctrl+f"], label: "Ctrl+F" },
   { id: "searchNext", keys: ["Enter"], label: "" },
   { id: "searchPrev", keys: ["Shift+Enter"], label: "" },

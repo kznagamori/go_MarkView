@@ -59,40 +59,105 @@ func (a *App) open(req openRequest) (*DocumentDTO, error) {
 	opts := document.LoadOptions{Confirmed: req.confirmed}
 
 	doc, err := document.Load(a.renderer, req.path, opts)
-	if err != nil {
-		newRoot := a.commitPending(req, err)
 
-		// 状態画面に対象ファイル名が出る場合は、タイトルもそれに合わせる。
-		// 「描画したかどうか」ではなく「いま何を開こうとしているか」を示す
-		// （UI-013）。読めなかっただけの場合は操作案内に戻るため触らない。
-		if stateKindFor(newErrorDTO(req.path, err)) != stateWelcome {
-			a.setWindowTitle(filepath.Base(req.path))
-		}
-		if newRoot != "" {
-			a.emit(eventTreeRootChanged, newRoot)
-		}
-		return nil, err
-	}
+	// **画面の対象を決める判定はここ 1 か所だけである**（IMP-190, IMP-192）。
+	// ウィンドウタイトル（UI-013）と「エディタで開く」の対象（FR-090）は、
+	// どちらもこの 1 つの値から決まる。
+	target := screenTarget(req, doc, err)
 
-	dto, newRoot := a.commitOpen(doc, req)
+	dto, newRoot := a.commit(req, doc, err, target)
 
 	// Wails の呼び出しはロックを解いてから行う（IMP-024）。
-	a.setWindowTitle(dto.Name)
+	//
+	// 状態画面に対象ファイル名が出る場合も、タイトルはそれに合わせる。
+	// 「描画したかどうか」ではなく「いま何を開こうとしているか」を示す
+	// （UI-013）。読めなかっただけの場合は target が空になり、直前の
+	// 表示のまま何も触らない（FR-110）。
+	if target != "" {
+		a.setWindowTitle(filepath.Base(target))
+	}
 	if newRoot != "" {
 		a.emit(eventTreeRootChanged, newRoot)
 	}
 
-	return dto, nil
+	return dto, err
+}
+
+// screenTarget は、この結果によって画面の対象がどこになるかを返す
+// （IMP-190, IMP-192）。**空文字は「変えない」という意味である。**
+//
+// 規則は IMP-192 の表のとおり。
+//
+//	読み込みに成功した          → 開いた文書の絶対パス
+//	状態画面を出した            → その対象の絶対パス（描画していなくても）
+//	表示を変えない失敗          → 空文字（FR-110 の「直前の内容を維持」）
+//
+// **この判定を 2 か所に分けて書かない。** ウィンドウタイトルもここから
+// 決めるためであり、分けると片方だけ直したときにタイトルと「エディタで
+// 開く」の対象が食い違う。食い違っても機械は教えてくれない。
+func screenTarget(req openRequest, doc *document.Document, err error) string {
+	if err == nil {
+		// document.Load が絶対パスにしている（IMP-025）。
+		return doc.Path
+	}
+
+	if stateKindFor(newErrorDTO(req.path, err)) == stateWelcome {
+		return ""
+	}
+
+	// サイズ超過は絶対パスを持っている（document.SizeError）。
+	var sizeErr *document.SizeError
+	if errors.As(err, &sizeErr) {
+		return sizeErr.Path
+	}
+
+	// 変換の失敗。呼び出し側は常に絶対パスを渡すが、target は絶対パスで
+	// あることが前提のため（IMP-190）ここで確かめる。
+	return absPath(req.path)
+}
+
+// absPath は絶対パスへ直す。直せなければ元の値を返す。
+//
+// **失敗を理由に空を返さない。** 空は「画面の対象を変えない」という別の
+// 意味を持つ（screenTarget）。
+func absPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+
+	return abs
+}
+
+// commit は読み込みの結果を状態へ反映する（IMP-192）。
+//
+// 成功と失敗で分かれるのは反映する内容だけであり、**画面の対象（target）の
+// 更新は共通である**（IMP-190）。ここを 1 つのロックの内側にまとめることで、
+// 「文書は差し替わったが対象はまだ前のもの」という中間状態を作らない。
+//
+// 戻り値の newRoot は、ツリールートが変わった場合のみ非空である。イベントの
+// 送出は呼び出し側がロックの外で行う（IMP-024）。
+func (a *App) commit(req openRequest, doc *document.Document, err error, target string) (dto *DocumentDTO, newRoot string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// **target を書き換えるのはここだけである**（IMP-190, IMP-192）。
+	// 空文字は「画面の対象は変わっていない」であり、書き換えない。
+	if target != "" {
+		a.target = target
+	}
+
+	if err != nil {
+		return nil, a.commitPending(req, err)
+	}
+
+	return a.commitOpen(doc, req)
 }
 
 // commitOpen は読み込んだ文書を状態へ反映し、DTO を組み立てる（IMP-192）。
 //
-// 戻り値の newRoot は、ツリールートが変わった場合のみ非空である。イベントの
-// 送出は呼び出し側がロックの外で行う。
+// **呼び出し側は mu を保持していること。**
 func (a *App) commitOpen(doc *document.Document, req openRequest) (dto *DocumentDTO, newRoot string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// ツリールートは、ファイルの出どころが利用者の明示的な指定である経路
 	// でのみ変える（FR-030）。
 	if changesTreeRoot(req.src) && a.setTreeRoot(filepath.Dir(doc.Path)) {
@@ -129,11 +194,10 @@ func (a *App) commitOpen(doc *document.Document, req openRequest) (dto *Document
 //
 // 確認以外の失敗では覚えていた値を捨てる。残したままにすると、確認画面を
 // 閉じたあとの操作で OpenConfirmed が通ってしまう。
+//
+// **呼び出し側は mu を保持していること。**
 func (a *App) commitPending(req openRequest, err error) (newRoot string) {
 	var sizeErr *document.SizeError
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	if !errors.As(err, &sizeErr) || !errors.Is(sizeErr.Err, document.ErrNeedsConfirm) {
 		a.pendingConfirm = ""
@@ -153,10 +217,6 @@ func (a *App) commitPending(req openRequest, err error) (newRoot string) {
 	return newRoot
 }
 
-// changesTreeRoot はツリールートを変更する経路かを返す（IMP-192, FR-030）。
-//
-// **ツリーからの選択とリンク遷移では変更しない。** ドキュメント群を配布した
-// ときに、利用者の操作でツリーが意図せず移動することを防ぐ（FR-030, FR-052）。
 // openResult は open を呼び、結果を OpenResultDTO へ写す（IMP-192, IMP-308）。
 //
 // バインドメソッドはこちらを使う。open そのものは Go 側の内部処理であり、
@@ -167,6 +227,10 @@ func (a *App) openResult(path string, req openRequest) OpenResultDTO {
 	return newOpenResult(path, dto, err)
 }
 
+// changesTreeRoot はツリールートを変更する経路かを返す（IMP-192, FR-030）。
+//
+// **ツリーからの選択とリンク遷移では変更しない。** ドキュメント群を配布した
+// ときに、利用者の操作でツリーが意図せず移動することを防ぐ（FR-030, FR-052）。
 func changesTreeRoot(src openSource) bool {
 	switch src {
 	case openFromDialog, openFromDrop, openFromArgs:

@@ -1,12 +1,24 @@
-// overlay.js — 状態画面と情報ダイアログ（UI-052, UI-100, IMP-250, IMP-251）。
+// overlay.js — 状態画面・情報ダイアログ・エディタ選択ダイアログ
+// （UI-052, UI-100, UI-103, IMP-250, IMP-251, IMP-252）。
 //
-// 状態画面は本文ペインの中に出す。**情報ダイアログも独立したウィンドウでは
+// 状態画面は本文ペインの中に出す。**2 つのダイアログも独立したウィンドウでは
 // なく、メインウィンドウ内に描くモーダルオーバーレイである**（AR-060,
-// UI-100, FR-053）。アプリケーションは終始 1 つのウィンドウしか持たない。
+// UI-100, UI-103, FR-053）。アプリケーションは終始 1 つのウィンドウしか持たない。
+//
+// **ダイアログは #overlay を共有し、開閉・フォーカス・Tab の規則も共有する**
+// （IMP-252）。2 つを同時に開かない。
 
 import { S } from "./strings.js";
 import { closeSearch } from "./search.js";
-import { $, clear, icon, formatSize, formatBuildTime, baseName } from "./util.js";
+import {
+  buildEditorDialog,
+  checkedEditorId,
+  focusAfterBrowse,
+  focusInitial,
+  syncOpenButton,
+} from "./editors.js";
+import { syncEditButton } from "./toolbar.js";
+import { $, clear, icon, span, formatSize, formatBuildTime, baseName } from "./util.js";
 
 // 情報ダイアログのリンクを踏んだときの処理（UI-102）。
 //
@@ -16,14 +28,39 @@ let onLink = null;
 // ダイアログを開く前にフォーカスがあった要素。閉じたら戻す（IMP-251）。
 let restoreFocus = null;
 
-// initOverlay は情報ダイアログを配線する（IMP-211）。
+// いま開いているダイアログの種別（"about" | "editors"）。開いていなければ null。
+//
+// **#overlay に出せるのは 1 つだけであり、種別もこの 1 か所だけで持つ**
+// （IMP-252）。ダイアログごとに真偽値を分けると、「両方が開いている」という
+// あり得ない状態を書けてしまう。
+let openKind = null;
+
+// 閉じたときにフォーカスを戻す既定の先（IMP-251, IMP-252）。
+const FALLBACK_FOCUS = {
+  about: "btn-about",
+  editors: "btn-edit",
+};
+
+// エディタ選択ダイアログの Browse と Open の処理（IMP-252）。
+// **Go を呼ぶのは main.js の役目**であり、ここは受け取った関数を呼ぶだけ。
+let editorDeps = null;
+
+// initOverlay は 2 つのダイアログを配線する（IMP-211）。
+//
+// deps は { onLink, onBrowse, onOpenEditor }。
 export function initOverlay(deps) {
-  onLink = (deps || {}).onLink;
+  const options = deps || {};
+
+  onLink = options.onLink;
+  editorDeps = options;
 
   // 暗幕そのものを押したときだけ閉じる（DSP-170）。中身のクリックで
   // 閉じないよう、対象が #overlay 自身であることを確かめる。
+  //
+  // **どちらのダイアログでも同じ経路で閉じる**（IMP-252）。種別ごとに
+  // 書き分けると、片方だけ暗幕で閉じられないという差がいつか生まれる。
   $("overlay").addEventListener("click", (event) => {
-    if (event.target === $("overlay")) hideAbout();
+    if (event.target === $("overlay")) closeOverlay();
   });
 
   // **Tab がダイアログの外へ出ないようにする**（IMP-251）。背後の
@@ -71,6 +108,10 @@ export function showStateScreen(kind, params) {
   }
 
   screen.hidden = false;
+
+  // 「エディタで開く」の活性は画面の状態から決まる（UI-021, FR-090）。
+  // **welcome だけが押せない。** 判定は toolbar.js が持つ。
+  syncEditButton();
 }
 
 // hideStateScreen は状態画面を隠す（IMP-250）。
@@ -78,6 +119,9 @@ export function hideStateScreen() {
   const screen = $("state-screen");
   screen.hidden = true;
   clear(screen);
+
+  // 本文を表示している = 対象がある（UI-021, FR-090）。
+  syncEditButton();
 }
 
 function buildDetail(screen, kind, info) {
@@ -130,33 +174,56 @@ function line(className, text) {
 // about は AboutDTO（IMP-306）。**Go を呼ぶのは main.js の役目**とし、
 // ここは受け取った値を描くだけにする（IMP-201）。
 export function showAbout(about) {
-  const overlay = $("overlay");
-
-  restoreFocus = document.activeElement;
-
-  clear(overlay);
-  overlay.appendChild(buildDialog(about || {}));
-  overlay.hidden = false;
+  openOverlay("about", buildDialog(about || {}));
 
   // 開いた直後は閉じるボタンにフォーカスを置く（IMP-295）。
   $("about-close").focus();
 }
 
-// hideAbout はダイアログを閉じ、フォーカスを戻す（IMP-251）。
+// hideAbout は情報ダイアログを閉じる（IMP-251）。開いていなければ false。
+//
+// **エディタ選択ダイアログはここでは閉じない。** フォーカスの戻り先が違い、
+// Esc で閉じる順序（IMP-244）も呼び出し側が決めるべきものだからである。
 export function hideAbout() {
-  const overlay = $("overlay");
-  if (overlay.hidden) return false;
+  return openKind === "about" && closeOverlay();
+}
 
+// --- #overlay の開閉（IMP-251, IMP-252） ---
+
+// openOverlay はダイアログを 1 つだけ開く（IMP-252）。
+//
+// **2 つを同時に開かない。** 中身を毎回入れ替えるため、構造として重ならない。
+function openOverlay(kind, dialog) {
+  const overlay = $("overlay");
+
+  restoreFocus = document.activeElement;
+
+  clear(overlay);
+  overlay.appendChild(dialog);
+  overlay.hidden = false;
+  openKind = kind;
+}
+
+// closeOverlay は開いているダイアログを閉じ、フォーカスを戻す
+// （IMP-251, IMP-252）。閉じたら true、開いていなければ false。
+//
+// **戻し先は開く契機となったボタンを既定とする。** 開く前に別の操作要素へ
+// フォーカスがあった場合だけ、そこへ戻す。
+//
+// F1 や Ctrl+E で開いたときの直前のフォーカスは <body> であることが多く、
+// そのまま戻すと**どこにもフォーカスがない状態になる**。閉じた直後に Tab を
+// 押しても、ツールバーの先頭から辿り直すことになってしまう。
+function closeOverlay() {
+  if (openKind === null) return false;
+
+  const overlay = $("overlay");
   overlay.hidden = true;
   clear(overlay);
 
-  // **戻し先は「?」ボタンを既定とする**（IMP-251）。開く前に別の操作要素へ
-  // フォーカスがあった場合だけ、そこへ戻す。
-  //
-  // F1 で開いたときの直前のフォーカスは <body> であることが多く、そのまま
-  // 戻すと**どこにもフォーカスがない状態になる**。ダイアログを閉じた直後に
-  // Tab を押しても、ツールバーの先頭から辿り直すことになってしまう。
-  const target = isControl(restoreFocus) ? restoreFocus : $("btn-about");
+  const fallback = $(FALLBACK_FOCUS[openKind]);
+  openKind = null;
+
+  const target = isControl(restoreFocus) ? restoreFocus : fallback;
   restoreFocus = null;
   if (target) target.focus();
 
@@ -168,9 +235,9 @@ function isControl(element) {
   return Boolean(element) && element.isConnected && element !== document.body && element.tabIndex >= 0;
 }
 
-// isAboutOpen はダイアログが開いているかを返す。
+// isAboutOpen は情報ダイアログが開いているかを返す（IMP-251）。
 export function isAboutOpen() {
-  return !$("overlay").hidden;
+  return openKind === "about";
 }
 
 function buildDialog(about) {
@@ -325,6 +392,79 @@ function closeButton(id, className, label) {
   return button;
 }
 
+// --- エディタ選択ダイアログ（UI-103, IMP-252, DSP-172） ---
+
+// **中身の組み立ては editors.js が持つ**（IMP-011）。ここに残すのは
+// IMP-252 が定める 3 つの API と、#overlay の開閉・Go の呼び出しへの橋渡し
+// だけである。
+
+// EDITOR_HANDLERS はダイアログ内のボタンの処理（IMP-252）。
+//
+// **Go を呼ぶのは main.js の役目**とし、ここは initOverlay で受け取った
+// 関数へ渡すだけにする（IMP-201）。
+const EDITOR_HANDLERS = {
+  onCancel: closeOverlay,
+  onBrowse: browse,
+  onLaunch: launch,
+};
+
+// showEditors はエディタ選択ダイアログを表示する（FR-091, IMP-252）。
+//
+// list は EditorListDTO（IMP-309）。**受け取った値を描くだけにする**（IMP-201）。
+export function showEditors(list) {
+  openOverlay("editors", buildEditorDialog(list, EDITOR_HANDLERS));
+  syncOpenButton();
+  focusInitial();
+}
+
+// hideEditors はエディタ選択ダイアログを閉じる（IMP-252）。開いていなければ false。
+//
+// **閉じても何も保存せず、何も起動しない**（FR-091）。保存するのは Go 側で
+// 起動に成功したときだけである（UI-116, IMP-310）。
+export function hideEditors() {
+  return openKind === "editors" && closeOverlay();
+}
+
+// isEditorsOpen はエディタ選択ダイアログが開いているかを返す（IMP-252）。
+export function isEditorsOpen() {
+  return openKind === "editors";
+}
+
+// browse は実行ファイルを選ぶダイアログを開き、**一覧全体を描き直す**
+// （IMP-252）。差分更新しない。行数も選択状態も Go 側が決める（IMP-309）。
+async function browse() {
+  if (!editorDeps || !editorDeps.onBrowse) return;
+
+  const list = await editorDeps.onBrowse();
+
+  // 一覧を作れなかったときは描き直さない。**いま出ている一覧を保つ。**
+  // 理由は main.js がステータス領域へ出す（IMP-315）。
+  if (!list) return;
+
+  // 待っている間に閉じられていたら何もしない。**閉じたものを描き直さない。**
+  if (!isEditorsOpen()) return;
+
+  const overlay = $("overlay");
+  clear(overlay);
+  overlay.appendChild(buildEditorDialog(list, EDITOR_HANDLERS));
+  syncOpenButton();
+  focusAfterBrowse();
+}
+
+// launch は選ばれたエディタで開く（FR-090, IMP-252, IMP-331）。
+//
+// **先にウィンドウを閉じる。** 結果はステータス領域に出るものであり
+// （DSP-151, IMP-315）、閉じてから出すほうが自然で、押し続けて何度も起動する
+// 経路も生まれない。
+function launch() {
+  const id = checkedEditorId();
+  if (!id) return;
+
+  closeOverlay();
+
+  if (editorDeps && editorDeps.onOpenEditor) editorDeps.onOpenEditor(id);
+}
+
 // trapTab は Tab をダイアログの中で循環させる（IMP-251, UI-100）。
 function trapTab(event) {
   if (event.key !== "Tab") return;
@@ -347,9 +487,14 @@ function trapTab(event) {
   }
 }
 
+// focusable はダイアログ内でフォーカスを持てる要素を返す（IMP-251）。
+//
+// **input を含め、無効なものを除く**（IMP-252）。エディタ選択ダイアログには
+// ラジオがあり、選択できない行と選択が無い間の Open は無効である。含めたまま
+// にすると、端で折り返した先が無効な要素になり、フォーカスが消える。
 function focusable() {
-  return [...$("overlay").querySelectorAll("button, a, [tabindex]")].filter(
-    (element) => element.tabIndex >= 0,
+  return [...$("overlay").querySelectorAll("button, a, input, [tabindex]")].filter(
+    (element) => element.tabIndex >= 0 && !element.disabled,
   );
 }
 
@@ -361,12 +506,4 @@ function addRow(list, label, value) {
   const detail = document.createElement("dd");
   detail.appendChild(value);
   list.appendChild(detail);
-}
-
-function span(className, text) {
-  const element = document.createElement("span");
-  if (className) element.className = className;
-  element.textContent = text || "";
-
-  return element;
 }

@@ -111,6 +111,7 @@ go_MarkView/
 ├── internal/
 │   ├── mdfile/                Markdown 拡張子の判定（IMP-105。依存なしの葉）
 │   ├── localurl/              /__local/ URL の組み立てと解読（AR-040。依存なしの葉）
+│   ├── applog/                MARKVIEW_DEBUG の判定とログ（IMP-023。依存なしの葉）
 │   ├── document/              Markdown の読み込みと変換
 │   │   ├── document.go
 │   │   └── encoding.go        BOM・改行コードの処理（FR-021）
@@ -125,7 +126,7 @@ go_MarkView/
 │   ├── watcher/               ファイル監視（FR-014）
 │   ├── config/                設定の保存・復元（UI-110 系）
 │   ├── assetsrv/              埋め込み資産の配信とローカル画像配信（AR-040）
-│   ├── opener/                既定ブラウザ・既定アプリへの委譲（FR-053）
+│   ├── opener/                外部プログラムへの委譲（FR-053, FR-090）
 │   ├── ostheme/               OS のテーマ設定の取得（FR-071）
 │   ├── buildinfo/             バージョン情報（BR-030）
 │   └── session/               履歴・起動解決・パス算出（FR-051, FR-013）
@@ -143,7 +144,7 @@ go_MarkView/
 │   └── icon.icns              macOS 用。本バージョンでは未使用（AR-090）
 ├── licenses/
 │   └── THIRD_PARTY.md         生成物（BR-040）
-├── scripts/                   ライセンス生成・vendor 更新・アイコン配置・スモークテスト
+├── scripts/                   ライセンス生成・vendor 更新・アイコン配置・スモークテスト・配布物の梱包・自動 E2E
 ├── testdata/                  検証用 Markdown（BR-053, BR-054）
 ├── docs/
 │   ├── specs/                 本仕様書

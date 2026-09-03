@@ -55,6 +55,7 @@ func TestDefault(t *testing.T) {
 		{"ファイルツリー幅", d.FileTreeWidth, 260},
 		{"ウィンドウ幅", d.WindowWidth, 1280},
 		{"ウィンドウ高さ", d.WindowHeight, 860},
+		{"エディタは未選択（空文字）", d.Editor, ""},
 	}
 
 	for _, tt := range tests {
@@ -83,11 +84,15 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 		t.Fatalf("JSON を読めない: %v", err)
 	}
 
+	// UI-110 が定める保存項目と 1 対 1 で対応させる。**ここへ足すのは、
+	// UI-110 に追加したときだけである。** editor は 4.6.0 で加わった
+	// （UI-116。実行ファイルの絶対パスであり、閲覧の痕跡ではない。NFR-042）。
 	want := map[string]bool{
 		"theme":          true,
 		"outlineVisible": true, "fileTreeVisible": true,
 		"outlineWidth": true, "fileTreeWidth": true,
 		"windowWidth": true, "windowHeight": true,
+		"editor": true,
 	}
 
 	for k := range m {
@@ -278,6 +283,16 @@ func TestLoad_Partial(t *testing.T) {
 func TestNormalize(t *testing.T) {
 	d := Default()
 
+	// エディタの検証用（UT-504 ケース 12〜13）。**存在するものと、しない
+	// ものを両方用意する。** Normalize は存在を見ないことが規定であり
+	// （IMP-153）、後から存在確認を足すとケース 12 で落ちる。
+	dir := t.TempDir()
+	absentEditor := filepath.Join(dir, "no-such-editor"+exeSuffix())
+	existingEditor := filepath.Join(dir, "editor"+exeSuffix())
+	if err := os.WriteFile(existingEditor, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name string
 		in   Config
@@ -313,6 +328,24 @@ func TestNormalize(t *testing.T) {
 		// 上限のない項目は大きくてもそのまま（ペイン幅の上限は実行時の
 		// ウィンドウ幅に依存するため、フロントエンド側で制限する。IMP-153）
 		{"アウトライン幅が非常に大きい", withOutlineWidth(d, 100000), withOutlineWidth(d, 100000)},
+
+		// UT-504 ケース 9〜11: エディタが絶対パスでない（UI-116, NFR-035 の 5）
+		//
+		// **設定ファイルが書き換えられた場合に、$PATH や作業ディレクトリの
+		// 内容によって起動されるプログラムが変わることを防ぐ。** 設定に
+		// 実行に繋がる値が入るのは Editor が初めてであり、ここが最後の砦になる。
+		{"エディタが実行ファイル名だけ", withEditor(d, "notepad.exe"), d},
+		{"エディタが相対パス", withEditor(d, "./editor"), d},
+		{"エディタがコマンド名", withEditor(d, "vim"), d},
+		{"エディタが空文字", withEditor(d, ""), d},
+
+		// UT-504 ケース 12〜13: 絶対パスならそのまま残す
+		//
+		// **存在するかどうかはここでは見ない**（IMP-153）。設定を読むのは
+		// 起動時の 1 回だけであり、その後にアンインストールされうる。存在の
+		// 確認は起動の直前に行う（IMP-171）。
+		{"エディタが絶対パス（存在しない）", withEditor(d, absentEditor), withEditor(d, absentEditor)},
+		{"エディタが絶対パス（存在する）", withEditor(d, existingEditor), withEditor(d, existingEditor)},
 	}
 
 	for _, tt := range tests {
@@ -336,7 +369,16 @@ func zeroNormalized() Config {
 	return c
 }
 
-func withTheme(c Config, v string) Config      { c.Theme = v; return c }
+func withTheme(c Config, v string) Config  { c.Theme = v; return c }
+func withEditor(c Config, v string) Config { c.Editor = v; return c }
+
+// exeSuffix は実行ファイルの拡張子を返す。
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
+}
 func withOutlineWidth(c Config, v int) Config  { c.OutlineWidth = v; return c }
 func withFileTreeWidth(c Config, v int) Config { c.FileTreeWidth = v; return c }
 func withWindowSize(c Config, w, h int) Config { c.WindowWidth, c.WindowHeight = w, h; return c }

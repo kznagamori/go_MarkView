@@ -6,6 +6,7 @@ import (
 	"io/fs"
 
 	"github.com/kznagamori/go_MarkView/internal/document"
+	"github.com/kznagamori/go_MarkView/internal/opener"
 )
 
 // 本ファイルは Go の番兵エラーを ErrorDTO へ写す（IMP-315）。
@@ -27,6 +28,22 @@ var errClipboard = errors.New("cannot write to the clipboard")
 
 // errLinkNotFound はリンク先が見つからないことを表す（FR-050）。
 var errLinkNotFound = errors.New("link target not found")
+
+// errNoTarget は画面が対象にしているファイルが無いことを表す
+// （IMP-310, FR-090）。
+//
+// 文書未表示（welcome）ではボタンが淡色になっており（UI-021）通常は起こらない
+// が、**防御的に扱う。** ここで target の代わりに current を使ってしまうと、
+// 状態画面を見ながら押したときに前の文書が開く（IMP-190）。
+var errNoTarget = errors.New("no file is currently targeted")
+
+// errUnknownEditor は指定された ID のエディタを解決できないことを表す
+// （IMP-310, FR-091）。
+//
+// 一覧に無い ID、見つからなかったプリセット、`Browse` していない `custom` が
+// これに当たる。**フロントエンドから任意の実行ファイルを起動する経路を作らない**
+// ための拒否であり（IMP-300 の 3, NFR-035）、通常の操作では起こらない。
+var errUnknownEditor = errors.New("the selected editor is not available")
 
 // newErrorDTO はエラーを ErrorDTO へ写す（IMP-315）。
 //
@@ -103,6 +120,38 @@ func classifyError(path string, err error) (kind, message string) {
 	default:
 		// 変換エラーと回復したパニックがここに来る（IMP-022）。
 		return errKindRenderError, "Failed to render this document."
+	}
+}
+
+// newEditorErrorDTO はエディタの起動失敗を ErrorDTO へ写す（IMP-315）。
+//
+// **classifyError を使い回さない。** opener.ErrNotFound は「エディタの実行
+// ファイルが無い」であって「文書が無い」ではない。同じ not-found として
+// 伝えると、利用者は開けなかった Markdown を探し始めることになる。
+// エディタの失敗はどれも「起動できなかった」の一言で足りる（UI-060）。
+//
+// **ErrorDTO.Path を設定しない。** ここに載せられる対象は実行ファイルのパス
+// しかなく、それはフロントエンドへ渡してはならない（NFR-035 の 3,
+// IMP-309）。文言（IMP-315）もパスを含まない。
+func newEditorErrorDTO(err error) *ErrorDTO {
+	if err == nil {
+		return nil
+	}
+
+	// MarkView 自身の指定だけは区別して伝える。「起動できません」とだけ
+	// 返すと、利用者は原因が分からず同じ操作を繰り返す（NFR-035 の 6）。
+	if errors.Is(err, opener.ErrSelf) {
+		return &ErrorDTO{
+			Kind:    errKindEditorSelf,
+			Message: "MarkView cannot be used as an editor.",
+		}
+	}
+
+	// 絶対パスでない・実行ファイルが無い・プロセスを起動できない・対象が
+	// 無い（errNoTarget）・回復したパニックは、すべてここへ落ちる。
+	return &ErrorDTO{
+		Kind:    errKindEditorFailed,
+		Message: "Failed to start the editor.",
 	}
 }
 

@@ -38,7 +38,8 @@ frontend/
 │   ├── dnd.js              ドラッグ＆ドロップ
 │   ├── lazy.js             Mermaid / KaTeX の遅延ロード
 │   ├── status.js           ステータス領域
-│   ├── overlay.js          情報ダイアログと状態画面
+│   ├── overlay.js          情報ダイアログ・エディタ選択ダイアログ・状態画面
+│   ├── editors.js          エディタ選択ダイアログの中身（IMP-252）
 │   └── util.js             共通ユーティリティ
 ├── icons/                  インライン SVG のソース（IMP-203。ファイル名はシンボル ID）
 └── vendor/                 BR-042 が管理する資産
@@ -67,6 +68,7 @@ export function initToolbar(deps) { /* … */ }
     <button id="btn-theme"    class="tb-btn" type="button"></button>
     <button id="btn-outline"  class="tb-btn tb-toggle" type="button" aria-pressed="true"></button>
     <button id="btn-filetree" class="tb-btn tb-toggle" type="button" aria-pressed="false"></button>
+    <button id="btn-edit"     class="tb-btn" type="button"></button>
     <span class="tb-spacer"></span>
     <button id="btn-about"    class="tb-btn" type="button"></button>
   </header>
@@ -126,13 +128,14 @@ UI-022 を実装する。
 | `icon-moon` / `icon-sun` | ツールバー「テーマ切り替え」（状態で入れ替え） | `moon` / `sun` |
 | `icon-outline` | ツールバー「アウトライン」 | `list-unordered` |
 | `icon-filetree` | ツールバー「ファイルツリー」、ツリーの展開済みディレクトリ | `file-directory-open-fill` |
+| `icon-pencil` | ツールバー「エディタで開く」（UI-020, FR-090） | `pencil` |
 | `icon-about` | ツールバー「アプリケーション情報」 | `question` |
 | `icon-dir` | ツリーの折りたたみ状態のディレクトリ（DSP-112） | `file-directory` |
 | `icon-file` | ツリーのファイル（DSP-112） | `file` |
 | `icon-chevron-right` / `icon-chevron-down` | ツリーの展開矢印（DSP-112） | `chevron-right` / `chevron-down` |
 | `icon-search` | 検索バーの先頭（DSP-160） | `search` |
 | `icon-chevron-up` | 検索バー「前へ」（DSP-160） | `chevron-up` |
-| `icon-close` | 検索バー「閉じる」、情報ダイアログ「×」（DSP-160, DSP-170） | `x` |
+| `icon-close` | 検索バー「閉じる」、情報ダイアログ「×」、エディタ選択ダイアログ「×」（DSP-160, DSP-170, DSP-172） | `x` |
 | `icon-copy` / `icon-check` | コードブロックのコピーボタン（FR-061, DSP-252） | `copy` / `check` |
 | `icon-note` | Alerts: NOTE（DSP-261） | `info` |
 | `icon-tip` | Alerts: TIP | `light-bulb` |
@@ -597,12 +600,39 @@ export function isAboutOpen()
 - **Go を呼ぶのは `main.js` の役目とし、`overlay.js` は受け取った `AboutDTO` を描くだけにする**（IMP-201）。リンクの処理も `onLink` として受け取り、本文中のリンクとまったく同じ経路（IMP-312）へ渡す。
 - 表示中は背後をフォーカストラップし、`Tab` がダイアログ外へ出ないようにする。端に来たときだけ折り返し、途中では既定の移動に任せる。
 - **キーボードのショートカットも止める**（UI-100 の「背後のメインウィンドウの操作を受け付けない」）。暗幕はマウスしか塞がない。`Esc` だけは通す。止めるときも既定の動作は抑止する（`false` を返さない。IMP-244）。そうしないと `Ctrl` + `+` が WebView 自身のページ拡大として処理される。
+- **ただし `Enter` / `Shift+Enter` は既定の動作を残す**（`false` を返す。IMP-244）。`Enter` の既定の動作は「フォーカスしている操作要素を実行する」であり、これは背後ではなく**ダイアログ自身の操作**である。抑止すると、`Open`（UI-103）や `Close` にフォーカスがあっても `Enter` で実行できない。**割り当て自体（検索の次候補へ移動）は止まる**ので、背後を受け付けないことと両立する。
 - `Esc`、閉じるボタン、またはオーバーレイ**そのもの**のクリックで閉じる。中身のクリックで閉じないよう、対象が `#overlay` 自身であることを確かめる。
 - 閉じたら**フォーカスを `#btn-about` へ戻す。** 開く前に別の操作要素へフォーカスがあった場合だけ、そこへ戻す。`F1` で開いたときの直前のフォーカスは `<body>` であることが多く、そのまま戻すとどこにもフォーカスがない状態になる。
 - リポジトリの URL には `href` を与えず、クリックと `Enter` / `Space` で `onLink` を呼ぶ（UI-102）。**遷移し得ない形にしておく。**
 - ライセンス欄だけがダイアログの残りの高さを受け持つ。基準は 240px とし、**伸びはせず、収まらないときだけ縮む**（DSP-170 の「ウィンドウが小さい場合は内側に収まるよう縮小」）。
 - ライセンス全文は `<textarea readonly>` ではなく `<pre>` + `overflow:auto` で表示し、選択・コピーを可能にする（UI-101）。
 - 見出しの横にアプリケーションアイコンを `<img src="/appicon.png" alt="">` として表示する（UI-025, DSP-171）。装飾目的のため `alt` は空とし、読み上げの対象にしない。パスは IMP-160 が配信するもので、外部 URL を参照しない。
+
+### IMP-252: エディタ選択ダイアログ **MUST**
+
+[UI-103](03-ui.md) を実装する。
+
+```js
+// js/overlay.js
+export function showEditors(list)   // list: EditorListDTO（IMP-309）
+export function hideEditors()       // 閉じたら true、開いていなければ false
+export function isEditorsOpen()
+```
+
+**API はこの 3 つだけとし、`overlay.js` に置く。** ダイアログの中身（行の組み立てと選択の状態）は `editors.js` が持つ（IMP-011。`overlay.js` が 400 行の目安を大きく超えるため）。`editors.js` は `overlay.js` を `import` しない。開閉・フォーカスの復帰・`Tab` の制御は `overlay.js` の側にあり、`Browse` / `Open` / `Cancel` の処理は引数として渡す。**循環参照を作らない。**
+
+- **情報ダイアログ（IMP-251）と同じ `#overlay` を使い、同じ規則に従う。** フォーカストラップ、`Esc` だけを通すキー制御、暗幕そのもののクリックで閉じる判定のいずれも共通とする。**2 つを同時に開かない。**
+- **Go を呼ぶのは `main.js` の役目とし、`overlay.js` は受け取った `EditorListDTO` を描くだけにする**（IMP-201）。`Browse` と `Open` の処理は `deps` として受け取る。
+- 一覧は `<input type="radio" name="editor">` のリストとする。`Available` が偽の行は `disabled` とし、`(not installed)` を添える（UI-103）。**行を消さない。**
+- 描画順は `EditorListDTO.editors` の順そのままとする。**フロントエンドで並べ替えない**（IMP-309）。
+- 開いた時点のフォーカスは、`Selected` の行があれば `Open` ボタン、無ければ一覧の先頭の選択可能な行に置く（UI-103）。
+- `Open` は、選択が無い間 `disabled` とする。**`custom` の行そのものは常に選べる**（UI-103）が、`Browse` で実行ファイルが選ばれるまでは `Open` を `disabled` のままとする。行まで選べなくすると `Browse` へ辿り着けない。
+- `Open` の活性は「選ばれていて、かつ `Available` が真」という**1 つの式だけで決める。** 行の種類ごとに条件を書くと `custom` が別扱いになり、いつか食い違う。フロントエンドは実行ファイルのパスを見ない（NFR-035 の 3）。
+- `Browse` は `deps.onBrowse()` を呼び、返ってきた `EditorListDTO` で**一覧全体を描き直す**。差分更新しない。行数も選択状態も Go 側が決める（IMP-309）。
+- 閉じたら**フォーカスを `#btn-edit` へ戻す**（IMP-251 と同じ理由）。
+- `EditorListDTO.Error` があるときは**ウィンドウを出さない。** 選べるものが 1 つも無いウィンドウを出しても意味がなく、理由はステータス領域へ出す（IMP-315）。`Browse` の戻りが同じ状態だった場合は**描き直さず、いま出ている一覧を保つ。** 描き直すと、出ていた一覧が消えて何も選べないウィンドウが残る。
+- 表示・非表示は `hidden` 属性で切り替える。`style.display` を直接触らない（IMP-202）。
+- **文言は `strings.js` から採る**（IMP-290）。エディタ名は `EditorDTO.name` をそのまま `textContent` で入れる。Go 側が組み立てた文字列であり、`innerHTML` へは渡さない（IMP-220）。
 
 ## 12.7 UI 文言（IMP-290 系）
 
@@ -621,6 +651,7 @@ export const S = {
   tipThemeLight:'Light theme / ライトテーマ',
   tipOutline:   'Outline / アウトライン',
   tipFileTree:  'File tree / ファイルツリー',
+  tipEdit:      'Edit / 編集',
   tipAbout:     'About / アプリケーション情報',
 
   // それ以外はすべて英語（UI-024）
@@ -646,6 +677,7 @@ export const S = {
   // ステータス領域（DSP-150）
   statusLines: (n) => `${n} lines`,
   statusZoom:  (z) => `${z}%`,
+  statusEditor:(name) => `Opened in ${name}`,   // FR-090, DSP-151
 
   // 状態画面（DSP-181）
   welcomeTitle:   'Open a Markdown file',
@@ -670,6 +702,15 @@ export const S = {
   aboutLicenses:   'Third-party licenses',
   close:           'Close',
 
+  // エディタ選択ダイアログ（UI-103, DSP-172）
+  editorTitle:  'Choose an editor',
+  editorOther:  'Other...',
+  editorMissing:'(not installed)',
+  editorNone:   '(no file chosen)',
+  editorBrowse: 'Browse',
+  editorOpen:   'Open',
+  cancel:       'Cancel',
+
   // エラー（IMP-315 の Kind に対応）
   errNotFound:    (p) => `File not found: ${p}`,
   errPermission:  (p) => `Cannot access: ${p}`,
@@ -677,6 +718,8 @@ export const S = {
   errLinkNotFound:(h) => `Link target not found: ${h}`,
   errClipboard:   'Failed to copy.',
   errRemoved:     (p) => `File was deleted: ${p}`,
+  errEditorFailed:'Failed to start the editor.',
+  errEditorSelf:  'MarkView cannot be used as an editor.',
   warnEncoding:   'Some characters were replaced.',
 };
 ```
@@ -744,5 +787,6 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 | IMP-247 | ツールチップ | MUST |
 | IMP-250 | 状態画面 | MUST |
 | IMP-251 | 情報ダイアログ | MUST |
+| IMP-252 | エディタ選択ダイアログ | MUST |
 | IMP-290 | UI 文言の一元定義 | MUST |
 | IMP-295 | アクセシビリティの最低限の対応 | SHOULD |

@@ -82,6 +82,33 @@ export function followLink(href) {
   return App.FollowLink(href);
 }
 
+// --- エディタ ---------------------------------------------------------------
+//
+// **いずれもパスを引数に取らない**（IMP-300 の 3）。開く対象は Go 側の
+// App.target（IMP-190）であり、エディタの実行ファイルのパスも Go 側だけが
+// 持つ（NFR-035 の 3）。フロントエンドを通るのは識別子だけである。
+
+// listEditors は選択ウィンドウの一覧を取る（IMP-310, FR-091）。
+//
+// **押すたびに呼ぶ。** 実行中にエディタがインストール・アンインストール
+// されうるため、起動時に先読みしない（NFR-013, IMP-331）。
+export function listEditors() {
+  return App.ListEditors();
+}
+
+// browseEditor は実行ファイルを選ぶダイアログを開き、一覧を返し直す
+// （IMP-310）。**選んだだけでは何も保存しない**（UI-116）。
+export function browseEditor() {
+  return App.BrowseEditor();
+}
+
+// openInEditor は選ばれたエディタで対象のファイルを開く（FR-090, IMP-310）。
+//
+// id はプリセットの ID、または "custom"。EditorResultDTO を返す（IMP-309）。
+export function openInEditor(id) {
+  return App.OpenInEditor(id);
+}
+
 // --- ツリー -----------------------------------------------------------------
 
 // readDir はディレクトリの直下を読む（FR-032, FR-035）。

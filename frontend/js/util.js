@@ -19,6 +19,18 @@ export function clear(node) {
   }
 }
 
+// span は文言を入れた <span> を作る。
+//
+// **textContent で入れる。** Go を経由しない文字列を innerHTML へ渡さない
+// （IMP-220）。className を省くと class を付けない。
+export function span(className, text) {
+  const element = document.createElement("span");
+  if (className) element.className = className;
+  element.textContent = text || "";
+
+  return element;
+}
+
 // icon は SVG シンボル（IMP-203）を参照する <svg> を作る。
 //
 // 絵柄の定義は index.html が 1 か所に持ち、ここでは参照だけを組み立てる。

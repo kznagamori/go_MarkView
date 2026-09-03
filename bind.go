@@ -122,6 +122,17 @@ func (a *App) GetInitialState() InitialStateDTO {
 	// 親ディレクトリへ移っている（FR-030）。
 	state.TreeRoot = a.GetTreeRoot()
 
+	// **画面の対象（target。IMP-190）は open が設定している。** 起動時も規則は
+	// IMP-192 とまったく同じであり（IMP-193）、ここで別に設定しない。
+	//
+	// startupErr の経路だけは open を通らないが、引数のパスが見つからない・
+	// 読めないという失敗であり、stateKindFor は必ず welcome を返す。welcome
+	// では対象を持たないため、空のままで正しい（IMP-193 の表）。
+	//
+	// 仮にこの前提が崩れて「状態画面なのに target が空」になっても、
+	// エディタで開く操作が使えないだけで、**別のファイルが開くことはない**。
+	// 安全な側に倒れる（NFR-035 の 2）。
+
 	return state
 }
 

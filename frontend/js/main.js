@@ -5,8 +5,8 @@
 
 import * as api from "./api.js";
 import { state } from "./state.js";
-import { errorText } from "./strings.js";
-import { initToolbar } from "./toolbar.js";
+import { S, errorText } from "./strings.js";
+import { initToolbar, canEdit } from "./toolbar.js";
 import { initTooltip } from "./tooltip.js";
 import { applyTheme, toggleTheme } from "./theme.js";
 import { initZoom, setZoom, stepZoom } from "./zoom.js";
@@ -16,7 +16,16 @@ import { initOutline } from "./outline.js";
 import { initViewer, renderDocument, scrollToAnchor } from "./viewer.js";
 import { initSearch, openSearch, closeSearch, isSearchOpen, jump } from "./search.js";
 import { initShortcuts } from "./shortcuts.js";
-import { initOverlay, showStateScreen, showAbout, hideAbout, isAboutOpen } from "./overlay.js";
+import {
+  initOverlay,
+  showStateScreen,
+  showAbout,
+  hideAbout,
+  isAboutOpen,
+  showEditors,
+  hideEditors,
+  isEditorsOpen,
+} from "./overlay.js";
 import { initDnd } from "./dnd.js";
 import { updateStatus, showMessage } from "./status.js";
 import { $ } from "./util.js";
@@ -49,24 +58,55 @@ const SHORTCUT_HANDLERS = guardAll({
   zoomOut: () => stepZoom(-1),
   zoomReset: () => setZoom(100),
   about: () => showAboutDialog(),
+  edit: () => showEditorDialog(),
   quit: () => api.quit(),
 });
 
-// guardAll は情報ダイアログ表示中の割り当てを止める（UI-100）。
+// ダイアログ表示中に**既定の動作を奪ってはならない**割り当て（UI-103）。
+//
+// `Enter` の既定の動作は「フォーカスしている操作要素を実行する」であり、
+// これは背後ではなく**ダイアログ自身の操作**である。UI-103 は「初期選択が
+// あれば `Open` にフォーカスを置き、ボタンと `Enter` の 2 操作で開ける」と
+// 定めており、ここで `preventDefault` すると**その 2 操作目が効かなくなる。**
+// 情報ダイアログの `Close` も同じである（UI-100）。
+//
+// 割り当て自体は止まる（背後の検索へは進まない）ので、両立する。
+const KEEP_DEFAULT_IN_DIALOG = new Set(["searchNext", "searchPrev"]);
+
+// guardAll はダイアログ表示中の割り当てを止める（UI-100, UI-103）。
 //
 // 「表示中は背後のメインウィンドウの操作を受け付けない」を、マウス（暗幕が
 // 覆う）だけでなくキーボードでも成り立たせる。**Esc だけは通す。**
 //
-// 止めるときも true を返し、既定の動作は抑止する。false を返すと、たとえば
-// Ctrl + `+` が WebView 自身のページ拡大として処理されてしまう。
+// **2 つのダイアログを同じ条件で止める。** 片方だけ止めると、開いている
+// ダイアログの種類で背後の効き方が変わる（IMP-252）。
 function guardAll(handlers) {
   const guarded = {};
 
   for (const [id, handler] of Object.entries(handlers)) {
-    guarded[id] = id === "close" ? handler : () => (isAboutOpen() ? true : handler());
+    guarded[id] = id === "close" ? handler : () => guard(id, handler);
   }
 
   return guarded;
+}
+
+// guard は 1 つの割り当てをダイアログ表示中だけ止める（UI-100, UI-103）。
+//
+// 止めるときは原則 true を返し、既定の動作も抑止する。false を返すと、
+// たとえば `Ctrl` + `+` が WebView 自身のページ拡大として処理されてしまう。
+// **例外は KEEP_DEFAULT_IN_DIALOG だけである。**
+function guard(id, handler) {
+  if (!isDialogOpen()) return handler();
+
+  return !KEEP_DEFAULT_IN_DIALOG.has(id);
+}
+
+// isDialogOpen はどちらかのダイアログが開いているかを返す（IMP-252）。
+//
+// **判定をこの 1 か所にまとめる。** 呼ぶ場所ごとに 2 つを並べて書くと、
+// 片方を足し忘れたときに「あるダイアログの表示中だけ背後が効く」になる。
+function isDialogOpen() {
+  return isAboutOpen() || isEditorsOpen();
 }
 
 // boot は起動時の 1 回だけ実行する（IMP-211）。
@@ -87,6 +127,7 @@ async function boot() {
     onTheme: toggleTheme,
     onOutline: () => togglePane("outline"),
     onFileTree: () => togglePane("filetree"),
+    onEdit: showEditorDialog,
     onAbout: showAboutDialog,
   });
   initTooltip();
@@ -96,7 +137,7 @@ async function boot() {
   initPanes();
   initSearch();
   initZoom();
-  initOverlay({ onLink: followLink });
+  initOverlay({ onLink: followLink, onBrowse: browseEditor, onOpenEditor: openInEditor });
   initDnd();
   initShortcuts(SHORTCUT_HANDLERS);
 
@@ -211,10 +252,14 @@ async function goForward() {
 
 // closeTop は Esc の受け口（UI-090）。**上に重なっているものから閉じる。**
 //
-// 順序は重なり順（DSP-015）に従う。情報ダイアログのほうが検索バーより
-// 上にあるため先に閉じる。閉じるものがなければ false を返す（IMP-244）。
+// 順序は重なり順（DSP-015）に従う。ダイアログのほうが検索バーより上に
+// あるため先に閉じる。閉じるものがなければ false を返す（IMP-244）。
+//
+// **2 つのダイアログは同時に開かない**（IMP-252）ため、どちらを先に見ても
+// 結果は変わらない。開いていないほうは false を返して素通りする。
 function closeTop() {
   if (hideAbout()) return true;
+  if (hideEditors()) return true;
   if (!isSearchOpen()) return false;
 
   closeSearch();
@@ -227,6 +272,62 @@ function closeTop() {
 // （IMP-201）。
 async function showAboutDialog() {
   showAbout(await api.getAbout());
+}
+
+// --- エディタで開く（FR-090, FR-091, IMP-331） ---
+
+// showEditorDialog はエディタ選択ウィンドウを開く（FR-091, UI-103）。
+//
+// **Go を呼ぶのはここだけとし、overlay.js は受け取った値を描くだけにする**
+// （IMP-201）。**押すたびに一覧を取り直す**（IMP-310, NFR-013）。
+//
+// ボタンとショートカットの両方がここへ来る。**押せるかどうかの判定も
+// ここ 1 か所に置く。** ボタンは淡色で防げるが（UI-021）、Ctrl+E は
+// それだけでは止まらない。
+async function showEditorDialog() {
+  if (!canEdit()) return;
+
+  const list = await api.listEditors();
+
+  // 一覧すら作れなかったときはウィンドウを出さない。**選べるものが無い
+  // ウィンドウを出さない。** 理由はステータス領域へ出す（IMP-315）。
+  if (list && list.error) {
+    showError(list.error);
+    return;
+  }
+
+  showEditors(list);
+}
+
+// browseEditor は実行ファイルを選ぶダイアログを開き、新しい一覧を返す
+// （FR-091, IMP-310）。**描き直すのは overlay.js の役目**である（IMP-252）。
+async function browseEditor() {
+  const list = await api.browseEditor();
+
+  // 作れなかったときは null を返し、**いま出ている一覧を保つ**（IMP-252）。
+  if (list && list.error) {
+    showError(list.error);
+    return null;
+  }
+
+  return list;
+}
+
+// openInEditor は選ばれたエディタで開き、結果をステータス領域へ出す
+// （FR-090, DSP-151, IMP-331）。
+//
+// **成功したときも出す。** エディタが背面のウィンドウで開くことがあり、
+// 何も出ないと「押しても無反応」に見える（FR-090, UI-060）。
+async function openInEditor(id) {
+  const result = await api.openInEditor(id);
+  if (!result) return;
+
+  if (result.error) {
+    showError(result.error);
+    return;
+  }
+
+  showMessage(S.statusEditor(result.name), "info");
 }
 
 // openFromTree はツリーで選ばれたファイルを開く（FR-033）。

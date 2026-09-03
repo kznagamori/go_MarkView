@@ -186,6 +186,41 @@ type OpenResultDTO struct {
 
 `ReadDir` と `CopyToClipboard` は `error` を返したままとする。前者はツリーの一部が読めないだけであり、後者は失敗の種類が 1 つしかない。いずれも `Kind` を伴う分岐を必要としない（IMP-315）。
 
+### IMP-309: EditorListDTO / EditorDTO / EditorResultDTO **MUST**
+
+エディタ選択ウィンドウ（[UI-103](03-ui.md)）とその実行の DTO。
+
+```go
+// EditorListDTO は選択ウィンドウの中身（UI-103）。
+type EditorListDTO struct {
+    Editors []EditorDTO `json:"editors"`
+    Error   *ErrorDTO   `json:"error"`
+}
+
+// EditorDTO は一覧の 1 行。
+type EditorDTO struct {
+    ID        string `json:"id"`        // プリセットの ID、または "custom"
+    Name      string `json:"name"`      // 画面に出す表示名
+    Available bool   `json:"available"` // 選択できるか（見つかったか）
+    Selected  bool   `json:"selected"`  // 初期選択（UI-116）
+}
+
+// EditorResultDTO は起動の結果。
+type EditorResultDTO struct {
+    Name  string    `json:"name"`  // 起動したエディタの表示名。ステータス表示に使う
+    Error *ErrorDTO `json:"error"` // 失敗したとき。成功時は null
+}
+```
+
+> [!IMPORTANT]
+> **`EditorDTO` に実行ファイルのパスを載せてはならない**（[NFR-035](07-nonfunctional.md) の 3）。画面に出す必要がなく、載せた時点でフロントエンドをパスが通ることになる。これは IMP-300 の 3 が禁じている形そのものである。
+
+- 一覧の末尾には常に **`ID` が `custom` の行**を置く。`Other...` にあたる。
+  - まだ何も選ばれていなければ `Name` は空、`Available` は `false`。
+  - `BrowseEditor` で選ばれた後、または設定のエディタがどのプリセットとも一致しない場合は、**実行ファイル名（`filepath.Base`。パスではない）**を `Name` に入れ、`Available` を `true` にする（UI-103）。
+- `Selected` が真の行は高々 1 つとする。設定にエディタが無い、または見つからない場合は**どの行も真にしない**（UI-116）。
+- `Editors` の順序は [IMP-172](11-impl-backend.md) の定義順に `custom` を足したものとし、**並べ替えない**（UI-103）。
+
 ## 13.3 バインドメソッド（IMP-310 系）
 
 すべて `App` のメソッドとして定義する。Wails のバインディングにより、JavaScript からは `window.go.main.App.*` として呼べる。`js/api.js` がこれを薄くラップする（IMP-201）。
@@ -206,13 +241,22 @@ type OpenResultDTO struct {
 | `SetScrollTop(top int)` | 現在のスクロール位置 | — | FR-051 |
 | `UpdateConfig(patch ConfigDTO)` | 変更後の設定 | — | UI-110, UI-114 |
 | `CopyToClipboard(text string)` | コピー対象 | `error` | FR-061, AR-062 |
+| `ListEditors()` | — | `EditorListDTO` | FR-091 |
+| `BrowseEditor()` | — | `EditorListDTO` | FR-091 |
+| `OpenInEditor(id string)` | プリセットの ID または `"custom"` | `EditorResultDTO` | FR-090 |
 | `GetAbout()` | — | `AboutDTO` | FR-100, FR-101 |
 | `Quit()` | — | — | UI-090 |
 
-このほかに、フロントエンドから任意のパスを開く汎用メソッドを**定義しない**（IMP-300 の 3）。
+このほかに、フロントエンドから任意のパスを開く汎用メソッドを**定義しない**（IMP-300 の 3）。**エディタの 3 つも例外ではない。** 実行ファイルのパスは Go 側で生まれて Go 側で消費され、フロントエンドは識別子しか扱わない（IMP-309, NFR-035）。
+
+- `BrowseEditor` は Go 側でファイル選択ダイアログを開き、**選ばれたパスを「確定前の候補」として 1 つだけ保持する。** `OpenInEditor("custom")` が用いてよいのは、**この候補か、設定に保存されたエディタ（UI-116）のどちらかだけ**とする。フロントエンドから受け取った値は使わない。任意の実行ファイルを無条件に起動する経路を作らないためであり、`OpenConfirmed` が確認待ちのパスを 1 つだけ保持するのと同じ考え方である（IMP-314）。
+- **`ListEditors` は確定前の候補を捨てる。** 押すたびに選択ウィンドウを出す設計であり（[UI-103](03-ui.md)）、初期選択は設定に保存されたエディタだけから決まる（[UI-116](03-ui.md)）。`Browse` したまま閉じた候補が次に開いたときも残っていると、利用者には「閉じた場合は何も保存しない」（FR-091）が破れたように見える。
+- **`OpenInEditor("custom")` は、確定前の候補が無ければ設定に保存されたエディタを使う**（UI-116）。`ListEditors` が候補を捨てる以上、候補だけを見ると**保存されたエディタは 2 回目以降けっして起動できない。** 一覧では選択済みとして出るのに `Open` が必ず `editor-failed` になる、という食い違いになる。用いてよいかどうかの判定は `EditorDTO.Available`（IMP-309）と同じ条件にする。**「一覧で選べる行」と「起動できる行」を一致させる。**
+- `OpenInEditor` が成功したとき、**そのとき初めて設定へ保存する**（UI-116）。選択しただけ、`Browse` しただけでは保存しない。
+- **`OpenInEditor` が開くファイルは `App.target`（IMP-190）である。** 「表示中の文書」（`current`）ではない。状態画面を出している間 `current` は前の文書のまま残っており、それを渡すと画面と食い違う（FR-090, NFR-035）。`target` が空（文書未表示）のときは `Error.Kind` を `editor-failed` として返す。**ボタンが淡色である以上（UI-021）通常は起こらないが、防御的に扱う。**
 
 - **失敗は戻り値の DTO で伝える**（IMP-308, IMP-305）。Go の `error` を返すのは `ReadDir` と `CopyToClipboard` だけとする。
-- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。
+- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタの 3 つは `editor-failed` とする。** これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
 - `Quit` は `Ctrl+Q`（UI-090）の受け口である。`Alt+F4` と閉じるボタンは OS とウィンドウマネージャが処理するためこの経路を通らない。**終了処理そのものは Wails に任せ、ここで設定を保存しない。** `OnBeforeClose` / `OnShutdown`（IMP-194）を通ることで、閉じるボタンで終了した場合とまったく同じ後始末になる。
 - `UpdateConfig` を**立て続けに 2 つ呼ばない**。バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、到着順が入れ替わりうる。フロントエンドは `saveConfig`（IMP-210）を経由し、前の応答を待ってから次を送る。
 
@@ -291,6 +335,8 @@ Go 側の番兵エラー（IMP-021）を `ErrorDTO.Kind` へ写像し、フロ�
 | リンク先が見つからない | `link-not-found` | ステータス | `Link target not found: <href>` |
 | クリップボード失敗 | `clipboard` | ステータス | `Failed to copy.` |
 | 監視対象が削除された | `removed` | ステータス | `File was deleted: <path>` |
+| エディタを起動できない | `editor-failed` | ステータス | `Failed to start the editor.` |
+| `opener.ErrSelf` | `editor-self` | ステータス | `MarkView cannot be used as an editor.` |
 | 不正な文字コードを置換 | `encoding` | ステータス | `Some characters were replaced.` |
 
 - 文言の組み立てはフロントエンドで行う。Go 側は `Kind` と要素（パス・サイズ）を渡す。これにより、文言の定義が `strings.js` の 1 箇所に集約される（IMP-290）。
@@ -356,6 +402,52 @@ sequenceDiagram
     end
 ```
 
+### IMP-331: エディタで開くとき
+
+**押すたびに選択ウィンドウを出す**（FR-091）。往復は最大 3 回で、`Browse` を使わなければ 2 回で済む。
+
+```mermaid
+sequenceDiagram
+    participant U as 利用者
+    participant FE as フロントエンド
+    participant APP as App (Go)
+    participant OS as OS
+
+    U->>FE: Edit ボタン / Ctrl+E
+    FE->>APP: ListEditors()
+    APP->>APP: プリセットを検出 (IMP-172) + 設定と突き合わせ (UI-116)
+    APP-->>FE: EditorListDTO
+    FE->>FE: 選択ウィンドウを表示 (IMP-252)
+    opt Other... を選んで Browse
+        FE->>APP: BrowseEditor()
+        APP->>OS: ファイル選択ダイアログ
+        OS-->>APP: 実行ファイルのパス
+        APP->>APP: 確定前の候補として保持
+        APP-->>FE: EditorListDTO (custom に実行ファイル名)
+    end
+    U->>FE: Open / Enter
+    FE->>APP: OpenInEditor(id)
+    APP->>APP: id を絶対パスへ解決 + 対象は App.target (IMP-190)
+    APP->>APP: 起動前の検査 (IMP-171)
+    alt 成功
+        APP->>OS: exec.Command(editor, path).Start()
+        APP->>APP: 設定へ保存 (UI-116)
+        APP-->>FE: EditorResultDTO(name)
+        FE->>FE: ウィンドウを閉じ、ステータスに表示 (DSP-151)
+    else 失敗
+        APP-->>FE: EditorResultDTO(error)
+        FE->>FE: ウィンドウを閉じ、ステータスに表示 (IMP-315)
+    end
+```
+
+`ListEditors` は**画面の対象があるかを見ない。** 一覧を作るだけであり、対象の有無はボタンの活性（UI-021）で表す。
+
+**対象が無いときに呼ばない判定は、フロントエンド側の 1 か所に置く。** ツールバーのボタンとショートカット（`Ctrl+E`）の両方が同じ入口を通るようにする。ボタンは淡色で防げるが（UI-021）、ショートカットはそれだけでは止まらない。判定が抜けると、操作案内の表示中に `Ctrl+E` を押したときだけ `Failed to start the editor.` が出る、原因の分からない失敗になる。
+
+**保存は起動できたあとに行う。** 図の順序どおり、`Start()` が成功してから設定へ書く（IMP-310, UI-116）。先に保存すると、起動に失敗したエディタが次回の初期選択として残る。
+
+**`ListEditors` を起動時に先読みしない。** プリセットの検出はファイルシステムを触るため、押されるまで行わない（NFR-013）。また、MarkView の実行中にエディタがインストール・アンインストールされうる。
+
 ## 13.6 要求一覧
 
 | ID | 概要 | 必須度 |
@@ -369,6 +461,7 @@ sequenceDiagram
 | IMP-306 | AboutDTO | MUST |
 | IMP-307 | ErrorDTO | MUST |
 | IMP-308 | OpenResultDTO | MUST |
+| IMP-309 | EditorListDTO / EditorDTO / EditorResultDTO | MUST |
 | IMP-310 | バインドメソッド一覧 | MUST |
 | IMP-311 | SetScrollTop の扱い | MUST |
 | IMP-312 | FollowLink の判定順序 | MUST |
@@ -379,3 +472,4 @@ sequenceDiagram
 | IMP-321 | document:changed の扱い | MUST |
 | IMP-322 | イベントの購読解除 | SHOULD |
 | IMP-330 | 呼び出しの流れ（リンク遷移） | — |
+| IMP-331 | 呼び出しの流れ（エディタで開く） | — |

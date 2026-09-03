@@ -51,11 +51,42 @@ type App struct {
 	current  *document.Document // 表示中の文書。未表示なら nil
 	history  *session.History   // 表示履歴（IMP-191）
 
+	// target は画面がいま対象にしているファイルの絶対パス（IMP-190）。
+	//
+	// 本文を表示していればその文書、状態画面を出していればその対象。文書
+	// 未表示（welcome）なら空。「エディタで開く」が使う（FR-090）。
+	//
+	// **current と取り違えない。** current は「読み込みと変換に成功した文書」
+	// であり、状態画面（confirm-large / too-large / render-error）を出して
+	// いる間は**前に開いていた文書のまま残る**。一方 target は画面が示して
+	// いる対象であり、**ウィンドウタイトル（UI-013）と常に一致する。**
+	//
+	// ここで current を渡すと、利用者が `big.md — too large` の画面を見ながら
+	// 押したのに前の文書がエディタで開く。**エラーも出ないため気づけない**
+	// （NFR-035 の 2）。
+	//
+	// **更新するのは open だけである**（IMP-192）。判定は screenTarget に
+	// 1 つだけ置き、ウィンドウタイトルも同じ値から決める。
+	target string
+
 	// pendingConfirm は確認画面を表示中のファイル（FR-016）。
 	//
 	// OpenConfirmed が受け付ける対象をこの 1 つに限定するために保持する
 	// （IMP-314）。任意のサイズのファイルを無条件に開く経路を作らない。
 	pendingConfirm string
+
+	// pendingEditor は BrowseEditor で選ばれた「確定前の候補」（IMP-310）。
+	//
+	// OpenInEditor("custom") が受け付ける対象をこの 1 つに限定するために
+	// 保持する。pendingConfirm（IMP-314）とまったく同じ考え方であり、
+	// **フロントエンドから任意の実行ファイルを起動する経路を作らない**
+	// ためのものである（IMP-300 の 3, NFR-035）。
+	//
+	// **ListEditors が捨てる。** 押すたびに選択ウィンドウを出す設計であり
+	// （UI-103）、初期選択は設定に保存されたエディタから決まる。Browse した
+	// まま閉じた候補が次に開いたときも残っていると、「閉じた場合は何も
+	// 保存しない」（FR-091）が破れて見える。
+	pendingEditor string
 
 	// pendingSource は確認画面を出したときの経路（IMP-192, IMP-314）。
 	//

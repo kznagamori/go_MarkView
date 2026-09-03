@@ -819,7 +819,139 @@
 }
 
 .dialog-button:hover {
-  background: var(--border-muted);
+  background: var(--neutral-muted);
+}
+
+/* DSP-182 の主スタイル。**1 つのダイアログにつき高々 1 つ**とする。
+   値は状態画面の .state-button と同じ表であり、変えるときは両方を見る。 */
+.dialog-button-primary {
+  height: 32px;
+  padding: 0 var(--space-4);
+
+  color: var(--fg-on-emphasis);
+  background: var(--accent-emphasis);
+  border: none;
+  border-radius: var(--radius-control);
+  font: inherit;
+  cursor: pointer;
+  transition: filter var(--motion-hover) ease;
+}
+
+.dialog-button-primary:hover {
+  filter: brightness(0.92);
+}
+
+/* 選択が無い間の Open（DSP-172）。DSP-101 の「無効」に倣い、文字は
+   --fg-subtle、**カーソルは既定のまま、ホバー効果を出さない。** */
+.dialog-button-primary:disabled {
+  color: var(--fg-subtle);
+  background: var(--neutral-muted);
+  cursor: default;
+}
+
+.dialog-button-primary:disabled:hover {
+  filter: none;
+}
+
+/* --- エディタ選択ダイアログ（UI-103, DSP-172） --- */
+
+/* 枠は情報ダイアログと同一で、寸法だけが違う（DSP-172）。
+   幅 420px 固定、高さは内容に従う。 */
+.dialog-narrow {
+  width: 420px;
+  height: auto;
+}
+
+/* 見出しは 13px 太字（DSP-172） */
+.editor-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-default);
+}
+
+.editor-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 行高 28px。**ラベル全体をクリック対象とする**（DSP-172） */
+.editor-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  height: 28px;
+  padding: 0 var(--space-2);
+
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.editor-row:hover {
+  background: var(--neutral-muted);
+}
+
+/* 選択できない行（DSP-172）。**ホバー効果を出さない**
+   （DSP-101 の「無効」と揃える） */
+.editor-row.is-disabled {
+  color: var(--fg-subtle);
+  cursor: default;
+}
+
+.editor-row.is-disabled:hover {
+  background: none;
+}
+
+.editor-radio {
+  flex: none;
+  margin: 0;
+}
+
+.editor-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 行の右端に添える (not installed)（DSP-172） */
+.editor-note {
+  flex: none;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+
+/* Other... の前に 1 行あける（UI-103 の図） */
+.editor-custom {
+  margin-top: var(--space-2);
+}
+
+/* 選んだ結果は Other... の行の下に 1 段（DSP-172）。
+   ラジオの幅ぶん字下げし、上の行の名前と左端を揃える。 */
+.editor-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-6);
+}
+
+/* **実行ファイル名だけを出す。** パスは画面に出さない（NFR-035 の 3） */
+.editor-file {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* Cancel と Open の上マージンは 16px（DSP-172）。.dialog の gap が既に
+   12px を作っているため、ここでは残りの 4px だけを足す。 */
+.editor-actions {
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 /* --- ドロップオーバーレイ（DSP-190） --- */

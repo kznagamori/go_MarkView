@@ -40,6 +40,10 @@ const (
 //
 // 同じ理由で、表示していたファイルのパス・ツリールート・履歴・検索語も持たない
 // （NFR-042）。
+//
+// Editor だけ性格が異なる。**他の 7 項目は「表示の快適性に関わる値」だが、
+// これは「起動されるプログラム」である**（NFR-035）。絶対パス以外を保持
+// しないことを Normalize で保証する（IMP-153, UI-116）。
 type Config struct {
 	Theme           string `json:"theme"` // "light" | "dark" | ""（OS 追従）
 	OutlineVisible  bool   `json:"outlineVisible"`
@@ -48,6 +52,7 @@ type Config struct {
 	FileTreeWidth   int    `json:"fileTreeWidth"`
 	WindowWidth     int    `json:"windowWidth"`
 	WindowHeight    int    `json:"windowHeight"`
+	Editor          string `json:"editor"` // 実行ファイルの絶対パス（UI-116）
 }
 
 // Default は UI-110 の既定値を返す（IMP-151）。
@@ -63,6 +68,7 @@ func Default() Config {
 		FileTreeWidth:   260,
 		WindowWidth:     1280,
 		WindowHeight:    860,
+		Editor:          "", // 未選択。押したときに選択ウィンドウで選ぶ（UI-103）
 	}
 }
 
@@ -157,5 +163,21 @@ func (c *Config) Normalize() {
 	}
 	if c.WindowHeight < MinWindowH {
 		c.WindowHeight = d.WindowHeight
+	}
+
+	// Editor だけは「起動されるプログラム」であり、丸める理由が他と異なる
+	// （NFR-035）。**絶対パスでなければ空にする**（IMP-153, UI-116）。
+	// 相対パスやコマンド名を残すと、$PATH や作業ディレクトリの内容で起動対象が
+	// 変わる。設定ファイルは書き換えられうるため、ここが最後の砦になる。
+	//
+	// **存在するかどうかはここでは見ない。** 設定を読むのは起動時の 1 回だけで
+	// あり（UI-115）、その後にアンインストールされうる。存在の確認は起動の
+	// 直前に行う（IMP-171）。ここで消すと、一時的に外していただけの利用者の
+	// 選択が黙って失われる。
+	//
+	// Windows の `\dir\file.exe` のようなドライブ相対パスも IsAbs は偽を返す。
+	// カレントドライブで起動対象が変わるため、それでよい。
+	if !filepath.IsAbs(c.Editor) {
+		c.Editor = d.Editor
 	}
 }
