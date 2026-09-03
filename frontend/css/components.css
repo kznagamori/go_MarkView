@@ -490,6 +490,33 @@
   color: var(--danger-fg);
 }
 
+/* --- PlantUML（DSP-272） --- */
+
+/* DSP-270（Mermaid）と同じ枠に収める。値の違うところだけを書く。 */
+.code-block:has(> .plantuml-rendered) {
+  background: var(--canvas-default);
+  border-radius: 0;
+}
+
+.plantuml-rendered {
+  text-align: center; /* 本文幅の中央（DSP-272） */
+}
+
+.plantuml-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 描画しなかった理由。ソースはコードブロックのまま残す（FR-110, DSP-272）。
+   **構文エラーはここへ来ない。** PlantUML 自身がエラー図を返すため、
+   図として表示する（FR-024）。 */
+.markdown-body .plantuml-error {
+  margin: 0;
+  padding: var(--md-8) var(--md-16) 0;
+  font-size: var(--md-12);
+  color: var(--danger-fg);
+}
+
 /* --- 数式（DSP-271） --- */
 
 /* KaTeX の既定色を上書きし、テーマに追従させる（DSP-271） */

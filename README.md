@@ -25,7 +25,7 @@ MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown
 - GitHub Flavored Markdown を、GitHub のファイルビューと同じ見た目で描画
 - コードブロックのシンタックスハイライト（Go・Python・TypeScript など 40 言語以上）
 - GitHub Alerts 5 種（`> [!NOTE]` `> [!TIP]` `> [!IMPORTANT]` `> [!WARNING]` `> [!CAUTION]`）
-- Mermaid 図の描画。ライブラリを同梱しているため**オフラインでも図が出る**
+- Mermaid 図と PlantUML 図の描画。ライブラリを同梱しているため**オフラインでも図が出る**
 - 数式の描画（KaTeX 同梱、`$...$` / `$$...$$` / ` ```math ` の 3 記法）
 - 見出しからアウトラインを自動生成し、本文のスクロールに連動して現在位置を強調
 - Markdown ファイルとディレクトリだけを並べるファイルツリー（遅延展開、`.git` などは除外）
@@ -95,7 +95,7 @@ MarkView --help            # 使い方を表示して終了する
 | ドキュメント | 内容 |
 | --- | --- |
 | [使い方](https://github.com/kznagamori/go_MarkView/blob/main/docs/usage.md) | 起動のしかた、文書の開き方、ペイン、検索、倍率、テーマ、ショートカット |
-| [対応する Markdown 記法](https://github.com/kznagamori/go_MarkView/blob/main/docs/markdown.md) | 見出しから Mermaid・数式まで、何がどう表示されるか |
+| [対応する Markdown 記法](https://github.com/kznagamori/go_MarkView/blob/main/docs/markdown.md) | 見出しから Mermaid・PlantUML・数式まで、何がどう表示されるか |
 | [設定と保存されるもの](https://github.com/kznagamori/go_MarkView/blob/main/docs/settings.md) | 何が保存され、何が保存されないか。保存先と消し方 |
 | [困ったときは](https://github.com/kznagamori/go_MarkView/blob/main/docs/troubleshooting.md) | 起動しない、図が出ない、誤検知される、といった場合の対処 |
 

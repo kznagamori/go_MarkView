@@ -144,6 +144,34 @@ func TestRender_Sanitize_Keeps(t *testing.T) {
 			},
 		},
 
+		// UT-209 ケース 12: PlantUML の属性（IMP-116）。
+		// **落とすと描画対象がフロントエンドから見えなくなる**（IMP-119, IMP-233）。
+		{
+			name: "data-plantuml / data-source",
+			in:   "```plantuml\n@startuml\n@enduml\n```",
+			contains: []string{
+				`data-lang="plantuml"`, `data-plantuml="1"`, `data-source="@startuml`,
+			},
+		},
+		{
+			name:     "data-puml-error",
+			in:       "```plantuml\n@startuml\n!include a.puml\n@enduml\n```",
+			contains: []string{`data-puml-error="include"`},
+		},
+
+		// UT-209 ケース 13: pre の class 接頭辞（IMP-116）。
+		// 接頭辞の一覧から漏れると、描画前のソース表示が素の pre になる。
+		{
+			name:     "pre class=mermaid-source",
+			in:       "```mermaid\ngraph TD\n```",
+			contains: []string{`<pre class="mermaid-source">`},
+		},
+		{
+			name:     "pre class=plantuml-source",
+			in:       "```plantuml\n@startuml\n@enduml\n```",
+			contains: []string{`<pre class="plantuml-source">`},
+		},
+
 		// UT-090 に従って追加。落ちると機能が壊れるもの。
 		{
 			name:     "タスクリストのチェックボックス",

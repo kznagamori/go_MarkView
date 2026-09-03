@@ -51,9 +51,23 @@ var mermaidKinds = []string{
 	"pie",
 }
 
+// plantUMLKinds は BR-054 が挙げる 2 種類。**両方を見る。**
+//
+// Graphviz を要する図（class）と要さない図（sequence）を分けているのは、
+// viz-global.js の読み込みに失敗しても **要さない図だけは描けてしまう**
+// ためである（IMP-233 の 4）。片方だけを見ると、この壊れ方を見落とす。
+//
+// 判定は data-source の 1 行目の前方一致で行う。検証用文書は図に名前を
+// 付けており（@startuml sequence）、種別をそこで見分ける。
+var plantUMLKinds = []string{
+	"@startuml sequence",
+	"@startuml class",
+}
+
 // report はページから返る結果（harness.js と対になる）。
 type report struct {
-	Mermaid   []mermaidBlock `json:"mermaid"`
+	Mermaid   []diagramBlock `json:"mermaid"`
+	PlantUML  []diagramBlock `json:"plantuml"`
 	Math      mathResult     `json:"math"`
 	Errors    []string       `json:"errors"`
 	Console   []string       `json:"console"`
@@ -62,7 +76,7 @@ type report struct {
 	Fatal     string         `json:"fatal"`
 }
 
-type mermaidBlock struct {
+type diagramBlock struct {
 	Index  int    `json:"index"`
 	Head   string `json:"head"`
 	SVG    int    `json:"svg"`
@@ -210,6 +224,7 @@ func check(rendered renderer.Result, got report) []string {
 	}
 
 	failures = append(failures, checkMermaid(got)...)
+	failures = append(failures, checkPlantUML(got)...)
 
 	return append(failures, checkMath(rendered, got)...)
 }
@@ -233,6 +248,35 @@ func checkMermaid(got report) []string {
 			failures = append(failures, fmt.Sprintf("%s: SVG が %d 個（1 個を期待）", kind, block.SVG))
 		case block.Width <= 0 || block.Height <= 0:
 			// 大きさのない SVG は「描けた」とは言えない。
+			failures = append(failures, fmt.Sprintf("%s: SVG の寸法が %d×%d", kind, block.Width, block.Height))
+		}
+	}
+
+	return failures
+}
+
+// checkPlantUML は PlantUML の描画結果を検査する（BR-054, E2E-109）。
+//
+// 検査の内容は Mermaid と同じである。**SVG の有無だけでは足りない**——
+// 失敗しても大きさのない SVG が残ることがあるため、寸法まで見る。
+func checkPlantUML(got report) []string {
+	var failures []string
+
+	if len(got.PlantUML) != len(plantUMLKinds) {
+		failures = append(failures, fmt.Sprintf("PlantUML のブロックが %d 件（%d 件を期待）", len(got.PlantUML), len(plantUMLKinds)))
+	}
+
+	for _, kind := range plantUMLKinds {
+		block, ok := findBlock(got.PlantUML, kind)
+
+		switch {
+		case !ok:
+			failures = append(failures, kind+": 図が文書に見つからない")
+		case block.Error != "":
+			failures = append(failures, kind+": "+block.Error)
+		case block.SVG != 1:
+			failures = append(failures, fmt.Sprintf("%s: SVG が %d 個（1 個を期待）", kind, block.SVG))
+		case block.Width <= 0 || block.Height <= 0:
 			failures = append(failures, fmt.Sprintf("%s: SVG の寸法が %d×%d", kind, block.Width, block.Height))
 		}
 	}
@@ -267,14 +311,14 @@ func checkMath(rendered renderer.Result, got report) []string {
 	return failures
 }
 
-func findBlock(blocks []mermaidBlock, kind string) (mermaidBlock, bool) {
+func findBlock(blocks []diagramBlock, kind string) (diagramBlock, bool) {
 	for _, block := range blocks {
 		if strings.HasPrefix(block.Head, kind) {
 			return block, true
 		}
 	}
 
-	return mermaidBlock{}, false
+	return diagramBlock{}, false
 }
 
 // printVersions は検査対象の資産の版を出す。CI のログで「どの版で通ったか」を
@@ -288,8 +332,9 @@ func printVersions(frontendDir string) {
 	}
 
 	var entries []struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
+		Name      string `json:"name"`
+		Version   string `json:"version"`
+		BundledIn string `json:"bundledIn"`
 	}
 	if err := json.Unmarshal(data, &entries); err != nil {
 		fmt.Printf("assets  : (vendor.json を解析できない: %v)\n", err)
@@ -297,8 +342,15 @@ func printVersions(frontendDir string) {
 		return
 	}
 
+	// **最上位の資産だけを出す**（BR-042, IMP-181 の Bundled と同じ絞り方）。
+	// 同梱物の中に含まれるもの（Viz.js / Graphviz / Expat）は版を持たないことが
+	// あり、"Graphviz " のように名前だけが並んでログが読みにくくなる。
 	parts := make([]string, 0, len(entries))
 	for _, entry := range entries {
+		if entry.BundledIn != "" {
+			continue
+		}
+
 		parts = append(parts, entry.Name+" "+entry.Version)
 	}
 
@@ -311,6 +363,13 @@ func printResult(got report, failures []string) {
 
 	for _, block := range got.Mermaid {
 		fmt.Printf("  mermaid  %-18s svg=%d  %d×%d\n", block.Head, block.SVG, block.Width, block.Height)
+	}
+
+	for _, block := range got.PlantUML {
+		// **理由まで出す。** plantUMLKinds 以外の図は合否に効かないため、
+		// 出さないと「描けなかったが理由が分からない」行になる。
+		fmt.Printf("  plantuml %-22s svg=%d  %d×%d  %s\n",
+			block.Head, block.SVG, block.Width, block.Height, block.Error)
 	}
 
 	fmt.Printf("  katex    %d / %d rendered\n\n", got.Math.KaTeX, got.Math.Total)

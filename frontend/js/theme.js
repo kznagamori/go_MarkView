@@ -12,7 +12,7 @@
 import { S } from "./strings.js";
 import { state, saveConfig } from "./state.js";
 import { setTip } from "./toolbar.js";
-import { redrawMermaid } from "./lazy.js";
+import { redrawMermaid, redrawPlantUML } from "./lazy.js";
 import { $ } from "./util.js";
 
 // applyTheme はテーマを画面へ反映する。値は "light" | "dark"。
@@ -57,7 +57,8 @@ export function toggleTheme() {
   state.themeExplicit = true;
   saveConfig();
 
-  // Mermaid だけは配色を自前で持つため引き直す（IMP-231, DSP-370）。
+  // Mermaid と PlantUML は配色を自前で持つため引き直す（IMP-231, IMP-243, DSP-370）。
   // **await しない。** 描画を待って画面全体の切り替えを遅らせない。
   redrawMermaid($("markdown"));
+  redrawPlantUML($("markdown"));
 }

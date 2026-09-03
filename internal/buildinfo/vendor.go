@@ -12,10 +12,13 @@ import (
 // vendor.json に記録する。アプリケーション情報ウィンドウの Bundled 行
 // （UI-100）に表示する。
 type VendorEntry struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Source  string `json:"source"`
-	Fetched string `json:"fetched"`
+	Name      string `json:"name"`
+	Version   string `json:"version"` // 分からない場合は空（BR-042）
+	SPDX      string `json:"spdx"`    // ライセンス種別。NFR-051 の判定に使う
+	License   string `json:"license"` // 全文の位置。frontend/vendor/ からの相対パス
+	Source    string `json:"source"`
+	Fetched   string `json:"fetched"`
+	BundledIn string `json:"bundledIn,omitempty"` // 同梱元の資産名。最上位なら空
 }
 
 // vendorJSON は埋め込まれた vendor.json の中身。
@@ -39,6 +42,30 @@ func SetVendorJSON(data []byte) {
 // （FR-111）。戻り値は常に非 nil であり、呼び出し側は長さだけを見ればよい。
 func Vendors() []VendorEntry {
 	return parseVendors(vendorJSON)
+}
+
+// Bundled は Bundled 行（UI-100）に出す資産だけを返す（IMP-181）。
+//
+// BundledIn が空のもの、つまり最上位の資産に限る。同梱物の中に含まれるもの
+// （Viz.js / Graphviz / Expat）は版を持たないことがあり、並べても確認の役に
+// 立たない。それらはライセンス表示（FR-101）に全文とともに現れる。
+//
+// **絞り込みをここ 1 か所に置く**（IMP-181）。フロントエンドで絞ると、
+// 絞り方が 2 つに分かれる（IMP-306）。
+//
+// 記録の順序をそのまま保つ。vendor.json の並びが Bundled 行の並びになる。
+// 戻り値は常に非 nil であり、呼び出し側は長さだけを見ればよい（FR-111）。
+func Bundled() []VendorEntry {
+	all := Vendors()
+
+	bundled := make([]VendorEntry, 0, len(all))
+	for _, entry := range all {
+		if entry.BundledIn == "" {
+			bundled = append(bundled, entry)
+		}
+	}
+
+	return bundled
 }
 
 // parseVendors は vendor.json を解析する。

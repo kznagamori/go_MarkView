@@ -17,7 +17,9 @@ const CURRENT = "search-hit-current";
 
 // 走査から外す領域（IMP-241）。
 //
-//   svg     … Mermaid の描画結果。HTML の <mark> を差し込むと図が壊れる
+//   svg     … Mermaid と PlantUML の描画結果。HTML の <mark> を差し込むと
+//             図が壊れる。**PlantUML の図は文字を多く含む**ため、外し忘れると
+//             図の中の語が大量にヒットする（IMP-241）
 //   .katex  … KaTeX の描画結果。MathML と HTML に同じ文字が二重に入って
 //             おり、包むと数式が崩れるうえヒット数も倍になる
 //

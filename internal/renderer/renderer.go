@@ -41,10 +41,11 @@ type Heading struct {
 
 // Result は 1 回の変換結果を表す（IMP-110）。
 type Result struct {
-	HTML         string
-	Headings     []Heading
-	NeedsMermaid bool
-	NeedsKaTeX   bool
+	HTML          string
+	Headings      []Heading
+	NeedsMermaid  bool
+	NeedsKaTeX    bool
+	NeedsPlantUML bool // AR-021, MD-085。IMP-119 が立てる
 }
 
 // Renderer は goldmark のパイプラインを保持する（IMP-110）。
@@ -87,8 +88,10 @@ func New() *Renderer {
 
 				mermaidExtension{}, // Mermaid ブロックの取り出し（IMP-115, MD-080）
 
-				// ハイライトは Mermaid・数式の後に置く。両者は先に専用ノードへ
-				// 差し替わり、chroma には渡らない（IMP-114, IMP-115）。
+				plantUMLExtension{}, // PlantUML ブロックの取り出し（IMP-119, MD-083）
+
+				// ハイライトは Mermaid・PlantUML・数式の後に置く。いずれも先に
+				// 専用ノードへ差し替わり、chroma には渡らない（IMP-114, IMP-115, IMP-119）。
 				newHighlighting(),
 			),
 
@@ -150,13 +153,15 @@ func (r *Renderer) Render(source []byte, baseDir string) (result Result, err err
 
 	needsKaTeX, _ := pc.Get(needsKaTeXKey).(bool)
 	needsMermaid, _ := pc.Get(needsMermaidKey).(bool)
+	needsPlantUML, _ := pc.Get(needsPlantUMLKey).(bool)
 
 	return Result{
 		// サニタイズは変換パイプラインの最後段に固定で置く（IMP-116, AR-031）。
-		HTML:         string(r.policy.SanitizeBytes(buf.Bytes())),
-		Headings:     headings,
-		NeedsKaTeX:   needsKaTeX,
-		NeedsMermaid: needsMermaid,
+		HTML:          string(r.policy.SanitizeBytes(buf.Bytes())),
+		Headings:      headings,
+		NeedsKaTeX:    needsKaTeX,
+		NeedsMermaid:  needsMermaid,
+		NeedsPlantUML: needsPlantUML,
 	}, nil
 }
 

@@ -9,7 +9,7 @@ import { S, warningText } from "./strings.js";
 import { hideStateScreen } from "./overlay.js";
 import { renderOutline, observeHeadings, syncActive } from "./outline.js";
 import { attachCopyButtons } from "./copy.js";
-import { drawMermaid, drawMath } from "./lazy.js";
+import { drawMermaid, drawMath, drawPlantUML } from "./lazy.js";
 import { closeSearch } from "./search.js";
 import { updateStatus, showMessage } from "./status.js";
 import { $, icon } from "./util.js";
@@ -121,6 +121,13 @@ export function renderDocument(doc) {
   //    **await しない。** 読み込みと描画で本文の表示をブロックしない（NFR-012）。
   if (doc.needsMermaid) drawMermaid(markdown);
   if (doc.needsKaTeX) drawMath(markdown);
+
+  //    **PlantUML だけは条件を付けずに呼ぶ。** Go 側が取り込み指令を含む
+  //    ブロックを描画対象から外しており（IMP-119）、そのブロックは
+  //    needsPlantUML を立てないが、**理由は表示しなければならない**（DSP-272）。
+  //    drawPlantUML は描くものが無ければ資産を読まずに戻るため、
+  //    NFR-013 は保たれる。
+  drawPlantUML(markdown);
 
   // 9. スクロール位置を設定する（13 章 ScrollDTO）。
   applyScroll(viewer, doc.scroll, previousTop);

@@ -10,6 +10,7 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 
 **MarkView でこのファイルを開いて確かめてください。** GitHub 上でも同じように表示されます。
 違って見える箇所があれば、それは MarkView の不具合です。
+**ただし [PlantUML 図](#plantuml-図) だけは例外です。** GitHub は PlantUML を描画しません。
 
 > [!NOTE]
 > この文書の 1 行目には Front Matter があります。MarkView では**本文に出ません**
@@ -18,13 +19,14 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 - [見出しとアンカー](#見出しとアンカー)
 - [リストとタスクリスト](#リストとタスクリスト)
 - [表](#表)
-- [段落・改行・水平線](#段落・改行・水平線)
+- [段落・改行・水平線](#段落改行水平線)
 - [引用と折りたたみ](#引用と折りたたみ)
 - [コードブロック](#コードブロック)
 - [GitHub Alerts](#github-alerts)
 - [脚注と絵文字](#脚注と絵文字)
 - [数式](#数式)
 - [Mermaid 図](#mermaid-図)
+- [PlantUML 図](#plantuml-図)
 - [リンクと画像](#リンクと画像)
 - [生 HTML](#生-html)
 - [Front Matter](#front-matter)
@@ -148,7 +150,7 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 
 ---
 
-→ [対応する Markdown 記法](./markdown.md#段落・改行・水平線)
+→ [対応する Markdown 記法](./markdown.md#段落改行水平線)
 
 ## 引用と折りたたみ
 
@@ -398,6 +400,74 @@ pie title 構成比
 コピーボタンを押すと、描画された図ではなく**元の Mermaid ソース**がコピーされます。
 
 → [対応する Markdown 記法](./markdown.md#mermaid-図)
+
+## PlantUML 図
+
+> [!IMPORTANT]
+> **この節だけは GitHub と見え方が違います。** GitHub は PlantUML を描画せず、
+> コードブロックのまま表示します。**MarkView で図が出て、GitHub で出ないのは正常です。**
+
+こう書くと
+
+````markdown
+```plantuml
+@startuml
+participant 利用者
+participant MarkView
+利用者 -> MarkView : ファイルを開く
+MarkView --> 利用者 : 表示
+@enduml
+```
+````
+
+こう出ます
+
+```plantuml
+@startuml
+participant 利用者
+participant MarkView
+利用者 -> MarkView : ファイルを開く
+MarkView --> 利用者 : 表示
+@enduml
+```
+
+クラス図も描けます。こちらは内部で Graphviz を使うため、1 枚あたり少し時間がかかります。
+
+```plantuml
+@startuml
+class Renderer {
+  +Render(source) : Result
+}
+class Result {
+  +HTML : string
+  +Headings : []Heading
+}
+Renderer --> Result
+@enduml
+```
+
+**構文に誤りがあると、PlantUML が描いたエラー図がそのまま出ます。**
+
+```plantuml
+@startuml
+Alice -> : 宛先がない
+@enduml
+```
+
+**取り込み指令（`!include` 系）は使えません。** 図にはならず、理由と元のソースが出ます。
+外部への接続は行いません。
+
+```plantuml
+@startuml
+!include shared/common.puml
+Alice -> Bob : hi
+@enduml
+```
+
+**図はテーマに追従します。** `Ctrl+Shift+T` で切り替えて確かめてください。
+コピーボタンを押すと、描画された図ではなく**元の PlantUML ソース**がコピーされます。
+
+→ [対応する Markdown 記法](./markdown.md#plantuml-図)
 
 ## リンクと画像
 

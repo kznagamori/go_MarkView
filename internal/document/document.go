@@ -34,14 +34,15 @@ const (
 
 // Document は表示対象の 1 文書を表す（IMP-100）。
 type Document struct {
-	Path         string             // 絶対パス（IMP-025）
-	Size         int64              // ファイルの実バイト数
-	HTML         string             // サニタイズ済みの本文 HTML
-	Headings     []renderer.Heading // アウトライン（FR-040）
-	LineCount    int                // 総行数（UI-060 の表示に使う）
-	NeedsMermaid bool               // Mermaid の遅延ロード判定（AR-021）
-	NeedsKaTeX   bool               // KaTeX の遅延ロード判定（AR-021）
-	Warnings     []Warning          // 描画は継続するが利用者に伝える事象
+	Path          string             // 絶対パス（IMP-025）
+	Size          int64              // ファイルの実バイト数
+	HTML          string             // サニタイズ済みの本文 HTML
+	Headings      []renderer.Heading // アウトライン（FR-040）
+	LineCount     int                // 総行数（UI-060 の表示に使う）
+	NeedsMermaid  bool               // Mermaid の遅延ロード判定（AR-021）
+	NeedsKaTeX    bool               // KaTeX の遅延ロード判定（AR-021）
+	NeedsPlantUML bool               // PlantUML の遅延ロード判定（AR-021, MD-085）
+	Warnings      []Warning          // 描画は継続するが利用者に伝える事象
 }
 
 // WarningKind は警告の種別（IMP-100）。
@@ -132,13 +133,14 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	}
 
 	doc := &Document{
-		Path:         abs,
-		Size:         size,
-		HTML:         res.HTML,
-		Headings:     res.Headings,
-		LineCount:    CountLines(text),
-		NeedsMermaid: res.NeedsMermaid,
-		NeedsKaTeX:   res.NeedsKaTeX,
+		Path:          abs,
+		Size:          size,
+		HTML:          res.HTML,
+		Headings:      res.Headings,
+		LineCount:     CountLines(text),
+		NeedsMermaid:  res.NeedsMermaid,
+		NeedsKaTeX:    res.NeedsKaTeX,
+		NeedsPlantUML: res.NeedsPlantUML,
 
 		// 警告がなくても nil ではなく空スライスを返す。JSON で [] になり、
 		// フロントエンドが null を場合分けせずに済む（Headings と同じ扱い）。

@@ -113,32 +113,42 @@ func (s *slugger) Slug(text string) string {
 
 // slugify は MD-021 の 2〜4 を適用する。
 //
-// 空白は連続していても 1 つの - にまとめる。ただし先頭と末尾では - を
-// 書かない。GitHub の見出しリンクに前後のハイフンは現れないためである。
+// **連続する空白をまとめない。** 空白 1 つにつきハイフンを 1 つ書く
+// （MD-021 の 3）。記号を除いた跡に空白が並ぶことがあり——`要求 → 実装` は
+// `→` を落とすと空白が 2 つ並ぶ——まとめると GitHub と違うアンカーになる。
+// 本仕様書 90 章の `#903-正引き要求--実装表示` がまさにこれに当たる。
+//
+// **「非 ASCII なら残す」と書かない**（MD-021 の 4）。全角の括弧・中黒・
+// 矢印まで残り、やはり GitHub と食い違う。Unicode の「文字」「数字」で見る。
 func slugify(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 
-	pendingSpace := false
-	for _, r := range strings.ToLower(s) {
+	// 前後の空白は先に落とす（MD-021 の 3）。GitHub の見出しリンクに
+	// 前後のハイフンは現れない。
+	for _, r := range strings.TrimSpace(strings.ToLower(s)) {
 		switch {
 		case unicode.IsSpace(r):
-			// MD-021 の 3。実際に - を書くのは、次に残る文字が来たとき。
-			pendingSpace = true
+			b.WriteByte('-')
 
-		case isASCIIAlnum(r) || r == '-' || r == '_' || r > unicode.MaxASCII:
-			if pendingSpace && b.Len() > 0 {
-				b.WriteByte('-')
-			}
-			pendingSpace = false
+		case isSlugRune(r):
 			b.WriteRune(r)
 
 		default:
-			// MD-021 の 4。英数字・-・_・非 ASCII 以外の記号は取り除く。
+			// MD-021 の 4。記号・句読点は取り除く。
 		}
 	}
 
 	return b.String()
+}
+
+// isSlugRune はスラッグに残す文字かどうかを返す（MD-021 の 4）。
+//
+// 日本語の仮名・漢字は IsLetter に当たるため残り、`（` `）` `・` `、` `。`
+// `→` のような全角の記号・句読点は当たらないため落ちる。
+func isSlugRune(r rune) bool {
+	return isASCIIAlnum(r) || r == '-' || r == '_' ||
+		unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // isASCIIAlnum は ASCII の英数字かどうかを返す。

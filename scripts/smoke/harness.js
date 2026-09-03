@@ -8,7 +8,9 @@
 // ヘッドレスブラウザの --dump-dom は「いつ終わったか」を知らないため、
 // 終わった側から知らせるほうが待ち時間の推測を持ち込まずに済む。
 
-import { drawMermaid, drawMath } from "./js/lazy.js";
+// **名前空間として読む。** 個別の名前で import すると、未実装の関数が 1 つ
+// あるだけでモジュールの読み込みごと失敗し、他の検査まで巻き添えになる。
+import * as lazy from "./js/lazy.js";
 
 const started = performance.now();
 
@@ -50,6 +52,7 @@ async function main() {
   const root = document.getElementById("markdown");
   const report = {
     mermaid: [],
+    plantuml: [],
     math: { total: 0, katex: 0, failed: [] },
     errors,
     console: consoleErrors,
@@ -64,13 +67,21 @@ async function main() {
   );
 
   try {
-    await drawMermaid(root);
-    await drawMath(root);
+    await lazy.drawMermaid(root);
+    await lazy.drawMath(root);
+
+    // BR-054 は PlantUML も検査対象とする（E2E-109）。
+    if (typeof lazy.drawPlantUML !== "function") {
+      errors.push("lazy.js に drawPlantUML がない（IMP-233 が未実装）");
+    } else {
+      await lazy.drawPlantUML(root);
+    }
   } catch (error) {
     report.fatal = error && error.message ? error.message : String(error);
   }
 
   collectMermaid(root, report);
+  collectPlantUML(root, report);
   collectMath(root, mathSources, report);
 
   report.elapsedMs = Math.round(performance.now() - started);
@@ -96,6 +107,31 @@ function collectMermaid(root, report) {
     const source = block.dataset.source || "";
 
     report.mermaid.push({
+      index,
+      head: source.split("\n")[0].trim(),
+      svg: svgs.length,
+      width: box ? Math.round(box.width) : 0,
+      height: box ? Math.round(box.height) : 0,
+      error: line ? line.textContent : "",
+    });
+  });
+}
+
+// collectPlantUML は図ごとの描画結果を集める。
+//
+// **フックの名前は Mermaid と同じ形にそろえる**（IMP-233）。描画結果は
+// .plantuml-rendered の中へ、描かなかった理由は .plantuml-error へ入る。
+// ここが食い違うと、実装できていても検査が 0 件で落ちる。
+function collectPlantUML(root, report) {
+  const blocks = [...root.querySelectorAll(".code-block[data-plantuml]")];
+
+  blocks.forEach((block, index) => {
+    const svgs = block.querySelectorAll(".plantuml-rendered svg");
+    const box = svgs.length > 0 ? svgs[0].getBoundingClientRect() : null;
+    const line = block.querySelector(".plantuml-error");
+    const source = block.dataset.source || "";
+
+    report.plantuml.push({
       index,
       head: source.split("\n")[0].trim(),
       svg: svgs.length,

@@ -79,6 +79,9 @@ func TestRender_GoldenExpectations(t *testing.T) {
 	if !res.NeedsKaTeX {
 		t.Error("showcase.md に数式が含まれていない（MD-060）")
 	}
+	if !res.NeedsPlantUML {
+		t.Error("showcase.md に PlantUML が含まれていない（MD-083）")
+	}
 	if len(res.Headings) < 10 {
 		t.Errorf("見出しが %d 件しかない（MD-020, FR-040）", len(res.Headings))
 	}
@@ -96,6 +99,7 @@ func TestRender_GoldenExpectations(t *testing.T) {
 		"markdown-alert-note", "markdown-alert-caution",
 		"math-inline", "math-block",
 		"data-mermaid", "mermaid-source",
+		"data-plantuml", "plantuml-source",
 		"code-block", "chroma",
 		"footnote-ref", "footnotes",
 		"<table>", "<del>", "<kbd>", "<details>",

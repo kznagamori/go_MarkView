@@ -43,6 +43,7 @@ var ownClasses = []string{
 	"math-inline",
 	"math-block",
 	"mermaid-source",
+	"plantuml-source",
 
 	// goldmark の脚注拡張が出すクラス（MD-050）。
 	"footnotes",
@@ -88,8 +89,13 @@ func Policy() *bluemonday.Policy {
 	p.AllowAttrs("id").Matching(regexp.MustCompile(`^\S+$`)).
 		OnElements("h1", "h2", "h3", "h4", "h5", "h6", "li", "sup", "div")
 
-	// Mermaid の描画とコピーボタンが使う（IMP-115）。
-	p.AllowAttrs("data-lang", "data-mermaid", "data-source").OnElements("div")
+	// Mermaid・PlantUML の描画とコピーボタンが使う（IMP-115, IMP-119）。
+	//
+	// **data-puml-error を落としてはならない。** これが消えると、取り込み指令で
+	// 拒んだブロックが描画対象と区別できなくなり、フロントエンドが外部を取りに
+	// 行く図を処理系へ渡してしまう（MD-084, NFR-032）。
+	p.AllowAttrs("data-lang", "data-mermaid", "data-source",
+		"data-plantuml", "data-puml-error").OnElements("div")
 
 	// 表の桁揃え（MD-024）。style 属性を許可せずに済ませるため、goldmark には
 	// align 属性で出力させている（IMP-111）。

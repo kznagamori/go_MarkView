@@ -7,9 +7,11 @@
 //  1. 実行ファイルに入る Go モジュール。`go list -deps` で main パッケージ
 //     から実際に到達するものだけを採る。go.mod の require をそのまま並べると、
 //     ビルドに含まれないものまで載る。
-//  2. フロントエンドへ同梱する資産（Mermaid・KaTeX・github-markdown-css・
-//     Octicons）。Go のツールでは収集できないため、この中に定義を持つ
-//     （BR-040）。ライセンス全文は texts/ か frontend/vendor/ から読む。
+//  2. フロントエンドへ同梱する資産。Go のツールでは収集できないため別に集める
+//     （BR-040）。**一覧は frontend/vendor/vendor.json が正であり、この中に
+//     決め打たない**（BR-042）。名前・版・ライセンス種別・全文の位置がすべて
+//     あちらにある。決め打ちで残すのは、vendor.json の管理下に無い 2 件だけ
+//     （github-markdown-css と Octicons）。
 //
 // **対象プラットフォームを明示して和集合を採る。** Windows だけに入る
 // モジュール（go-webview2）があり、生成したホストによって内容が変わると
@@ -23,6 +25,7 @@ package main
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,6 +66,7 @@ type entry struct {
 	name    string
 	version string
 	kind    string // ライセンス種別（MIT など）
+	note    string // 版が無いものの補足（"bundled in PlantUML"）
 	text    string // 全文
 }
 
@@ -256,29 +260,64 @@ func extraFiles(dir, primary string) ([]string, error) {
 	return names, nil
 }
 
+// vendorEntry は frontend/vendor/vendor.json の 1 件（BR-042, IMP-181 と同じ形）。
+type vendorEntry struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	SPDX      string `json:"spdx"`
+	License   string `json:"license"` // 全文の位置。frontend/vendor/ からの相対
+	BundledIn string `json:"bundledIn"`
+}
+
 // collectAssets はフロントエンドへ同梱する資産の一覧を返す（BR-040）。
 //
-// Mermaid と KaTeX のバージョンは frontend/vendor/vendor.json が正であり
-// （BR-042）、ここでは重複して持たずに読み出す。
+// **vendor.json を正として読む**（BR-042）。名前・版・ライセンス種別・全文の
+// 位置はすべてあちらにあり、ここで決め打つと二重管理になる。実際、PlantUML を
+// 加えたときに **Viz.js / Graphviz / Expat を含む 4 件が丸ごと漏れる**ところだった。
+//
+// **同梱物の中に含まれるもの（`bundledIn` を持つ行）も同じ経路で載せる**
+// （BR-042, NFR-051）。Graphviz は EPL-2.0 であり、著作権表示と全文の保持が
+// 再配布の条件になっている。**ここから漏らせない。**
+//
+// 決め打ちで残すのは 2 件だけである。どちらも vendor.json の管理下に無い。
 func collectAssets() ([]entry, error) {
-	mermaid, err := vendorVersion("Mermaid")
+	vendors, err := readVendors()
 	if err != nil {
 		return nil, err
 	}
 
-	katex, err := vendorVersion("KaTeX")
-	if err != nil {
-		return nil, err
-	}
+	out := make([]entry, 0, len(vendors)+2)
 
-	mermaidText, err := os.ReadFile("frontend/vendor/mermaid/LICENSE")
-	if err != nil {
-		return nil, err
-	}
+	for _, v := range vendors {
+		if v.License == "" {
+			return nil, fmt.Errorf("vendor.json の %s に license がない（全文の位置。BR-042）", v.Name)
+		}
 
-	katexText, err := os.ReadFile("frontend/vendor/katex/LICENSE")
-	if err != nil {
-		return nil, err
+		path := filepath.Join("frontend", "vendor", filepath.FromSlash(v.License))
+
+		text, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("%s のライセンス全文を読めない: %w", v.Name, err)
+		}
+
+		// 種別は記録を使う。記録が空のときだけ全文から見立てる。
+		kind := v.SPDX
+		if kind == "" {
+			kind = detect(string(text))
+		}
+
+		note := ""
+		if v.BundledIn != "" {
+			note = "bundled in " + v.BundledIn
+		}
+
+		out = append(out, entry{
+			name:    v.Name,
+			version: v.Version,
+			kind:    kind,
+			note:    note,
+			text:    normalize(string(text)),
+		})
 	}
 
 	gmc, err := texts.ReadFile("texts/github-markdown-css.txt")
@@ -291,13 +330,10 @@ func collectAssets() ([]entry, error) {
 		return nil, err
 	}
 
-	return []entry{
-		{name: "Mermaid", version: mermaid, kind: "MIT", text: normalize(string(mermaidText))},
-		{name: "KaTeX", version: katex, kind: "MIT", text: normalize(string(katexText))},
-
+	return append(out,
 		// 同梱物のファイルは持たず、frontend/css/markdown.css として
 		// 書き起こしている（IMP-200）。参照した版を記録する。
-		{name: "github-markdown-css", version: "5.9.0", kind: "MIT", text: normalize(string(gmc))},
+		entry{name: "github-markdown-css", version: "5.9.0", kind: "MIT", text: normalize(string(gmc))},
 
 		// SVG を frontend/icons/ へ手で写している（IMP-203）。**BR-042 の
 		// 管理対象には加えない。** あちらは「取得したファイルを改変せずに
@@ -307,39 +343,27 @@ func collectAssets() ([]entry, error) {
 		//
 		// 版はここに記録する。2026-09-02 に 20 個すべてのパスデータが
 		// この版と一致することを確認した。
-		{name: "Octicons", version: "19.33.0", kind: "MIT", text: normalize(string(octicons))},
-	}, nil
+		entry{name: "Octicons", version: "19.33.0", kind: "MIT", text: normalize(string(octicons))},
+	), nil
 }
 
-// vendorVersion は vendor.json から資産のバージョンを引く（BR-042）。
-//
-// 依存を増やさないため、JSON の解析器を使わず素朴に走査する。
-func vendorVersion(name string) (string, error) {
-	data, err := os.ReadFile("frontend/vendor/vendor.json")
+// readVendors は vendor.json を読む（BR-042）。
+func readVendors() ([]vendorEntry, error) {
+	data, err := os.ReadFile(filepath.Join("frontend", "vendor", "vendor.json"))
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("vendor.json を読めない: %w", err)
 	}
 
-	needle := `"name": "` + name + `"`
-	at := strings.Index(string(data), needle)
-	if at < 0 {
-		return "", fmt.Errorf("vendor.json に %s がない", name)
+	var entries []vendorEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, fmt.Errorf("vendor.json を解析できない: %w", err)
 	}
 
-	rest := string(data)[at:]
-	key := `"version": "`
-	from := strings.Index(rest, key)
-	if from < 0 {
-		return "", fmt.Errorf("vendor.json の %s に version がない", name)
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("vendor.json が空である")
 	}
 
-	rest = rest[from+len(key):]
-	end := strings.Index(rest, `"`)
-	if end < 0 {
-		return "", fmt.Errorf("vendor.json の %s の version が閉じていない", name)
-	}
-
-	return rest[:end], nil
+	return entries, nil
 }
 
 // detect はライセンス全文から種別を判定する。
@@ -397,7 +421,7 @@ func render(mods, assets []entry) string {
 	b.WriteString("## Summary\n\n")
 	b.WriteString("| Name | Version | License |\n| --- | --- | --- |\n")
 	for _, e := range append(append([]entry{}, mods...), assets...) {
-		fmt.Fprintf(&b, "| %s | %s | %s |\n", e.name, e.version, e.kind)
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", e.name, versionCell(e), e.kind)
 	}
 
 	writeSection(&b, "Go modules", mods)
@@ -410,6 +434,37 @@ func writeSection(b *strings.Builder, title string, list []entry) {
 	fmt.Fprintf(b, "\n## %s\n", title)
 
 	for _, e := range list {
-		fmt.Fprintf(b, "\n### %s %s (%s)\n\n%s\n", e.name, e.version, e.kind, e.text)
+		fmt.Fprintf(b, "\n### %s (%s)\n\n%s\n", heading(e), e.kind, e.text)
 	}
+}
+
+// heading は見出しの「名前と版」の部分を組み立てる。
+//
+// **版が無いものがある**（BR-042）。`viz-global.js` の告知は Graphviz と Expat の
+// 版を書いておらず、空のまま並べると `Graphviz  (EPL-2.0)` のように空白が空く。
+// 版の代わりに、どこに同梱されているかを書く。
+func heading(e entry) string {
+	name := e.name
+	if e.version != "" {
+		name += " " + e.version
+	}
+
+	if e.note != "" {
+		name += ", " + e.note
+	}
+
+	return name
+}
+
+// versionCell は一覧表の Version 欄を返す。版が無いものは補足で埋める。
+func versionCell(e entry) string {
+	if e.version != "" {
+		return e.version
+	}
+
+	if e.note != "" {
+		return e.note
+	}
+
+	return "-"
 }

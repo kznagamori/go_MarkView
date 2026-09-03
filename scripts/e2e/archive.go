@@ -20,7 +20,7 @@ import (
 
 // BR-060 / NFR-021 の閾値。**超えても失敗させない**（E2E-107）。
 const (
-	maxExeSize     int64 = 25 << 20 // 25 MiB
+	maxExeSize     int64 = 30 << 20 // 30 MiB（NFR-021。PlantUML の同梱で引き上げた）
 	maxArchiveSize int64 = 12 << 20 // 12 MiB
 )
 

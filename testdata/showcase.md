@@ -266,3 +266,31 @@ sequenceDiagram
     renderer-->>MarkView: HTML
     MarkView-->>利用者: 表示
 ```
+
+## PlantUML（MD-083）
+
+```plantuml
+@startuml
+participant 利用者
+participant MarkView
+participant renderer
+利用者 -> MarkView : ファイルを開く
+MarkView -> renderer : 変換を依頼
+renderer --> MarkView : HTML
+MarkView --> 利用者 : 表示
+@enduml
+```
+
+```plantuml
+@startuml
+class Renderer {
+  +Render(source, baseDir) : Result
+}
+class Result {
+  +HTML : string
+  +Headings : []Heading
+  +NeedsPlantUML : bool
+}
+Renderer --> Result
+@enduml
+```

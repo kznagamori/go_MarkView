@@ -118,8 +118,9 @@ type DocumentDTO struct {
 	LineCount int                `json:"lineCount"` // 総行数（UI-060）
 	Encoding  string             `json:"encoding"`  // 常に documentEncoding
 
-	NeedsMermaid bool `json:"needsMermaid"` // Mermaid の遅延ロード判定（AR-021）
-	NeedsKaTeX   bool `json:"needsKaTeX"`   // KaTeX の遅延ロード判定（AR-021）
+	NeedsMermaid  bool `json:"needsMermaid"`  // Mermaid の遅延ロード判定（AR-021）
+	NeedsKaTeX    bool `json:"needsKaTeX"`    // KaTeX の遅延ロード判定（AR-021）
+	NeedsPlantUML bool `json:"needsPlantUML"` // PlantUML の遅延ロード判定（AR-021, MD-085）
 
 	Scroll ScrollDTO `json:"scroll"` // 描画後のスクロール指示
 
@@ -373,8 +374,9 @@ func newDocumentDTO(doc *document.Document, display string, outside bool, scroll
 		LineCount: doc.LineCount,
 		Encoding:  documentEncoding,
 
-		NeedsMermaid: doc.NeedsMermaid,
-		NeedsKaTeX:   doc.NeedsKaTeX,
+		NeedsMermaid:  doc.NeedsMermaid,
+		NeedsKaTeX:    doc.NeedsKaTeX,
+		NeedsPlantUML: doc.NeedsPlantUML,
 
 		Scroll:   scroll,
 		Warnings: warningKinds(doc.Warnings),
@@ -458,7 +460,10 @@ func newAboutDTO(licenses, webviewVersion string) AboutDTO {
 		License:     appLicense,
 		Environment: buildinfo.Environment(webviewVersion),
 
-		Vendors:  buildinfo.Vendors(),
+		// **Bundled() を入れる。Vendors() の全体ではない**（IMP-306, IMP-181）。
+		// 同梱物の中に含まれるもの（Viz.js / Graphviz / Expat）は Bundled 行に
+		// 出さず、Licenses の中に全文として現れる（UI-100, FR-101）。
+		Vendors:  buildinfo.Bundled(),
 		Licenses: licenses,
 	}
 }

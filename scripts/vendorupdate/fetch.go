@@ -28,6 +28,7 @@ const maxTarball = 200 << 20 // 200 MiB
 // ここに現れない（BR-043 の「Mermaid / KaTeX 側のプレリリース版は対象外」）。
 type packument struct {
 	Version string `json:"version"`
+	License string `json:"license"` // NFR-051 の判定に使う（BR-043）
 	Dist    struct {
 		Tarball string `json:"tarball"`
 	} `json:"dist"`
@@ -51,6 +52,7 @@ func download(a asset, staging string, timeout time.Duration, before string) res
 
 	got.after = latest.Version
 	got.source = latest.Dist.Tarball
+	got.spdx = latest.License
 
 	dest := filepath.Join(staging, a.dir)
 	if err := os.MkdirAll(dest, 0o755); err != nil {

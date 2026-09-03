@@ -167,23 +167,33 @@ func TestRecoverRender_NoPanic(t *testing.T) {
 // **誤って true になると遅延ロードの効果が失われる。** ケース 1 と 5 が要。
 func TestRender_LazyLoadFlags(t *testing.T) {
 	tests := []struct {
-		name        string
-		in          string
-		wantMermaid bool
-		wantKaTeX   bool
+		name         string
+		in           string
+		wantMermaid  bool
+		wantKaTeX    bool
+		wantPlantUML bool
 	}{
-		// UT-212 ケース 1・5: 立ってはいけない場合
-		{"プレーンな Markdown", "# H\n\npara と `code`", false, false},
-		{"コードブロック内の mermaid という文字列", "```go\nmermaid := 1\n```", false, false},
-		{"本文中の mermaid という語", "mermaid と katex の話", false, false},
-		{"通貨表記", "$100 と $200", false, false},
+		// UT-212 ケース 1・6・7: 立ってはいけない場合
+		{"プレーンな Markdown", "# H\n\npara と `code`", false, false, false},
+		{"コードブロック内の mermaid という文字列", "```go\nmermaid := 1\n```", false, false, false},
+		{"コードブロック内の plantuml という文字列", "```go\nplantuml := 1\n```", false, false, false},
+		{"本文中の mermaid という語", "mermaid と katex の話", false, false, false},
+		{"本文中の plantuml という語", "plantuml と puml の話", false, false, false},
+		{"通貨表記", "$100 と $200", false, false, false},
 
-		// UT-212 ケース 2〜4
-		{"Mermaid のみ", "```mermaid\ngraph TD\n```", true, false},
-		{"数式のみ", "$a+b$", false, true},
-		{"ブロック数式のみ", "$$a+b$$", false, true},
-		{"math コードブロックのみ", "```math\na+b\n```", false, true},
-		{"両方", "```mermaid\ngraph TD\n```\n\n$a+b$", true, true},
+		// UT-212 ケース 2〜5
+		{"Mermaid のみ", "```mermaid\ngraph TD\n```", true, false, false},
+		{"数式のみ", "$a+b$", false, true, false},
+		{"ブロック数式のみ", "$$a+b$$", false, true, false},
+		{"math コードブロックのみ", "```math\na+b\n```", false, true, false},
+		{"PlantUML のみ", "```plantuml\n@startuml\n@enduml\n```", false, false, true},
+		{"puml のみ", "```puml\n@startuml\n@enduml\n```", false, false, true},
+		{"Mermaid と数式", "```mermaid\ngraph TD\n```\n\n$a+b$", true, true, false},
+		{
+			"3 つとも",
+			"```mermaid\ngraph TD\n```\n\n$a+b$\n\n```plantuml\n@startuml\n@enduml\n```",
+			true, true, true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -197,6 +207,9 @@ func TestRender_LazyLoadFlags(t *testing.T) {
 			}
 			if res.NeedsKaTeX != tt.wantKaTeX {
 				t.Errorf("NeedsKaTeX = %v, want %v", res.NeedsKaTeX, tt.wantKaTeX)
+			}
+			if res.NeedsPlantUML != tt.wantPlantUML {
+				t.Errorf("NeedsPlantUML = %v, want %v", res.NeedsPlantUML, tt.wantPlantUML)
 			}
 		})
 	}

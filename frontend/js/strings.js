@@ -92,6 +92,13 @@ export const S = {
   errRemoved: (p) => `File was deleted: ${p}`,
   // パスを伴う上の文言と違い、**どちらもパスを含めない。** ここに載せられる対象は
   // エディタの実行ファイルのパスしかなく、画面へ出してはならない（NFR-035 の 3）
+  // PlantUML を描かなかった理由の 3 種（DSP-272, IMP-233）。
+  // **図が出ていない**ときにだけ添える。構文エラーは PlantUML 自身が
+  // 行番号付きのエラー図を返すため、こちらでは何も書かない（FR-024）。
+  pumlInclude: "Include directives are not supported.",
+  pumlUnsupported: "PlantUML could not render this diagram.",
+  pumlFailed: "PlantUML rendering did not complete.",
+
   errEditorFailed: "Failed to start the editor.",
   errEditorSelf: "MarkView cannot be used as an editor.",
   warnEncoding: "Some characters were replaced.",

@@ -2,13 +2,52 @@
   {
     "name": "Mermaid",
     "version": "11.17.2",
-    "source": "https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js",
-    "fetched": "2026-09-01"
+    "spdx": "MIT",
+    "license": "mermaid/LICENSE",
+    "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.17.2.tgz",
+    "fetched": "2026-09-03"
   },
   {
     "name": "KaTeX",
-    "version": "0.18.4",
-    "source": "https://cdn.jsdelivr.net/npm/katex@0.18.4/dist/",
-    "fetched": "2026-09-01"
+    "version": "0.18.5",
+    "spdx": "MIT",
+    "license": "katex/LICENSE",
+    "source": "https://registry.npmjs.org/katex/-/katex-0.18.5.tgz",
+    "fetched": "2026-09-03"
+  },
+  {
+    "name": "PlantUML",
+    "version": "1.2026.7",
+    "spdx": "MIT",
+    "license": "plantuml/LICENSE",
+    "source": "https://registry.npmjs.org/@plantuml/core/-/core-1.2026.7.tgz",
+    "fetched": "2026-09-03"
+  },
+  {
+    "name": "Viz.js",
+    "version": "3.24.0",
+    "spdx": "MIT",
+    "license": "plantuml/licenses/viz-js-MIT.txt",
+    "source": "https://raw.githubusercontent.com/mdaines/viz-js/master/LICENSE",
+    "fetched": "2026-09-03",
+    "bundledIn": "PlantUML"
+  },
+  {
+    "name": "Graphviz",
+    "version": "",
+    "spdx": "EPL-2.0",
+    "license": "plantuml/licenses/graphviz-EPL-2.0.txt",
+    "source": "https://gitlab.com/graphviz/graphviz/-/raw/main/LICENSE",
+    "fetched": "2026-09-03",
+    "bundledIn": "PlantUML"
+  },
+  {
+    "name": "Expat",
+    "version": "",
+    "spdx": "MIT",
+    "license": "plantuml/licenses/expat-MIT.txt",
+    "source": "https://raw.githubusercontent.com/libexpat/libexpat/master/expat/COPYING",
+    "fetched": "2026-09-03",
+    "bundledIn": "PlantUML"
   }
 ]

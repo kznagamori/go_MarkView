@@ -19,7 +19,7 @@ export const state = {
   outlineWidth: 240,
   fileTreeWidth: 260,
   search: { open: false, query: "", hits: [], index: -1 },
-  lazy: { mermaid: false, katex: false }, // 読み込み済みか
+  lazy: { mermaid: false, katex: false, plantuml: false }, // 読み込み済みか
 };
 
 // configPatch は UpdateConfig へ渡す ConfigDTO を組み立てる（IMP-303）。
