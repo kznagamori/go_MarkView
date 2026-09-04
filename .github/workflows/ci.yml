@@ -94,6 +94,15 @@ jobs:
             exit 1
           fi
 
+      # 同梱資産が決め打ちする DOM の id と、index.html の id が交差しないこと
+      # （BR-042, BR-043, IMP-202）。
+      #
+      # **毎回走らせる。** 衝突は資産の更新でも index.html の編集でも生まれる。
+      # 描画スモークテスト（BR-054）は index.html を配らないため、この検査の
+      # 代わりにならない。
+      - name: DOM id collision
+        run: go run ./scripts/domids
+
       - name: Build (linux/amd64)
         run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-s -w" -o MarkView
 

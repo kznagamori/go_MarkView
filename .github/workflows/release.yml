@@ -88,6 +88,14 @@ jobs:
         if: steps.vendor.outputs.updated == 'true'
         run: go run ./scripts/genlicenses
 
+      # **ここで失敗したらリリースを中止する**（BR-043）。更新した資産が
+      # MarkView の DOM を書き換える id を持ち込んでいないかを見る。
+      # **資産は改変できない**（BR-042）ため、衝突したら index.html を直す
+      # 以外に手が無く、それはリリースの前に人が判断することである。
+      - name: DOM id collision
+        if: steps.vendor.outputs.updated == 'true'
+        run: go run ./scripts/domids
+
       # **ここで失敗したらリリースを中止する**（BR-043 の手順 4）。
       # まだコミットも push もしていないため、リポジトリの状態は変わらない。
       # ブラウザは ubuntu-latest 同梱の Chrome を使う（BR-054）。
