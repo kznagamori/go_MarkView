@@ -220,6 +220,86 @@ func TestReadDir_NotRecursive(t *testing.T) {
 	}
 }
 
+// TestReadDir_Reload は同じディレクトリを読み直すと最新になることを検証する
+// （UT-306。根拠: FR-035 / IMP-131）。
+//
+// **これは「キャッシュを持たないこと」を固定するテストである。**
+// FR-035 は再読み込みの契機を 3 つ定めているが、そのどれもが「呼べば最新が
+// 返る」ことを前提にしている。前提が崩れれば 3 契機すべてが同時に無意味に
+// なり、しかも症状は「たまに古い」という形でしか出ない。
+//
+// **いつ呼び直すかは検証できない。** それを決めるのはフロントエンド
+// （IMP-240）であり、UT-002 の対象外である。ここで確かめるのは土台だけ。
+func TestReadDir_Reload(t *testing.T) {
+	root := mkTree(t, "a.md", "keep.md")
+
+	// UT-306 ケース 1: 間に何もしなければ 2 回とも同じ（境界値を先に。UT-013）
+	first := names(readDir(t, root))
+	if got := names(readDir(t, root)); !equalNames(first, got) {
+		t.Errorf("変更していないのに結果が変わった: %v -> %v", first, got)
+	}
+
+	// UT-306 ケース 2: 追加した .md が 2 回目に現れる
+	write(t, root, "added.md")
+	if got := names(readDir(t, root)); !contains(got, "added.md") {
+		t.Errorf("追加した added.md が現れない: %v", got)
+	}
+
+	// UT-306 ケース 3: 削除した .md が 2 回目に消える
+	if err := os.Remove(filepath.Join(root, "a.md")); err != nil {
+		t.Fatalf("削除できない: %v", err)
+	}
+	if got := names(readDir(t, root)); contains(got, "a.md") {
+		t.Errorf("削除した a.md が残っている: %v", got)
+	}
+
+	// UT-306 ケース 4: 追加したディレクトリが 2 回目に現れる
+	write(t, root, "newdir/inside.md")
+	if got := names(readDir(t, root)); !contains(got, "newdir") {
+		t.Errorf("追加した newdir が現れない: %v", got)
+	}
+
+	// UT-306 ケース 5: 絞り込みは読み直しても効く（UT-301 と対で意味を持つ）
+	write(t, root, "note.txt")
+	if got := names(readDir(t, root)); contains(got, "note.txt") {
+		t.Errorf("読み直しで絞り込みが効いていない: %v", got)
+	}
+}
+
+// write は root の下にファイルを 1 つ作る（親ディレクトリも作る）。
+func write(t *testing.T, root, rel string) {
+	t.Helper()
+
+	p := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("親ディレクトリを作れない: %v", err)
+	}
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatalf("ファイルを作れない: %v", err)
+	}
+}
+
+func contains(names []string, want string) bool {
+	for _, n := range names {
+		if n == want {
+			return true
+		}
+	}
+	return false
+}
+
+func equalNames(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestReadDir_Path はノードのパスが絶対であることを検証する（IMP-025）。
 func TestReadDir_Path(t *testing.T) {
 	root := mkTree(t, "a.md", "sub/b.md")

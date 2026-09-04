@@ -226,7 +226,11 @@ func TestEnvironment(t *testing.T) {
 		}
 	})
 
-	// バージョンが取れない場合、区画ごと省く（IMP-181）。
+	// バージョンが取れない場合、区画ごと省く（IMP-181。UT-801 のケース 9）。
+	//
+	// **これは異常系である。** 通常は package main の webviewVersion() が値を
+	// 渡す。**ここが常に空を返す状態でも本テストは緑になる**ため、呼び出し側が
+	// 正しい値を渡しているかは E2E-301 でしか分からない（UT-002, UT-061）。
 	t.Run("WebView のバージョンがない", func(t *testing.T) {
 		got := Environment("")
 

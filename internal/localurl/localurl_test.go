@@ -7,10 +7,18 @@ import (
 )
 
 // TestEncodeDecode_RoundTrip は組み立てと解読が対になっていることを検証する
-// （根拠: AR-040 / IMP-118, IMP-161）。
+// （UT-808 ケース 2〜4。根拠: AR-040 / IMP-118, IMP-161）。
 //
 // この対が崩れると、画像が一枚も表示されなくなる。
+//
+// **組み立てる側（renderer の IMP-118）と解く側（assetsrv の IMP-161）は
+// 互いに依存できない**（IMP-012）。それぞれの単体テストは片側の規則しか
+// 見ないため、**逆変換の対をここで確かめることが食い違いを防ぐ唯一の手段**
+// である。
 func TestEncodeDecode_RoundTrip(t *testing.T) {
+	// UT-808 ケース 2: 記号と非 ASCII を含むパス
+	// UT-808 ケース 3: Windows 形式のパス
+	// UT-808 ケース 4: 根
 	paths := []string{
 		"/docs/a.png",
 		"/docs/sub/dir/image.jpeg",
@@ -45,10 +53,11 @@ func TestEncodeDecode_RoundTrip(t *testing.T) {
 }
 
 // TestEncode_EscapesSeparators は区切りとしての / までエスケープすることを
-// 検証する（IMP-118, IMP-161）。
+// 検証する（UT-808 ケース 1。根拠: AR-040 / IMP-118, IMP-161）。
 //
 // 二重スラッシュを含む URL は経路によって正規化されうるため、パス全体を
-// 1 セグメントに収めている。
+// 1 セグメントに収めている。**区切りの / を残すと `/__local//docs/...` が
+// 生まれ、経路によって正規化されて 404 になる。**
 func TestEncode_EscapesSeparators(t *testing.T) {
 	tests := []struct {
 		name string
@@ -71,7 +80,10 @@ func TestEncode_EscapesSeparators(t *testing.T) {
 	}
 }
 
-// TestDecode_Rejects は解読を拒む入力を検証する（IMP-161）。
+// TestDecode_Rejects は解読を拒む入力を検証する
+// （UT-808 ケース 5〜8。根拠: AR-040 / IMP-161）。
+//
+// 呼び出し側はここで false を受けた時点で 404 を返してよい（IMP-161）。
 func TestDecode_Rejects(t *testing.T) {
 	tests := []struct {
 		name string
