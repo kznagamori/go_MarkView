@@ -258,6 +258,9 @@ type EditorResultDTO struct {
 - `OpenInEditor` が成功したとき、**そのとき初めて設定へ保存する**（UI-116）。選択しただけ、`Browse` しただけでは保存しない。
 - **`OpenInEditor` が開くファイルは `App.target`（IMP-190）である。** 「表示中の文書」（`current`）ではない。状態画面を出している間 `current` は前の文書のまま残っており、それを渡すと画面と食い違う（FR-090, NFR-035）。`target` が空（文書未表示）のときは `Error.Kind` を `editor-failed` として返す。**ボタンが淡色である以上（UI-021）通常は起こらないが、防御的に扱う。**
 
+- **`GetAbout` は WebView のバージョンを取得して渡す**（[UI-100](03-ui.md), [IMP-181](11-impl-backend.md)）。空文字を固定で渡さない。取得手段と OS ごとの実装は IMP-181 が定める。**空文字は取得に失敗したときだけ**であり、そのとき `Environment` は当該区画を省く。
+- **`ReadDir` はキャッシュを持たない。** 呼ばれるたびにディスクを読む。**いつ呼び直すかを決めるのはフロントエンドである**（FR-035 の 3 契機。[IMP-240](12-impl-frontend.md)）。
+
 - **失敗は戻り値の DTO で伝える**（IMP-308, IMP-305）。Go の `error` を返すのは `ReadDir` と `CopyToClipboard` だけとする。
 - 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタの 3 つは `editor-failed` とする。** これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
 - `Quit` は `Ctrl+Q`（UI-090）の受け口である。`Alt+F4` と閉じるボタンは OS とウィンドウマネージャが処理するためこの経路を通らない。**終了処理そのものは Wails に任せ、ここで設定を保存しない。** `OnBeforeClose` / `OnShutdown`（IMP-194）を通ることで、閉じるボタンで終了した場合とまったく同じ後始末になる。
@@ -307,6 +310,16 @@ runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
 
 - 複数パスから対象を選ぶ判定（FR-011）は Go 側で行う。
 - ディレクトリがドロップされた場合、ツリールートを変更し、直下の README を探して開く。
+
+> [!IMPORTANT]
+> **`runtime.OnFileDrop`（Go）は購読であって、発火ではない。** 中身は `EventsOn(ctx, "wails:file-drop", ...)` だけである。**これを書いただけではパスは届かない。**
+>
+> | OS | 発火させるもの |
+> | --- | --- |
+> | **Windows**（WebView2） | **フロントエンドの `window.runtime.OnFileDrop()`**（[IMP-245](12-impl-frontend.md)）。これが `drop` リスナを取り付け、ドロップされた File オブジェクトを `postMessageWithAdditionalObjects` で Go へ渡して初めて絶対パスが得られる |
+> | **Linux**（WebKitGTK） | GTK の `drag-data-received` / `drag-drop` シグナル。**JS 側の登録は要らない** |
+>
+> **この差があるため、Go 側だけを見て「配線した」と判断してはならない。** IMP-245 の JS 側の登録と対で成立する。片方を欠いた状態は、**オーバーレイだけが正しく出てドロップが無反応になる**という、原因を取り違えやすい形で現れる（[調査報告](../bugs/2026-09-04-bug-001-file-drop-windows.md)）。
 
 ### IMP-314: 大きなファイルの確認 **MUST**
 

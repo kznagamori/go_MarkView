@@ -54,8 +54,9 @@ INDEX_HEADING = "テストケース一覧"
 RE_CASE_HEADING = re.compile(r"^###\s+(E2E-\d{3}):\s*(.+?)\s*$")
 RE_FIELD = re.compile(r"^-\s+\*\*(環境|優先度|関連要求|概要|前提条件)\*\*:\s*(.+?)\s*$")
 RE_BLOCK = re.compile(r"^-\s+\*\*(手順|確認内容)\*\*:\s*$")
+# 手順と確認内容は**どちらも番号付きリスト**である（E2E-200）。番号で指摘できる
+# ようにするための書式であり、記録用 Excel にも同じ番号で出す。
 RE_STEP = re.compile(r"^\s+\d+\.\s+(.+?)\s*$")
-RE_BULLET = re.compile(r"^\s+-\s+(.+?)\s*$")
 # 「テストケース一覧」節の行: | E2E-211 | G1 | 概要 | 高 |
 RE_INDEX_ROW = re.compile(r"^\|\s*(E2E-\d{3})\s*\|\s*(G\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*$")
 
@@ -161,7 +162,7 @@ def parse_cases(lines: list[str]) -> list[Case]:
                 current.steps.append(m.group(1))
                 continue
         elif block == "確認内容":
-            m = RE_BULLET.match(line)
+            m = RE_STEP.match(line)
             if m:
                 current.expectations.append(m.group(1))
                 continue
@@ -366,7 +367,7 @@ def build_cases(ws, cases: list[Case], version: str) -> None:
             strip_markup(case.summary),
             strip_markup(case.precondition),
             "\n".join(f"{i}. {strip_markup(s)}" for i, s in enumerate(case.steps, 1)),
-            "\n".join(f"・{strip_markup(e)}" for e in case.expectations),
+            "\n".join(f"{i}. {strip_markup(e)}" for i, e in enumerate(case.expectations, 1)),
             case.requirements,
             "",        # テスト実施日
             version,   # ソフトウェアバージョン

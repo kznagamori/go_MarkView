@@ -102,10 +102,15 @@ flowchart TB
 
 ### AR-011: ディレクトリ構成 **SHOULD**
 
+**本節は全体像を示すものであり、ファイル単位まで挙げていない。実装単位の正は [IMP-011](10-impl-overview.md) とする。** 食い違った場合は IMP-011 に合わせる。
+
 ```
 go_MarkView/
 ├── main.go                    アプリのエントリポイント、CLI 引数処理
-├── app.go                     Wails にバインドする API の定義
+├── app.go                     App 型の状態とライフサイクル
+├── bind.go / editor.go / link.go   Wails にバインドするメソッド（責務で分割）
+├── open.go / errors.go / dto.go    文書を開く共通処理・エラー分類・境界の型
+├── console_*.go / webview_*.go     OS 別の実装（ビルドタグで分ける。IMP-193, IMP-181）
 ├── go.mod / go.sum
 ├── wails.json                 Wails のプロジェクト設定
 ├── internal/
@@ -135,6 +140,7 @@ go_MarkView/
 │   ├── index.html
 │   ├── css/                   アプリ UI と GitHub 準拠スタイル
 │   ├── js/                    UI ロジック（ビルド不要の素の JavaScript）
+│   ├── icons/                 インライン SVG のソース（IMP-203）
 │   └── vendor/                リポジトリで管理する埋め込み資産（BR-042）
 │       ├── vendor.json        名称・版・SPDX・全文の位置・取得元・取得日（BR-042）
 │       ├── mermaid/           mermaid.min.js（ライセンス表記込み）
@@ -238,6 +244,7 @@ sequenceDiagram
 | 用途 | ライブラリ | ライセンス |
 | --- | --- | --- |
 | アプリケーションフレームワーク | `github.com/wailsapp/wails/v2` | MIT |
+| WebView2 の版の取得（Windows） | `github.com/wailsapp/go-webview2`（IMP-181） | MIT |
 | Markdown パーサ | `github.com/yuin/goldmark`（GFM 拡張を含む） | MIT |
 | 脚注 | goldmark 標準の Footnote 拡張 | MIT |
 | 絵文字 | `github.com/yuin/goldmark-emoji` | MIT |
@@ -256,6 +263,7 @@ sequenceDiagram
 | アイコン | Octicons 等の MIT ライセンスのアイコンセット | MIT |
 
 - GitHub Alerts（MD-040）および数式ノードの保護（MD-060）に相当する goldmark 拡張は、要件を満たす既存拡張がなければ自前で実装する。いずれも AST 変換で実現でき、依存の追加を避けられる。
+- **`go-webview2` は Wails 自身が WebView2 の起動に使っているものであり、直接 import しても新しいモジュールは増えない**（`go.mod` の `// indirect` が外れるだけ）。版の取得を `internal/` へ置かないのは IMP-012 の規約による。
 - 依存の追加は「サイズへの寄与」と「保守されているか」の両面で評価する。ライセンスは MIT / BSD / Apache-2.0 / EPL-2.0 等の再配布可能なものに限る（NFR-051）。
 
 > [!WARNING]

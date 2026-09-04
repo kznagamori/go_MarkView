@@ -96,7 +96,7 @@ export function initToolbar(deps) { /* … */ }
     </section>
   </main>
 
-  <footer id="status" class="status">
+  <footer id="statusbar" class="status">
     <span id="status-path" class="status-path"></span>
     <span id="status-meta" class="status-meta"></span>
     <span id="status-message" class="status-message" hidden></span>
@@ -108,11 +108,23 @@ export function initToolbar(deps) { /* … */ }
 </div>
 ```
 
+> [!IMPORTANT]
+> **`id="status"` を使ってはならない。** 同梱している `plantuml.js`（@plantuml/core）は、
+> 描画のたびに **`document.getElementById('status')` を決め打ちで探し、見つけた要素の
+> `textContent` を自分のログで上書きする。** `textContent` への代入は子要素をすべて破棄するため、
+> **ステータス領域の 3 要素が DOM から消え、以降のすべての通知（FR-110）が出なくなる**
+> （[調査報告](../bugs/2026-09-05-bug-006-status-id-collision.md)）。
+>
+> **`statusbar` に改名したのはこの 1 点のためである。** 短く自然な名前ほど同梱資産と衝突しやすい。
+> **ここを `status` に戻さない。** 資産を更新したときの検査は [BR-043](06-build-release.md) が定める。
+
 - ペインの表示・非表示は `hidden` 属性で切り替える。`style.display` を直接操作しない。
 - **`index.html` に利用者向けの文言を書かない。** ペイン見出しの `Files` / `Outline` を含め、文言は `js/strings.js` から与える（IMP-290）。上の骨格でテキストが空の要素は、すべて実行時に埋める。
 - テーマは `#app` の `data-theme` 属性で切り替える（DSP-011）。
 - 本文は `.markdown-body` に挿入する。`github-markdown-css` が想定するクラス名に合わせる。
-- `#viewer` に `tabindex="-1"` を与える。検索バーを閉じたときにフォーカスを本文へ戻す（UI-080）ために必要であり、負値のため `Tab` の巡回順には入らない。
+- **`#viewer` に `tabindex="-1"` を与える。目的は 2 つある。** 負値のため `Tab` の巡回順には入らない。
+  1. 検索バーを閉じたときにフォーカスを本文へ戻す（UI-080）
+  2. **文書を表示したときにフォーカスを本文ペインへ移す**（UI-051, IMP-220）。**これが無いとキーボードでスクロールできない**（[調査報告](../bugs/2026-09-05-bug-007-viewer-focus-on-open.md)）
 - **`#searchbar` は `.searchbar-anchor` の中へ入れ、`#viewer` の先頭に置く**（DSP-160）。
   受け皿は**高さ 0 の `position: sticky`** とする。`#viewer` は `overflow-y: auto` の
   スクロールする器であり、**その中の絶対配置は内容と一緒に流れて画面外へ出る。**
@@ -256,10 +268,38 @@ export function renderDocument(doc) // doc: DocumentDTO
 8. `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` に応じて遅延ロードを起動する（IMP-230）。
 9. スクロール位置を設定する（13 章 `ScrollDTO` の `mode` に従う）。
 10. アウトライン（IMP-224）とステータス（DSP-150）を更新する。
+11. **本文ペインへフォーカスを移す**（UI-051）。
 
 3〜6 は DOM 走査を伴うため、`#markdown` を 1 回だけ走査してまとめて処理してよい（NFR-011）。
 
 **6 は 1 より後であれば順序を問わない**が、遅らせすぎてはならない。挿入から配線までの間に読み込みが終わった画像は `error` を受け取れないため、IMP-226 は配線時にすでに失敗しているものを別途拾う。
+
+**手順 11 は 2 つの条件を満たす。** どちらを落としても別の要求が壊れる。
+
+| # | 条件 | 落とすと |
+| --- | --- | --- |
+| 1 | **`focus({ preventScroll: true })` とする** | フォーカス移動に伴うスクロールが、直前の手順 9（`ScrollDTO`。DSP-350）を打ち消しうる。`F5` で位置が維持されず（FR-015）、`Alt+←` で復元されない（FR-051） |
+| 2 | **ダイアログ（情報・エディタ選択）を表示している間は奪わない** | ダイアログは開いたままファイル更新の自動検知（FR-014）を受けうる。**背後の本文へフォーカスが移り、フォーカストラップ（IMP-251, IMP-252）が破れる** |
+
+> [!NOTE]
+> **検索バーへの配慮は要らない。** 手順 0 が `closeSearch()` を呼んでおり（FR-080 の
+> 「切り替え・再描画時は検索状態をリセットする」）、手順 11 に達した時点で検索は閉じている。
+> **`closeSearch` は入力欄にフォーカスがあれば自分で本文へ戻す**（IMP-241）ため、
+> ここで奪う相手がそもそも居ない。
+>
+> **状態画面についても要らない。** 状態画面は本関数ではなく `showStateScreen`（IMP-250）が出す。
+> 逆に「大きなファイルの確認」から `Open anyway` で本文が出た場合は、**フォーカスを本文へ移すのが正しい。**
+
+> [!IMPORTANT]
+> **どの経路で開いてもフォーカスを移す**（ダイアログ・ドロップ・引数・ツリー・リンク・履歴）。
+> 経路ごとに分けない。ツリーから開いた場合だけ移さないという案もあるが、**契機ごとの分岐は
+> DSP-350 と同じ形の表をもう 1 つ増やす**。ツリーのキーボード操作（UI-030）を実装するときに
+> 改めて判断する。
+
+> [!NOTE]
+> **`#viewer` は `tabindex="-1"` を持つため、中身をクリックしても本文ペインがフォーカスを得る**
+> （フォーカス可能な最も近い祖先へ移る、というブラウザの規則）。**この経路があるために、
+> フォーカス移動を忘れても「クリックすれば動く」状態になり、不具合が見つけにくい。**
 
 `innerHTML` に渡す HTML は Go 側でサニタイズ済みである（IMP-116）。**フロントエンドで追加のサニタイズを行わないが、Go 側を経由しない文字列を `innerHTML` に渡してはならない。** UI 文言の挿入には `textContent` を用いる。
 
@@ -308,6 +348,7 @@ document.getElementById('markdown').addEventListener('click', onLinkClick);
 - `#markdown` に 1 つだけリスナを置き、イベント委譲で処理する。リンクごとにリスナを付けない。
 - `event.target.closest('a')` で対象を求め、`href` が存在すれば **常に `preventDefault()` を呼ぶ**。WebView 内でのページ遷移を一切発生させないため（AR-060）。
 - 同一文書内のアンカー（`#...`）のみフロントエンドで処理し、該当見出しへスクロールする。それ以外は `href` の生値を Go 側へ渡し、判断を委ねる（IMP-312）。フロントエンドでスキームやパスの解釈を行わない。
+- **移動先が折りたたみ（`<details>`。[MD-026](04-markdown.md)）の中にある場合は、祖先の `<details>` を開いてからスクロールする**（[FR-050](02-functional.md)）。閉じたままの要素は `scrollIntoView` の対象にならず、**大きさを返すのにスクロールは起きない**。**IMP-241 と同じ関数を使う**（`util.js` に置く）。**文書を開いた直後のアンカー復元（IMP-302 の `anchor` モード）も同じ経路を通す。**
 - `target="_blank"` を含むリンクも同じ経路で処理する。
 
 ### IMP-224: アウトラインの構築 **MUST**
@@ -320,6 +361,7 @@ export function renderOutline(headings)
 - `DocumentDTO.headings`（Go 側が生成、IMP-117）をそのまま用いる。フロントエンドで DOM から見出しを抽出しない。抽出規則を 2 箇所に持たないため。
 - 見出しが 0 件の場合、`strings.noHeadings` を表示する（FR-040）。
 - インデントは**相対的な深さ**に応じた CSS カスタムプロパティで与える（DSP-113）。深さはレベルそのものではなく、`#` の次が `###` でも 1 段だけ下げる（FR-040 の「出現順を保ったまま相対的な深さで表示する」）。文字サイズはレベルで決める（DSP-113）ため、両者を別の属性で持つ。
+- **項目のクリックで移動する際、見出しが折りたたみ（`<details>`。[MD-026](04-markdown.md)）の中にあれば、祖先の `<details>` を開いてからスクロールする**（[FR-041](02-functional.md)）。**アウトラインは本文の見出しをすべて挙げるため、折りたたみの中の見出しも項目として並ぶ。** 閉じたままの要素は `scrollIntoView` の対象にならず、**大きさを返すのにスクロールは起きない**。**IMP-241 / IMP-223 と同じ関数を使う**（`util.js` に置く）。
 
 ### IMP-225: GitHub Alerts のアイコン付与 **MUST**
 
@@ -404,6 +446,18 @@ export async function ensurePlantUML() // 未読込なら viz-global.js → plan
 - **`ensurePlantUML()` は読み込む順序を守る**。`viz-global.js` を先に、`plantuml.js` を後にする（AR-020, IMP-233）。**前者の読み込みに失敗したら、後者を読まないで false を返す。** Graphviz 不在のまま描こうとすると処理系ごと止まる（IMP-233 の 4）。
 - 読み込みと描画は本文の表示をブロックしない。`renderDocument` の完了後に非同期で実行する（NFR-012）。
 
+> [!IMPORTANT]
+> **同梱資産は、こちらが渡した要素の外にも書くことがある。** 描画対象の id を渡す形（IMP-233 の 2）は
+> 「そこにしか書かない」ことを意味しない。**資産はページ全体を見ており、DOM の id はページと資産で
+> 共有された名前空間である。**
+>
+> 実際に `plantuml.js` は `document.getElementById('status')` を決め打ちで書き換えており、
+> **`index.html` の `<footer id="status">` を壊していた**（[調査報告](../bugs/2026-09-05-bug-006-status-id-collision.md)）。
+> Mermaid にも同じ形の決め打ち（`cy`）がある。
+>
+> **自前の id は、同梱資産が決め打ちする id と重ならないようにする**（IMP-202）。
+> 資産を更新したときの検査は [BR-043](06-build-release.md) が定める。
+
 ### IMP-231: Mermaid の初期化 **MUST**
 
 ```js
@@ -455,7 +509,7 @@ const puml = await import("vendor/plantuml/plantuml.js");  // 2
 puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark" });
 ```
 
-**実装で押さえる点は 4 つある。**
+**実装で押さえる点は 5 つある。**
 
 | # | 処理系の振る舞い | 実装への帰結 |
 | --- | --- | --- |
@@ -463,6 +517,7 @@ puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark
 | 2 | **出力先を要素の id で指定する。** 要素そのものを渡せない | 図ごとに一意な id を振る。**文書を切り替えても衝突しない値にする** |
 | 3 | `renderToString` も export されているが、**どの引数の組でも `undefined` を返す** | 現状使えない。`render()` 経由でのみ取得する |
 | 4 | **Graphviz を要する図を Graphviz 無しで描こうとすると、処理系ごと止まる。** その図だけでなく**以降のすべての描画が返ってこなくなる** | **`viz-global.js` の読み込みに失敗したら、PlantUML の描画を一切行わない。** 全ブロックをソースのまま残し、理由を表示する |
+| 5 | **描画のたびに `document.getElementById('status')` を決め打ちで探し、見つけた要素の `textContent` を自分のログで上書きする。** 渡した要素とは無関係に、ページ全体を対象にする | **ページ側で `status` という id を使わない**（IMP-202 は `statusbar` とする）。**こちらから止める手立ては無い**——`plantuml.js` は改変できない（BR-042） |
 
 - 描画対象は `.code-block[data-plantuml] pre.plantuml-source`。**`data-puml-error` を持つブロックは描画しない**（IMP-119 が拒んだもの）。
 - **描画結果は `.plantuml-rendered` の中へ入れ、描かなかった理由は `.plantuml-error` へ出す。** Mermaid の `.mermaid-rendered` / `.mermaid-error`（IMP-231）と同じ形にそろえる。**この 2 つの名前は描画スモークテストが見る**（BR-054, E2E-109）ため、変えるときは `scripts/smoke/harness.js` も同じ変更で直す。
@@ -490,16 +545,33 @@ puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark
 
 ### IMP-240: ペインの開閉とリサイズ **MUST**
 
-FR-034 / FR-043 / UI-030 / UI-040 を実装する。
+FR-034 / FR-035 / FR-043 / UI-030 / UI-040 を実装する。
 
 ```js
 // js/panes.js
-export function togglePane(name)     // 'outline' | 'filetree'
+export function togglePane(name)     // 'outline' | 'filetree'。**表示になったかを返す**
 export function setPaneWidth(name, px)
 export function applyResponsive()    // ウィンドウ幅に応じた一時的な非表示（IMP-246）
 ```
 
 - 開閉は `hidden` 属性の切り替えと、対応するリサイザの表示切り替えで行う。
+- **ファイルツリーが非表示から表示になったら、ツリーを読み直す**（[FR-035](02-functional.md) の 1 番目の契機）。`filetree.js` の `loadTreeRoot` を呼ぶ。
+  - **`panes.js` から `filetree.js` を呼ばない。** `togglePane` は「表示になったか」を返すだけとし、**契機の判断は `main.js` に置く**（IMP-201 の依存の明示）。ここで呼ぶと、ペインの開閉というひとつの関心にツリーの読み込みが混ざる。
+  - **ツールバーのボタンとショートカットの両方が同じ関数を通るようにする。** 片方だけに足すと、経路によって挙動が変わる。
+  - **表示になったときだけ呼ぶ。** 閉じる操作や、既に開いている状態では呼ばない。`ReadDir` は毎回ディスクを読む（IMP-310）ため、大きなディレクトリで引っかかる（NFR-020）。
+  - `loadTreeRoot` はツリーを作り直すため、**利用者が開いていたディレクトリの展開状態は失われ、表示中の文書までの経路だけが開き直される**（`revealCurrent`。DSP-331）。FR-035 は展開状態の保持を求めていない。
+- **再読み込み操作（[FR-015](02-functional.md)）でもツリーを読み直す**（FR-035 の 2 番目の契機）。`Reload()`（IMP-310）は表示中の文書を開き直すだけでツリーに触れないため、**フロントエンドが続けて `loadTreeRoot` を呼ぶ。**
+
+> [!IMPORTANT]
+> **FR-035 は再読み込みの契機を 3 つ定めている。担当を分けて書く。**
+>
+> | # | 契機 | 担当 |
+> | --- | --- | --- |
+> | 1 | ツリーペインを非表示から表示に切り替えたとき | **本 ID**（`togglePane` の呼び出し側） |
+> | 2 | 再読み込み操作（FR-015）を行ったとき | **本 ID**（`reloadCurrent` の後段） |
+> | 3 | ディレクトリノードを折りたたんでから再度展開したとき | [DSP-330](22-display-states.md)（展開のたびに `ReadDir` を呼ぶ） |
+>
+> **1 と 2 の担当がどの ID にも無かったため、実装されないまま通過した**（[調査報告](../bugs/2026-09-04-bug-002-filetree-reload-on-show.md)）。**箇条書きが複数ある要求では、90 章の対応表の 1 行が「全部見た」に見える。** 項目ごとに担当があるかを確かめる。
 - 幅の下限は 160 px、上限はウィンドウ幅の 40 %（IMP-153 の補足）。ドラッグ中に毎回クランプする。
 - ドラッグ中は Go 側へ通知せず、`pointerup` の時点で 1 回だけ通知する（UI-114）。
 - ドラッグ中は `pointermove` を `requestAnimationFrame` でまとめ、レイアウト計算の頻度を抑える（NFR-012）。
@@ -523,6 +595,7 @@ export function isSearchOpen()   // 開いているか（Esc の振り分けに�
 - **本文を表示している状態でのみ開く。** 状態画面を表示中（`welcome` / `confirm-large` / `too-large` / `render-error`）は `Ctrl+F` を無視する（DSP-300）。
 - 走査対象は `#markdown` のテキストノードのみ。`<script>` や属性値は対象外。
 - **フロントエンドが後から描いた領域を走査から外す。** 対象は `svg`（**Mermaid と PlantUML の描画結果**。HTML の `<mark>` を差し込むと図が壊れる）と `.katex`（KaTeX の描画結果。MathML と HTML に同じ文字が二重に入っており、包むと数式が崩れるうえ件数も倍になる）。いずれも Go が出力した本文ではなく、原文は `data-source` と TeX ソースとして別に残っている。**PlantUML の図は文字を多く含む**ため、除外を忘れると図の中の語が大量にヒットする。
+- **折りたたみ（`<details>`。[MD-026](04-markdown.md)）の中は除外しない。** 上の 2 つは「原文が別に残っている描画の副産物」だが、**折りたたみの中身は原文そのもの**であり、除外の理由が当てはまらない。除外すると、件数が利用者の開閉で変わるうえ、**「文書にあるのに見つからない」**状態になる。折りたたみの中は「まだ読んでいない箇所」であり、検索で見つけたい場所そのものである（FR-080, UI-080）。
 - **テキストノードは先にすべて集めてから包む。** 包む処理はテキストノードを分割するため、走査しながら変更すると同じ箇所を二重に処理する。
 - 解除時は、`<mark>` を外したあとに親要素へ `normalize()` を呼び、分割したテキストノードを 1 つへ結合し直す。これを省くと、次の検索で分割の境界をまたぐ語が見つからなくなる。
 - ハイライトは `<mark class="search-hit">` で包む方式とし、原文の DOM 構造を壊さないよう、テキストノードの分割のみで実現する。要素の入れ子構造を変更しない。
@@ -533,6 +606,11 @@ export function isSearchOpen()   // 開いているか（Esc の振り分けに�
 - `find` の直後は、**本文ペインの上端以降にある最初のヒット**を現在位置とする。常に先頭へ戻すと、入力を 1 文字足すたびに文書の冒頭へ引き戻される。
 - `jump` は端で反対側へ回り込む。ヒットが 1 件でも操作が空振りしない。
 - **検索を開いていないときの `jump` は何もせず、`false` を返す**（IMP-244）。`Enter` は検索が閉じていてもこの経路へ来るため、`preventDefault` してしまうとフォーカス中のボタンを `Enter` で実行できなくなる（UI-021）。
+- **移動の前に、移動先が見える状態を作る**（FR-080, MD-026）。**閉じた `<details>` の中身は `scrollIntoView` の対象にならない。** `getBoundingClientRect` は大きさも位置も返す（実測で 723×35、`top=1277`）のに、**スクロールは起きず（`scrollTop` は 0 のまま）、`<details>` が自動で開くこともない。** 例外も警告も出ない。**開いてから呼べば動く**（同じ条件で `scrollTop` が 1161 になり、器の中に入る）。
+  **「大きさを持っているか」で判定しない**——持っている。判定できるのは「祖先に閉じた
+  `<details>` があるか」だけである（2026-09-05 に Edge 152 で実測）。
+  現在位置を移す処理の中で、**祖先の `<details>` を根までたどって開く**（入れ子に対応する）。
+  **開いたものを閉じ直さない。** 検索を閉じた時点で閉じると、利用者が中身を読んでいる最中に畳んでしまう。
 - **移動は「前へ」「次へ」のボタンでも起こる**（FR-080）。`Enter` / `Shift+Enter` と
   **同じ経路を通す。** 片方だけに処理を足すと、もう片方だけが壊れたときに気づきにくい。
 - **移動のあとにフォーカスを操作する場合、スクロールを巻き戻してはならない。**
@@ -546,6 +624,25 @@ export function isSearchOpen()   // 開いているか（Esc の振り分けに�
 > `focus()` が「見せるために」スクロールを先頭側へ巻き戻し、**ボタンからの移動だけが効かなくなる。**
 > `Enter` は同じ `jump` を呼びながらフォーカスを操作しないため動いてしまい、**症状が片側にしか
 > 出ないので原因を取り違えやすい。** 実際に起きた（[調査報告](../bugs/2026-09-03-search-jump-buttons.md)）。
+
+> [!IMPORTANT]
+> **「ハイライトが付いた」ことを「移動できた」の証拠にしない。** 閉じた `<details>` の中でも、
+> テキストノードの分割・`<mark>` の生成・クラスの付け替え・件数の更新は**すべて成功する。**
+> 失敗するのは `scrollIntoView` だけであり、しかも**黙って戻る。** 実際に通り抜けた
+> （[調査報告](../bugs/2026-09-04-bug-004-search-collapsed-details.md)）。
+>
+> **`find` の直後の現在位置決定（本文ペインの上端以降にある最初のヒット）には手を入れなくてよい。**
+> 折りたたみの中の `<mark>` は座標がすべて 0 を返すため、候補から自然に外れる。開くのは
+> 現在位置を移す時点でよい。
+>
+> **同じ構造の問題が、アンカー移動（IMP-223）とアウトラインからの移動（IMP-224）にもある。**
+> **3 か所で同じ関数を使う**（`util.js` に置く。`search.js` に置くと `outline.js` との循環参照になる）。
+>
+> ```js
+> // js/util.js
+> export function openAncestorDetails(element)   // 祖先の <details> を根まで開く
+> ```
+> 片方だけ直すと「検索では行けるがリンクでは行けない」という、説明の付かない差が残る。
 
 ### IMP-242: 表示倍率 **MUST**
 
@@ -611,18 +708,41 @@ FR-011 / UI-070 を実装する。
 
 ```js
 // js/dnd.js
-export function initDnd()   // ドラッグ中の表示だけを配線する
+export function initDnd()   // Wails の drop リスナの取り付けと、ドラッグ中の表示
 ```
 
 - Wails のファイルドロップ機能（`OnFileDrop`）で**絶対パス**を受け取る。HTML5 の `DataTransfer` からパスは得られないため、そちらに依存しない。
 - **`OnFileDrop` は既定では呼ばれない。** Wails の起動オプションに `DragAndDrop: &options.DragAndDrop{EnableFileDrop: true}` を渡す必要がある。これを忘れると、コールバックを登録してもドロップが一切届かない。
-- **受け口となる要素は CSS で宣言する。** Wails はドロップ地点の要素の計算済みスタイルに `--wails-drop-target: drop`（既定のプロパティ名と値）があるかで受け付けるかを決める。カスタムプロパティは継承するため、`#app` に 1 度だけ置けばウィンドウ全体が対象になる（UI-070, FR-011）。
+- **`initDnd` は `window.runtime.OnFileDrop()` を呼ぶ**（`frontend/wailsjs/runtime/runtime.js` 経由）。**これが Wails のランタイム側の `drop` リスナを取り付ける唯一の手段である。**
+
+  ```js
+  import { OnFileDrop } from "../wailsjs/runtime/runtime.js";
+
+  // パスの処理は Go 側で行う（IMP-313）。ここで受け取るものは無い。
+  OnFileDrop(() => {}, true);
+  ```
+
+  - **コールバックは空でよい。** 結果はイベント（`document:opened` / `tree:root-changed` / `error`）で受け取る（IMP-320, IMP-322）。ここに処理を書くと経路が 2 つになる。
+  - 第 2 引数（`useDropTarget`）は `true` とする。ただし**これが検査するのは JS 側のコールバックだけ**であり、Go 側のコールバックは検査を通らずに呼ばれる。
+- **受け口となる要素は CSS で宣言する。** ドロップ地点の要素の計算済みスタイルに `--wails-drop-target: drop`（既定のプロパティ名と値）があるかで、Wails の**JS 側のコールバック**が呼ばれるかが決まる。カスタムプロパティは継承するため、`#app` に 1 度だけ置けばウィンドウ全体が対象になる（UI-070, FR-011）。**この宣言は Go 側のコールバックの条件ではない**（上記のとおり検査を通らない）。宣言を残すのは UI-070 の意図を DOM 上に残すためである。
 - **`#dropzone` は `pointer-events: none` とする。** Wails は `document.elementFromPoint` でドロップ地点の要素を求めるため、全面を覆うオーバーレイがマウスイベントを受け取ると、その下の要素を検出できずドロップが無効になる。
 - `dragenter` / `dragover` / `dragleave` は、オーバーレイ（`#dropzone`）の表示制御にのみ使う。
 - `dragover` と `drop` では自分でも `preventDefault()` を呼ぶ。Wails のランタイムも同じことを行うが、**WebView 内でページ遷移を起こさないという規約（AR-060）を外部のランタイムの実装に委ねない。**
 - OS からのファイルのドラッグかを `dataTransfer.types` に `Files` が含まれるかで判定する。本文中のテキストを選択して動かした場合など、ウィンドウ内で完結するドラッグではオーバーレイを出さない。
 - `dragleave` はウィンドウ内の要素間移動でも発生するため、カウンタ方式で入れ子の出入りを数え、0 になったときだけオーバーレイを隠す。
 - 受け取ったパスの判定（Markdown か、ディレクトリか）は Go 側で行う（IMP-313）。
+
+> [!IMPORTANT]
+> **オーバーレイの表示と、パスの受け取りは別の配線である。** 前者は本モジュールの `dragenter` / `dragover` / `dragleave` だけで完結し、後者は `OnFileDrop()` の呼び出しを要する。**後者だけを欠くと、ドラッグ中の案内は正しく出るのにドロップが無反応になる。** 見た目が動いている分、原因を取り違えやすい（[調査報告](../bugs/2026-09-04-bug-001-file-drop-windows.md)）。
+>
+> **Windows と Linux で仕組みが違う。**
+>
+> | OS | パスが Go へ届く経路 | JS 側の登録 |
+> | --- | --- | --- |
+> | **Windows**（WebView2） | Wails の JS が `drop` を捕まえ、File オブジェクトを `postMessageWithAdditionalObjects("file:drop:x:y", files)` で Go へ渡す。Go が `ICoreWebView2File` から絶対パスを取り出して `wails:file-drop` を発火する | **必須** |
+> | **Linux**（WebKitGTK） | GTK の `drag-data-received` / `drag-drop` シグナルが直接 Go へ届く | 不要（あっても害はない） |
+>
+> **Go の `runtime.OnFileDrop`（IMP-313）は `wails:file-drop` を購読するだけである。** 「Go でコールバックを登録し、CSS で受け口を宣言すれば届く」という理解は Linux でしか成り立たない。
 
 ### IMP-246: ウィンドウ幅に応じた一時的な非表示 **MUST**
 
@@ -638,6 +758,11 @@ UI-026 / DSP-380 を実装する。**利用者の設定と、幅による一時�
 - `resize` イベントで本文ペインの幅を算出し、240 px を下回るなら `outlineSuppressed = true`、回復したら `false` に戻す。
 - **`state.outlineVisible` と設定値、ツールバーの `aria-pressed` は変更しない。** ここを変えてしまうと、ウィンドウを広げても戻らなくなり、設定にも誤った値が保存される。
 - `resize` は連続して発火するため、`requestAnimationFrame` で 1 フレームにまとめる（NFR-012）。
+- 本文の幅は「**アウトラインを出したとしたら何 px になるか**」で測る。隠れている間も同じ式で測ることで、抑制と復帰を行ったり来たりしない。
+- 判定は `window.innerWidth - clamp(アウトライン幅) - clamp(ツリー幅) < 240` とする。**幅は利用者が決めた値**（UI-110）であり、上限（ウィンドウ幅の 40 %）で丸めたあとの実効値を使う。
+
+> [!NOTE]
+> **この判定は幅の組み合わせによっては一度も真にならない。** 両ペインが下限（160）にあるとき、最小ウィンドウ幅でも本文は 320 px あり、閾値 240 を上回る（[UI-026](03-ui.md) の IMPORTANT、[DSP-380](22-display-states.md) の表）。**それは不具合ではない。** 閾値やペイン幅の下限を動かして発火させることは行わない。
 - ファイルツリーは抑制の対象としない（UI-026）。
 - 抑制中に利用者がトグルボタンを押した場合は、`outlineVisible` を通常どおり切り替える。抑制が解けたときにその値が反映される。
 
@@ -847,6 +972,7 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 - ツリーは `role="tree"` / `role="treeitem"` を用い、`aria-expanded` を更新する。
 - フォーカスリングを消さない。`outline: none` を無条件に指定しない（DSP-016）。
 - 状態画面・ダイアログの表示時に、フォーカスを内部の操作要素へ移す。
+- **文書の表示時に、フォーカスを本文ペインへ移す**（UI-051）。規定は IMP-220 が持つ。**キーボードだけで操作する利用者が、開いた文書を読み進められるようにするためである。**
 
 ## 12.9 要求一覧
 

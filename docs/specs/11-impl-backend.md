@@ -914,8 +914,18 @@ func Vendors() []VendorEntry
 func Bundled() []VendorEntry
 
 // Environment は "windows/amd64  Go 1.24.0  WebView2 120.x" 形式の文字列を返す。
-// WebView のバージョンが取得できない場合、その区画ごと省く。
+// WebView のバージョンは呼び出し側（package main）が渡す。**取得に失敗した
+// ときだけ空文字を渡し**、その場合は区画ごと省く。
 func Environment(webviewVersion string) string
+```
+
+`webviewVersion` の取得は `package main` に置く。**OS ごとにビルドタグで分ける**（`console_windows.go` / `console_other.go` と同じ形）。
+
+```go
+// webview_windows.go   //go:build windows
+func webviewVersion() string   // go-webview2 の webviewloader から取る
+// webview_other.go     //go:build !windows
+func webviewVersion() string   // WebKitGTK の版を取る
 ```
 
 - `vendor.json` の形式は `VendorEntry` の配列とする（BR-042）。**全エントリが同じ形を持つ。** 同梱物の中に含まれるもの（Viz.js / Graphviz / Expat）だけを別の形にしない。
@@ -923,6 +933,17 @@ func Environment(webviewVersion string) string
 - **`Bundled` の絞り込みをここ 1 か所に置く。** フロントエンドで絞ると、絞り方が 2 つに分かれる（IMP-306）。
 - `Vendors` は解析に失敗しても**空スライスを返し、エラーにしない**（FR-111）。情報表示が欠けるだけで、文書の閲覧は続けられる。JSON の `null` は解析に成功したうえで nil を書き込むため、そこも空スライスへ揃える。
 - `Environment` の WebView 名は OS で異なる（Windows: `WebView2`、Linux: `WebKitGTK`）。バージョンが空のときに「`WebView2 `」とだけ書かれた区画は情報として役に立たないため、区画ごと省く。
+- **`Environment` に空文字を渡してよいのは、取得に失敗したときだけである。** UI-100 は `Environment` 行に WebView の版を出すことを **MUST** で定めており、**常に空を渡す実装はこの要求を満たさない。**
+- **WebView の版は取得できる。** Wails v2 の公開ランタイム（`pkg/runtime`）は返さないが、それは「取得できない」という意味ではない。
+  - **Windows**: `github.com/wailsapp/go-webview2/webviewloader` の `GetAvailableCoreWebView2BrowserVersionString("")` を使う。**Wails 自身が内部で使っているのと同じパッケージ**であり、`go-webview2` は既に依存関係に入っている（新しいモジュールは増えない）。
+  - **Linux**: WebKitGTK の `webkit_get_major_version()` / `_minor_` / `_micro_` を cgo で呼ぶ。Linux ビルドは既に cgo と WebKitGTK にリンクしている（AR-003, BR-010 の `-tags webkit2_41`）。
+- **取得は `internal/` に置かない**（IMP-012）。`internal/` を Wails 非依存・OS 非依存に保つ規約であり、ここへ入れると単体テストに OS 依存が持ち込まれる（UT-002）。
+- 取得に失敗しても**起動を止めず、エラーも出さない**（FR-111）。区画が 1 つ減るだけである。
+
+> [!IMPORTANT]
+> **「Wails から取得できないことがある」を、実装しない理由に使わない。** 省略の規定は**異常系のための救済**であり、常に通る経路にしてはならない。
+>
+> **Linux こそ表示する価値が大きい。** `docs/troubleshooting.md` の最初の項目は「WebKitGTK 4.1 が入っていません」であり、`README.md` も 4.0 系との取り違えに繰り返し触れている。**利用者に「あなたの環境の WebKitGTK は何版か」を示せるのは、この情報ウィンドウだけである**（[調査報告](../bugs/2026-09-04-bug-005-about-webview-version.md)）。
 
 ## 11.11 App と session（IMP-190 系）
 
