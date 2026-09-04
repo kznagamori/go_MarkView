@@ -7,6 +7,7 @@
 //
 // ここで行うのは**ドロップ可能であることの表示だけ**とする。
 
+import { OnFileDrop } from "../wailsjs/runtime/runtime.js";
 import { S } from "./strings.js";
 import { $, clear, icon } from "./util.js";
 
@@ -17,9 +18,24 @@ import { $, clear, icon } from "./util.js";
 // 動かしている最中にオーバーレイが点滅する。
 let depth = 0;
 
-// initDnd はドラッグ中の表示を配線する（IMP-211）。
+// initDnd はドロップの受け口とドラッグ中の表示を配線する（IMP-211, IMP-245）。
 export function initDnd() {
   buildOverlay();
+
+  // **Wails のランタイム側の drop リスナを取り付ける**（IMP-245）。
+  //
+  // Windows ではこれが唯一の手段であり、**呼ばなければドロップは一切届かない。**
+  // 起動オプションの EnableFileDrop（main.go）だけでは足りない。
+  // Linux は GTK の signal で受けるため呼ばなくても届くが、経路を OS で
+  // 分けない。
+  //
+  // **コールバックは空でよい。** パスの判定は Go 側が行い（IMP-313）、
+  // 結果はイベント（document:opened / tree:root-changed / error）で届く
+  // （IMP-320, IMP-322）。ここに処理を書くと経路が 2 つになる。
+  //
+  // 第 2 引数（useDropTarget）は true。ただし**これが検査するのは JS 側の
+  // コールバックだけ**であり、Go 側のコールバックは検査を通らずに呼ばれる。
+  OnFileDrop(() => {}, true);
 
   window.addEventListener("dragenter", onEnter);
   window.addEventListener("dragover", onOver);
