@@ -94,8 +94,13 @@ func parseVendors(data []byte) []VendorEntry {
 //
 //	windows/amd64  Go 1.26.5  WebView2 120.0.0
 //
-// webviewVersion が空の場合、その区画ごと省略する。Wails から取得できない
-// ことがあり、「WebView2 」とだけ書かれた行は情報として役に立たないため。
+// webviewVersion が空の場合、その区画ごと省略する。「WebView2 」とだけ
+// 書かれた行は情報として役に立たないためである。
+//
+// **空が渡るのは取得に失敗したときだけである。** 値は package main の
+// webviewVersion() が渡す（IMP-181）。Windows は go-webview2 の
+// webviewloader から、Linux は WebKitGTK の API から取得できる。
+// **常に空を渡す実装は UI-100 を満たさない。**
 func Environment(webviewVersion string) string {
 	parts := []string{
 		runtime.GOOS + "/" + runtime.GOARCH,

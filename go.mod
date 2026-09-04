@@ -6,6 +6,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/wailsapp/go-webview2 v1.0.22
 	github.com/wailsapp/wails/v2 v2.15.0
 	github.com/yuin/goldmark v1.8.5
 	github.com/yuin/goldmark-emoji v1.0.6
@@ -40,7 +41,6 @@ require (
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.56.0 // indirect

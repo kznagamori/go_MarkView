@@ -354,9 +354,10 @@ func (a *App) CopyToClipboard(text string) (err error) {
 func (a *App) GetAbout() AboutDTO {
 	defer recoverQuiet()
 
-	// WebView のバージョンは Wails v2 のランタイムが返さないため空文字を
-	// 渡す。Environment は当該区画ごと省く（IMP-181）。
-	return newAboutDTO(thirdPartyLicenses, "")
+	// WebView の版は OS ごとに取り方が違うため package main で解決する
+	// （webview_windows.go / webview_other.go。IMP-181）。**取得に失敗した
+	// ときだけ空文字になり**、Environment が当該区画ごと省く。
+	return newAboutDTO(thirdPartyLicenses, webviewVersion())
 }
 
 // Quit はアプリケーションを終了する（IMP-310, UI-090）。
