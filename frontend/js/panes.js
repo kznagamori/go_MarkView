@@ -49,18 +49,29 @@ export function applyPanes(config) {
 //
 // **抑制中でも利用者の意思は通常どおり切り替える**（IMP-246）。抑制が解けた
 // ときにその値が反映される。
+//
+// **戻り値は「表示になったか」**（IMP-240）。ファイルツリーが非表示から表示に
+// なったときはツリーを読み直す必要があるが（FR-035 の 1 番目の契機）、
+// **その判断は main.js に置く。** ここから filetree.js を呼ぶと、ペインの
+// 開閉というひとつの関心にツリーの読み込みが混ざる（IMP-201）。
 export function togglePane(name) {
+  let shown = false;
+
   keepScroll(() => {
     if (name === "outline") {
       state.outlineVisible = !state.outlineVisible;
+      shown = state.outlineVisible;
     } else {
       state.fileTreeVisible = !state.fileTreeVisible;
+      shown = state.fileTreeVisible;
     }
     applyResponsive();
     refresh();
   });
 
   saveConfig();
+
+  return shown;
 }
 
 // setPaneWidth は幅を変え、設定へ残す（UI-030, UI-040）。

@@ -47,7 +47,7 @@ const SHORTCUT_HANDLERS = guardAll({
   reload: () => reloadCurrent(),
   theme: () => toggleTheme(),
   outline: () => togglePane("outline"),
-  filetree: () => togglePane("filetree"),
+  filetree: () => toggleFileTree(),
   search: () => openSearch(),
   searchNext: () => jump(1),
   searchPrev: () => jump(-1),
@@ -126,7 +126,7 @@ async function boot() {
     onReload: reloadCurrent,
     onTheme: toggleTheme,
     onOutline: () => togglePane("outline"),
-    onFileTree: () => togglePane("filetree"),
+    onFileTree: toggleFileTree,
     onEdit: showEditorDialog,
     onAbout: showAboutDialog,
   });
@@ -233,6 +233,32 @@ async function openViaDialog() {
 async function reloadCurrent() {
   await leaveDocument();
   handleResult(await api.reload());
+
+  // **ツリーも読み直す**（FR-035 の 2 番目の契機。IMP-240）。
+  //
+  // Reload() は表示中の文書を開き直すだけでツリーに触れない（IMP-310）ため、
+  // ここで続けて呼ぶ。**文書の再読み込みが失敗しても行う**——FR-035 が契機と
+  // 定めているのは「再読み込み操作を行ったとき」であり、その成否ではない。
+  await loadTreeRoot(state.treeRoot);
+}
+
+// toggleFileTree はツリーペインを開閉し、**表示になったらツリーを読み直す**
+// （FR-035 の 1 番目の契機。IMP-240）。
+//
+// **ツールバーのボタンとショートカットの両方がここを通る。** 片方だけに足すと、
+// 経路によって挙動が変わる。
+//
+// **表示になったときだけ読む。** ReadDir は毎回ディスクを読む（IMP-310）ため、
+// 閉じる操作や、既に開いている状態で読み直すと、大きなディレクトリで引っかかる
+// （NFR-020）。
+//
+// loadTreeRoot はツリーを作り直すため、利用者が開いていたディレクトリの展開状態は
+// 失われ、表示中の文書までの経路だけが開き直される（revealCurrent。DSP-331）。
+// FR-035 は展開状態の保持を求めていない。
+async function toggleFileTree() {
+  if (!togglePane("filetree")) return;
+
+  await loadTreeRoot(state.treeRoot);
 }
 
 // goBack / goForward は表示履歴をたどる（FR-051, UI-090）。
