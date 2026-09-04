@@ -9,6 +9,36 @@ export function $(id) {
   return document.getElementById(id);
 }
 
+// openAncestorDetails は、要素を包む <details> を根まですべて開く
+// （MD-026, IMP-241, IMP-223, IMP-224）。
+//
+// **閉じた <details> の中の要素は scrollIntoView の対象にならない。**
+// getBoundingClientRect は大きさも位置も返す（実測で 723x35）のに、スクロールは
+// 起きず、<details> が自動で開くこともない。例外も警告も出さない。
+// ハイライトも件数も正しく作れてしまうため、「移動できた」と誤認しやすい。
+// **移動の前に、移動先が見える状態を作る。**
+//
+// **「大きさを持っているか」で判定しない**——持っている。判定できるのは
+// 「祖先に閉じた <details> があるか」だけである。
+//
+// **入れ子に対応する。** 1 段だけ開いても、その外側が閉じていれば見えない。
+//
+// **開いたものを閉じ直さない**（IMP-241）。検索を閉じた時点で畳むと、
+// 利用者が中身を読んでいる最中に閉じてしまう。
+//
+// **検索・アンカー移動・アウトラインの 3 経路が同じ関数を使う**（IMP-241）。
+// 片方だけ直すと「検索では行けるがリンクでは行けない」という、説明の付かない
+// 差が残る。**search.js に置くと outline.js との循環参照になるため、ここに置く。**
+export function openAncestorDetails(element) {
+  if (!element) return;
+
+  let node = element.closest("details");
+  while (node) {
+    node.open = true;
+    node = node.parentElement ? node.parentElement.closest("details") : null;
+  }
+}
+
 // clear は子要素をすべて取り除く。
 //
 // innerHTML = "" ではなく明示的に外す。Go を経由しない文字列を innerHTML へ

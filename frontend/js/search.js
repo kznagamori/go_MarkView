@@ -10,7 +10,7 @@
 import { S } from "./strings.js";
 import { state } from "./state.js";
 import { syncActive } from "./outline.js";
-import { $, clear, icon } from "./util.js";
+import { $, clear, icon, openAncestorDetails } from "./util.js";
 
 const HIT = "search-hit";
 const CURRENT = "search-hit-current";
@@ -153,6 +153,9 @@ function select(index) {
 
   state.search.index = wrapped;
   hits[wrapped].classList.add(CURRENT);
+
+  // **移動の前に、移動先が見える状態を作る**（MD-026, IMP-241）。
+  openAncestorDetails(hits[wrapped]);
 
   // **スムーススクロールを使わない**（FR-041 と同じ理由）。
   hits[wrapped].scrollIntoView({ block: "center" });

@@ -4,7 +4,7 @@
 // **HTML を走査して見出しを抽出しない。** 抽出規則を 2 か所に持たないため。
 
 import { S } from "./strings.js";
-import { $, clear } from "./util.js";
+import { $, clear, openAncestorDetails } from "./util.js";
 
 // 「ペイン上端付近」を表す帯。下端を 85 % 削り、上 15 % だけを判定に使う（IMP-222）。
 const BAND = "0px 0px -85% 0px";
@@ -129,6 +129,8 @@ function onClick(event) {
   const target = document.getElementById(item.dataset.id);
   if (!target) return;
 
+  // **アウトラインは折りたたみの中の見出しも項目として並べる**（IMP-224）。
+  openAncestorDetails(target);
   target.scrollIntoView();
   syncActive();
 }

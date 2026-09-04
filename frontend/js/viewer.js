@@ -6,13 +6,13 @@
 
 import { state } from "./state.js";
 import { S, warningText } from "./strings.js";
-import { hideStateScreen } from "./overlay.js";
+import { hideStateScreen, isAboutOpen, isEditorsOpen } from "./overlay.js";
 import { renderOutline, observeHeadings, syncActive } from "./outline.js";
 import { attachCopyButtons } from "./copy.js";
 import { drawMermaid, drawMath, drawPlantUML } from "./lazy.js";
 import { closeSearch } from "./search.js";
 import { updateStatus, showMessage } from "./status.js";
-import { $, icon } from "./util.js";
+import { $, icon, openAncestorDetails } from "./util.js";
 
 let onFollow = null;
 
@@ -58,6 +58,8 @@ export function scrollToAnchor(fragment) {
     return;
   }
 
+  // **移動先が折りたたみの中にあれば開いてから移動する**（MD-026, IMP-223）。
+  openAncestorDetails(target);
   target.scrollIntoView();
   syncActive();
 }
@@ -142,6 +144,32 @@ export function renderDocument(doc) {
   // 未知の Kind は無視される（IMP-290）。
   const warning = doc.warnings.map(warningText).find(Boolean);
   showMessage(warning, "warning");
+
+  // 11. 本文ペインへフォーカスを移す（UI-051, IMP-220）。
+  focusViewer(viewer);
+}
+
+// focusViewer は本文ペインへフォーカスを移す（UI-051, IMP-220 の手順 11）。
+//
+// **キーボードでのスクロールは、スクロールする器がフォーカスを持って初めて
+// 効く。** html と body は overflow: hidden であり、実際にスクロールするのは
+// #viewer だけである。外にフォーカスがあると PageUp / PageDown / Home / End /
+// 方向キーは届いていても動かせる器が無い。
+//
+// **preventScroll: true とする。** フォーカス移動に伴うスクロールが、直前の
+// 手順 9（applyScroll。DSP-350）を打ち消しうる。F5 で位置が維持されず
+// （FR-015）、Alt+← で復元されない（FR-051）。
+//
+// **ダイアログを表示している間は奪わない。** ダイアログは開いたままファイル
+// 更新の自動検知（FR-014）を受けうる。背後の本文へフォーカスが移ると、
+// フォーカストラップ（IMP-251, IMP-252）が破れる。
+//
+// **検索バーへの配慮は要らない。** 手順 0 の closeSearch が既に閉じており、
+// 入力欄にフォーカスがあれば自分で本文へ戻している（IMP-241）。
+function focusViewer(viewer) {
+  if (isAboutOpen() || isEditorsOpen()) return;
+
+  viewer.focus({ preventScroll: true });
 }
 
 // ALERT_ICONS は Alerts のクラス名とシンボル ID の対応（IMP-203, DSP-261）。
@@ -239,6 +267,8 @@ function applyScroll(viewer, scroll, previousTop) {
     case "anchor": {
       const target = scroll.anchor ? document.getElementById(scroll.anchor) : null;
       if (target) {
+        // 開いた直後のアンカー復元も同じ経路を通す（IMP-223）。
+        openAncestorDetails(target);
         target.scrollIntoView();
         return;
       }
