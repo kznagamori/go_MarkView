@@ -131,7 +131,7 @@ jobs:
             exit 0
           fi
 
-          paths="frontend/vendor/ frontend/js/lazy.js scripts/smoke/ testdata/smoke.md"
+          paths="frontend/vendor/ frontend/js/lazy.js frontend/js/viewer.js frontend/css/markdown.css scripts/smoke/ testdata/smoke.md testdata/e2e/plantuml-limits.md"
           if git diff --quiet "$base" "$head" -- $paths; then
             echo "描画に関わる変更なし"
             echo "changed=false" >> "$GITHUB_OUTPUT"

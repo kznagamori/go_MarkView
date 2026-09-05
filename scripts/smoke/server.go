@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -8,7 +9,11 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+	"time"
+
+	"github.com/kznagamori/go_MarkView/internal/localurl"
 )
 
 // 検証用ページ一式。実行ファイルへ埋め込み、作業ディレクトリに依存させない。
@@ -100,6 +105,20 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// **ローカル画像を配る**（AR-040, IMP-160）。renderer は画像の src を
+	// /__local/<絶対パスをエスケープしたもの> へ書き換えるため（IMP-118）、
+	// ここを配らないと検証用文書の画像がすべて 404 になる。
+	//
+	// **本物の assetsrv は使わない。** あちらは MIME の絞り込みや SVG の
+	// 扱い（NFR-031）を持つが、ここで問うのは「読める画像は読め、無い画像は
+	// 読めない」ことだけである。**判定を増やすと、配信側の不具合と
+	// フロントエンドの不具合を切り分けられなくなる。**
+	if strings.HasPrefix(r.URL.EscapedPath(), localurl.Prefix) {
+		s.serveLocal(w, r)
+
+		return
+	}
+
 	// Wails のバインディングは本物を配らず代役で済ませる（stub-app.js の注記）。
 	if strings.HasPrefix(r.URL.Path, "/wailsjs/") {
 		switch r.URL.Path {
@@ -113,6 +132,29 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.files.ServeHTTP(w, r)
+}
+
+// serveLocal は /__local/ のパスを解いてファイルを返す。
+//
+// **無いファイルは 404 のままにする。** 検証用文書はわざと失敗する画像を
+// 含んでおり（testdata/smoke.md）、ここで代わりの画像を返してしまうと
+// IMP-226 の検査が成立しない。
+func (s *server) serveLocal(w http.ResponseWriter, r *http.Request) {
+	path, ok := localurl.Decode(r.URL.EscapedPath())
+	if !ok {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	http.ServeContent(w, r, path, time.Time{}, bytes.NewReader(data))
 }
 
 func (s *server) serveAsset(w http.ResponseWriter, name string) {

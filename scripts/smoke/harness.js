@@ -12,6 +12,20 @@
 // あるだけでモジュールの読み込みごと失敗し、他の検査まで巻き添えになる。
 import * as lazy from "./js/lazy.js";
 
+// **viewer.js は動的に読む。** 静的 import にすると、モジュールの連結に
+// 失敗したときにページごと死に、結果が POST されず「終わらない」形の失敗に
+// なる。ここで捕まえれば、何が読めなかったかを Go 側へ返せる。
+//
+// **本番の markBrokenImages をそのまま呼ぶ**（IMP-226）。写しを持つと、
+// 実装が変わったときに写しだけが古くなり、検査の意味が失われる。
+let markBrokenImages = null;
+let viewerError = "";
+try {
+  ({ markBrokenImages } = await import("./js/viewer.js"));
+} catch (error) {
+  viewerError = error && error.message ? error.message : String(error);
+}
+
 const started = performance.now();
 
 // 描画中に起きた異常を貯める（BR-054 の「JavaScript のエラーが発生しない」）。
@@ -54,6 +68,8 @@ async function main() {
     mermaid: [],
     plantuml: [],
     math: { total: 0, katex: 0, failed: [] },
+    plantumlRejected: [],
+    images: { imgs: [], broken: [], legacy: 0, imported: false, error: viewerError },
     errors,
     console: consoleErrors,
     elapsedMs: 0,
@@ -65,6 +81,17 @@ async function main() {
   const mathSources = [...root.querySelectorAll(".math-inline, .math-block")].map(
     (element) => element.textContent,
   );
+
+  // **画像の配線は描画より前に行う**（IMP-220 の手順 6 は 8 より前）。
+  // 遅らせると、配線までに読み込みが終わった画像を取りこぼす経路が
+  // 通らなくなり、検査が本番と違う順序を見ることになる。
+  if (typeof markBrokenImages === "function") {
+    report.images.imported = true;
+    markBrokenImages(root);
+  } else if (!viewerError) {
+    viewerError = "viewer.js に markBrokenImages がない（IMP-226 が未実装）";
+    report.images.error = viewerError;
+  }
 
   try {
     await lazy.drawMermaid(root);
@@ -82,7 +109,12 @@ async function main() {
 
   collectMermaid(root, report);
   collectPlantUML(root, report);
+  collectRejectedPlantUML(root, report);
   collectMath(root, mathSources, report);
+
+  // 画像は非同期に読み込まれる。**結果を集める前に決着させる。**
+  await settleImages(root);
+  collectImages(root, report);
 
   report.elapsedMs = Math.round(performance.now() - started);
 
@@ -140,6 +172,69 @@ function collectPlantUML(root, report) {
       error: line ? line.textContent : "",
     });
   });
+}
+
+// collectRejectedPlantUML は Go 側が描画対象から外したブロックを集める
+// （MD-084, IMP-119, DSP-272）。
+//
+// **これらは data-plantuml を持たない**ため collectPlantUML には現れない。
+// 理由が出ていることを確かめるには、別に数える必要がある。
+function collectRejectedPlantUML(root, report) {
+  const blocks = [...root.querySelectorAll(".code-block[data-puml-error]")];
+
+  report.plantumlRejected = blocks.map((block, index) => {
+    const line = block.querySelector(".plantuml-error");
+    const source = block.dataset.source || "";
+
+    return {
+      index,
+      head: source.split("\n")[0].trim(),
+      svg: block.querySelectorAll("svg").length,
+      error: line ? line.textContent.trim() : "",
+    };
+  });
+}
+
+// settleImages は本文中の img がすべて決着するのを待つ。
+//
+// **固定時間で待たない**（UT-037 と同じ理由）。読み込みが終わった画像は
+// complete が true になる。**置き換えられた画像は DOM から消えるため、
+// 走査のたびに数え直す。**
+async function settleImages(root, deadlineMs = 5000) {
+  const limit = performance.now() + deadlineMs;
+
+  for (;;) {
+    const pending = [...root.querySelectorAll("img")].filter((img) => !img.complete);
+    if (pending.length === 0 || performance.now() > limit) return;
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+// collectImages は読み込みに失敗した画像の扱いを集める（IMP-226, DSP-123）。
+//
+// **見るのは「枠が出たか」ではなく「代替テキストが本文として読めるか」である。**
+// 枠は CSS がこちらで描くため、どのエンジンでも出る。欠けうるのは中身のほうで
+// あり、4.32.0 より前はそこをブラウザ既定に委ねていた（BUG-008）。
+//
+// **エンジン差そのものはここでは見えない**（Chromium 系でしか走らない。
+// BR-054, NFR-061）。見ているのは「自前で描いているか」だけである。
+function collectImages(root, report) {
+  report.images.imgs = [...root.querySelectorAll("img")].map((img) => ({
+    alt: img.getAttribute("alt") || "",
+    className: img.className,
+    complete: img.complete,
+    naturalWidth: img.naturalWidth,
+  }));
+
+  report.images.broken = [...root.querySelectorAll(".img-broken")].map((el) => ({
+    tagName: el.tagName,
+    className: el.className,
+    text: (el.textContent || "").trim(),
+  }));
+
+  // 4.32.0 より前のフック。**残っていたら修正が入っていない**（BUG-008）。
+  report.images.legacy = root.querySelectorAll("img.is-broken").length;
 }
 
 // KaTeX が「解釈できなかった」ことを示す印（IMP-232 の throwOnError: false）。

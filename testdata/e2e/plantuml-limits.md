@@ -16,7 +16,7 @@
 **この図だけは描けます。** 以下の失敗が、他の図の描画を妨げていないことを確かめるために置いています。
 
 ```plantuml
-@startuml
+@startuml normal
 Alice -> Bob : hello
 Bob --> Alice : world
 @enduml
@@ -28,7 +28,7 @@ Bob --> Alice : world
 Mermaid（FR-023）とは見え方が違いますが、これは処理系の返し方が違うためです。
 
 ```plantuml
-@startuml
+@startuml syntaxerror
 Alice -> : missing target
 this is not plantuml at all
 @enduml
@@ -40,7 +40,7 @@ this is not plantuml at all
 処理系には渡りません。
 
 ```plantuml
-@startuml
+@startuml include
 !include shared/common.puml
 Alice -> Bob : hi
 @enduml
@@ -51,7 +51,7 @@ Alice -> Bob : hi
 外部の URL を指す形です。**ここで待たされたら、それ自体が不具合**です（NFR-032）。
 
 ```plantuml
-@startuml
+@startuml includeurl
 !includeurl http://example.invalid/theme.puml
 Alice -> Bob : hi
 @enduml
@@ -63,7 +63,7 @@ Alice -> Bob : hi
 **C4 モデル図は描けません。**
 
 ```plantuml
-@startuml
+@startuml stdlib
 !include <C4/C4_Container>
 Person(user, "User")
 System(app, "MarkView")
@@ -75,9 +75,21 @@ Rel(user, app, "reads")
 
 処理系が描画を拒みます（MD-083）。**Java 版の PlantUML には無い制限**です。
 
+> [!IMPORTANT]
+> **このブロックの書き方には理由があります**（[BUG-010](../../docs/bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)）。
+>
+> - **関係は 1 行に 1 本だけ書きます。** `A0 --> A1 --> A2` の**連鎖は class 図の文法違反**であり、
+>   その行で解析が止まって**エラー図になります**。大きさの制限には決して到達しません
+> - **クラスは 40 個必要です。** 30 個では 3196 px にしかならず、制限（4096）に届きません
+> - **`skinparam dpi` は使いません。** この移植版では**出力の大きさに影響しません**
+>   （40 個の連結で `dpi 300` の有無とも `72x4276`）
+>
+> **実測値**: `java.lang.RuntimeException: Diagram too large for browser rendering: 72x4276 (max 4096)`
+>
+> **`@startuml toolarge` の名前を消さないでください。** 描画スモークテスト（BR-054）が**ブロックを名前で見分けます**。どのブロックも先頭行が `@startuml` のままでは、機械が区別できません。
+
 ```plantuml
-@startuml
-skinparam dpi 300
+@startuml toolarge
 class A0
 class A1
 class A2
@@ -88,19 +100,75 @@ class A6
 class A7
 class A8
 class A9
-class B0
-class B1
-class B2
-class B3
-class B4
-class B5
-class B6
-class B7
-class B8
-class B9
-A0 --> A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> A7 --> A8 --> A9
-B0 --> B1 --> B2 --> B3 --> B4 --> B5 --> B6 --> B7 --> B8 --> B9
-A9 --> B0
+class A10
+class A11
+class A12
+class A13
+class A14
+class A15
+class A16
+class A17
+class A18
+class A19
+class A20
+class A21
+class A22
+class A23
+class A24
+class A25
+class A26
+class A27
+class A28
+class A29
+class A30
+class A31
+class A32
+class A33
+class A34
+class A35
+class A36
+class A37
+class A38
+class A39
+A0 --> A1
+A1 --> A2
+A2 --> A3
+A3 --> A4
+A4 --> A5
+A5 --> A6
+A6 --> A7
+A7 --> A8
+A8 --> A9
+A9 --> A10
+A10 --> A11
+A11 --> A12
+A12 --> A13
+A13 --> A14
+A14 --> A15
+A15 --> A16
+A16 --> A17
+A17 --> A18
+A18 --> A19
+A19 --> A20
+A20 --> A21
+A21 --> A22
+A22 --> A23
+A23 --> A24
+A24 --> A25
+A25 --> A26
+A26 --> A27
+A27 --> A28
+A28 --> A29
+A29 --> A30
+A30 --> A31
+A31 --> A32
+A32 --> A33
+A33 --> A34
+A34 --> A35
+A35 --> A36
+A36 --> A37
+A37 --> A38
+A38 --> A39
 @enduml
 ```
 
@@ -137,6 +205,7 @@ A9 --> B0
 - 1 の図は**描けている**。以降の失敗が他の図を止めていない
 - 2 は **PlantUML のエラー図が図として出る**（行番号を含む）
 - 3・4・5 は**図にならず**、理由と元のソースが英語で出る
-- 6・7・8 は、**エラー図が出るか、理由と元のソースが出るかのどちらか**である（判定は「SVG が得られたか」だけで行うため。DSP-272）。**どちらであっても空白にならない**
+- **6 は図にならず、理由と元のソースが出る。** **`Syntax Error?` の図が出たら不具合**です——大きさの制限に達する前に、ソースが文法違反で弾かれています（BUG-010）
+- 7・8 は、**エラー図が出るか、理由と元のソースが出るかのどちらか**である（判定は「SVG が得られたか」だけで行うため。DSP-272）。**どちらであっても空白にならない**
 - 描けなかったブロックのコピーボタンから、**元の PlantUML ソース**が取れる
 - **待たされる箇所がない**（外部への接続試行がない。NFR-032）
