@@ -457,6 +457,8 @@ Release の本文には少なくとも以下を含める。
 | Mermaid | `flowchart` / `sequenceDiagram` / `classDiagram` / `stateDiagram` / `erDiagram` / `gantt` / `pie` を含む検証用文書を描画し、各ブロックについて SVG 要素が生成されること |
 | KaTeX | インライン数式・ブロック数式・`math` コードブロックを描画し、数式要素が生成されること |
 | PlantUML | **Graphviz を要する図（`class`）と要さない図（`sequence`）の両方**を描画し、各ブロックについて SVG 要素が生成されること |
+| **画像** | **読み込みに失敗した画像が `<span class="img-broken">` へ置き換わり、代替テキストが本文として読めること**（FR-022, IMP-226, DSP-123）。**正常な画像は置き換えないこと**（過検出の検査）|
+| **PlantUML の制限** | **`plantuml-limits.md` を描画し、4096 px を超えるブロックが図にならず理由が出ること**（MD-083, DSP-272）。取り込み指令のブロックが描画対象から外れていること（MD-084, IMP-119）|
 | 共通 | 描画中に JavaScript のエラーが発生しないこと |
 | 共通 | 実行が 60 秒以内に完了すること（無限ループ・ハングの検出） |
 
@@ -474,14 +476,26 @@ go run ./scripts/smoke -browser "C:\Program Files\Google\Chrome\Application\chro
 
 | 事項 | 決めたこと |
 | --- | --- |
-| 検証用文書 | `testdata/smoke.md`。**`showcase.md` とは共用しない** |
+| 検証用文書 | **2 つを順に描く。** `testdata/smoke.md`（同梱資産と画像）と `testdata/e2e/plantuml-limits.md`（PlantUML の制限。E2E-012）。**`showcase.md` とは共用しない** |
 | 変換 | 本番の `renderer` を呼ぶ。フロントエンドへ渡る HTML と同じものを描かせる |
-| 描画 | 本番の `frontend/js/lazy.js` を呼ぶ。描画コードの写しを持たない |
+| 描画 | 本番の `frontend/js/lazy.js` と `frontend/js/viewer.js` を呼ぶ。**描画コードの写しを持たない。** `viewer.js` は**動的に読む**——連結に失敗したときにページごと死ぬと、結果が返らず「終わらない」形の失敗になる |
 | 配信 | `frontend/` を `127.0.0.1` の空きポートで配る。**`file://` を使わない**（ES モジュールが読み込めないため） |
 | Wails のバインディング | `frontend/wailsjs/` は配らず代役のモジュールを返す。あれはビルドのたびに生成されるもので、リポジトリには無い（AR-050） |
 | ブラウザ | Chromium 系を自動で探す（Windows は Edge を優先。WebView2 と同じエンジンであるため）。`MARKVIEW_SMOKE_BROWSER` または `-browser` で指定できる |
 | 結果の受け渡し | ページが描画を終えた時点で結果を POST で返す。待ち時間を推測しない |
 | 合否の判断 | Go 側で行う。ページは事実だけを返す |
+
+> [!IMPORTANT]
+> **本テストは描画エンジン間の差（NFR-061）を検出できない。** 候補が Chromium 系だけであり、
+> **Linux で実行しても WebKitGTK は一度も使われない。** 見ているのは「同梱資産が描けるか」であって、
+> 「両方の環境で同じに見えるか」ではない。
+>
+> **画像の検査も同じである。** 見ているのは「**代替テキストを自前で描いているか**」であって、「Linux でも同じに見えるか」ではない。**修正が消えたら落ちるが、エンジン差は見えない。**
+>
+> エンジン差の検証は**手動テストが受け持つ**（E2E-231, E2E-236）。
+> [BUG-008](../bugs/2026-09-06-bug-008-broken-image-alt-webkitgtk.md) と
+> [BUG-009](../bugs/2026-09-06-bug-009-task-checkbox-size-webkitgtk.md) はどちらもこの範囲にあり、
+> **本テストが緑であることは Linux の描画について何も述べていなかった。**
 
 検査は以下を満たすことを求める。
 
