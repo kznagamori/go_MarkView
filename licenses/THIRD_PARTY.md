@@ -31,7 +31,7 @@ the bundled assets are the JavaScript, CSS, font and icon files shipped inside t
 | golang.org/x/sys | v0.46.0 | BSD-3-Clause |
 | gopkg.in/yaml.v2 | v2.3.0 | Apache-2.0 |
 | Mermaid | 11.17.2 | MIT |
-| KaTeX | 0.18.5 | MIT |
+| KaTeX | 0.18.6 | MIT |
 | PlantUML | 1.2026.7 | MIT |
 | Viz.js | 3.24.0 | MIT |
 | Graphviz | bundled in PlantUML | EPL-2.0 |
@@ -857,7 +857,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-### KaTeX 0.18.5 (MIT)
+### KaTeX 0.18.6 (MIT)
 
 The MIT License (MIT)
 

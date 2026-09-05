@@ -5,15 +5,15 @@
     "spdx": "MIT",
     "license": "mermaid/LICENSE",
     "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.17.2.tgz",
-    "fetched": "2026-09-03"
+    "fetched": "2026-09-05"
   },
   {
     "name": "KaTeX",
-    "version": "0.18.5",
+    "version": "0.18.6",
     "spdx": "MIT",
     "license": "katex/LICENSE",
-    "source": "https://registry.npmjs.org/katex/-/katex-0.18.5.tgz",
-    "fetched": "2026-09-03"
+    "source": "https://registry.npmjs.org/katex/-/katex-0.18.6.tgz",
+    "fetched": "2026-09-05"
   },
   {
     "name": "PlantUML",
@@ -21,7 +21,7 @@
     "spdx": "MIT",
     "license": "plantuml/LICENSE",
     "source": "https://registry.npmjs.org/@plantuml/core/-/core-1.2026.7.tgz",
-    "fetched": "2026-09-03"
+    "fetched": "2026-09-05"
   },
   {
     "name": "Viz.js",
