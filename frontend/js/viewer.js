@@ -230,23 +230,25 @@ export function decorateHeadings(root) {
   }
 }
 
-// markBrokenImages は読み込みに失敗した画像へ is-broken を付ける
-// （IMP-226, DSP-123, FR-022）。
+// markBrokenImages は読み込みに失敗した画像を、代替テキストを持つ要素へ
+// 置き換える（IMP-226, DSP-123, FR-022）。
 //
 // **CSS だけでは実装できない。** 読み込みに失敗した img を選ぶセレクタが
-// Chromium に存在しないため、この 1 か所だけ JavaScript が要る。
+// どちらのエンジンにも存在しないため、この 1 か所だけ JavaScript が要る。
 //
-// **クラスを付けるだけで DOM を組み立てない。** 代替テキストの描画は
-// ブラウザ既定の alt 表示に任せ、枠と色は CSS が与える（DSP-123）。alt は
-// 文書由来の文字列であり、innerHTML に渡してはならない（IMP-220）。
+// **代替テキストは自前で描く。ブラウザ既定の alt 表示に任せてはならない**
+// （NFR-061）。既定はエンジンごとに違い、**WebKitGTK は alt を描かずに自前の
+// 壊れ画像アイコンを描く**。枠（こちらが CSS で描くもの）は両環境で出ていた
+// のに、中身だけが Linux で空になっていた（BUG-008）。
+//
+// **枠と色は CSS が与える**（DSP-123）。ここで用意するのは要素とテキストだけ
+// であり、体裁を JavaScript で組み立てない。
 //
 // ローカル画像とリモート画像（MD-071）を区別しない。FR-022 はどちらも
 // 同じ扱いと定めている。
 export function markBrokenImages(root) {
   for (const img of root.querySelectorAll("img")) {
-    img.addEventListener("error", () => img.classList.add("is-broken"));
-    // 再読み込みで復帰しうる。成功したら外す。
-    img.addEventListener("load", () => img.classList.remove("is-broken"));
+    img.addEventListener("error", () => replaceBrokenImage(img));
 
     // **配線した時点ですでに失敗しているものを拾う。**
     //
@@ -254,9 +256,31 @@ export function markBrokenImages(root) {
     // error がすでに発火し終えている。これを落とすと、手元では再現せず
     // 実機でだけ枠が出ないという、最も追いにくい形の不具合になる。
     if (img.complete && img.naturalWidth === 0) {
-      img.classList.add("is-broken");
+      replaceBrokenImage(img);
     }
   }
+}
+
+// replaceBrokenImage は img を .img-broken の span へ置き換える（IMP-226）。
+//
+// **load で元へ戻す経路は持たない。** 同じ src に対して error の後で load が
+// 発火することはなく、復帰は文書の再描画（F5。FR-015）で起こる。戻す経路を
+// 残すと、置き換えた span から img を復元する処理が要り、得るものが無い。
+//
+// **title は付けない。** すでに見えている文字と同じものを重ねるだけであり、
+// 読み上げにも寄与しない。
+function replaceBrokenImage(img) {
+  // **二重に置き換えない。** error と「配線時にすでに失敗」の 2 経路から
+  // 呼ばれる。置き換えた後の img は親を失うため、それを目印にする。
+  if (img.parentNode === null) return;
+
+  const span = document.createElement("span");
+  span.className = "img-broken";
+  // **textContent で入れる。** alt は文書由来の文字列であり、
+  // innerHTML に渡してはならない（IMP-220）。
+  span.textContent = img.alt;
+
+  img.replaceWith(span);
 }
 
 // applyScroll は ScrollDTO の mode に従って位置を決める（IMP-302）。

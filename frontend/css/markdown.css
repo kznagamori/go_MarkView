@@ -407,16 +407,19 @@
 }
 
 /* 読み込みに失敗した画像（DSP-123, IMP-226）。
-   クラスは JavaScript が付ける。失敗した img を選ぶセレクタが Chromium に
-   存在しないため、CSS だけでは書けない。
-   代替テキストの描画はブラウザ既定の alt 表示に任せる。 */
-.markdown-body img.is-broken {
+
+   **img ではなく span である。** JavaScript が <img> を置き換えて作る。
+   失敗した img を選ぶセレクタがどちらのエンジンにも存在せず、さらに
+   **代替テキストの描画をブラウザ既定に委ねると WebKitGTK で中身が空になる**
+   （NFR-061, BUG-008）。枠はこちらが描き、文字も自前で入れる。
+
+   背景は指定しない。span は上の .markdown-body img の地を継がないため、
+   既定の transparent になる（DSP-123 の「成功時の地は失敗時には意味がない」）。 */
+.markdown-body .img-broken {
   display: inline-block;
   padding: 8px 12px;
   border: 1px dashed var(--color-border-default);
   color: var(--color-fg-muted);
-  /* 成功時の地は失敗時には意味がない */
-  background-color: transparent;
 }
 
 /* --- 折りたたみ（MD-026） --- */

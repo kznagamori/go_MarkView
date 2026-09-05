@@ -282,7 +282,14 @@ async function drawOnePlantUML(pre) {
     // 処理系であり、こちらは対象要素を用意して id を渡すだけにする。
     plantuml.render(block.dataset.source.split("\n"), id, { dark: state.theme === "dark" });
   } catch {
-    // 処理系が走ったうえで拒んだ。4096 px 超えはここへ来る（MD-083, IMP-233）。
+    // 処理系が例外を投げた場合の受け皿。
+    //
+    // **4096 px 超えはここへ来ない**（IMP-233, BUG-010）。制限に達したとき
+    // render() は正常に戻り、**出力先の要素へ例外のテキストが書き込まれる**
+    // （Diagram too large for browser rendering: <幅>x<高さ> (max 4096)）。
+    // それは下の waitForPlantUML が "other" と判定する経路で拾う。
+    // **表示はどちらの経路でも pumlUnsupported であり、利用者から見た違いは無い。**
+    //
     // **例外のテキストを本文へ出さない。** 文言は strings.js が持つ（IMP-290）。
     restorePlantUML(block, holder, S.pumlUnsupported);
     return;

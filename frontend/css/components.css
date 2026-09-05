@@ -278,6 +278,21 @@
   box-shadow: inset 2px 0 0 var(--accent-fg);
 }
 
+/* キーボードで移動したときのフォーカスリング（DSP-016, DSP-330, IMP-248）。
+
+   **li ではなく行に出す。** li は配下の <ul> を含むため、展開中にリングを
+   出すと木全体が囲まれる。base.css の :focus-visible が全要素にリングを
+   引くので、li の側は打ち消したうえで同じ体裁を行へ移す。
+   **消しているのではなく移しているだけであり、DSP-016 に反しない。** */
+.tree-item:focus-visible {
+  outline: none;
+}
+
+.tree-item:focus-visible > .tree-row {
+  outline: 2px solid var(--accent-fg);
+  outline-offset: -1px;
+}
+
 /* 切り詰め表示。クリック不可（DSP-112） */
 .tree-more > .tree-row {
   color: var(--fg-subtle);
