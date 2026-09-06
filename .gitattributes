@@ -1,0 +1,32 @@
+# 改行コードは LF に統一する。
+#
+# Windows で作業していると、ツールによっては CRLF を書き込むことがある
+# （Python の pathlib.Path.write_text は既定で LF を CRLF に変換する）。
+# そのままコミットすると、数行だけ直したファイルが全行書き換え扱いになり、
+# レビューで差分が読めなくなる。ここで正規化して防ぐ。
+* text=auto eol=lf
+
+# バイナリはそのまま扱う
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.xlsx  binary
+
+# 同梱資産は**取得したバイト列のまま**保つ（BR-042）。
+#
+# text=auto の正規化が走ると、**それ自体が「改変」になる**。とくに
+# frontend/vendor/plantuml/viz-global.js は Graphviz（EPL-2.0）を
+# オブジェクトコードで含んでおり、**改変しないことがコピーレフトを
+# 伝播させない条件になっている**（NFR-051）。ライセンス全文も同じ理由で
+# 1 バイトも変えない。
+#
+# 実際、この行が無いと viz-global.js と plantuml/LICENSE の 2 件が
+# CRLF -> LF へ書き換わって格納される（2026-09-03 に確認）。
+frontend/vendor/** -text
+
+# ただし vendor.json はこちらが書き換える記録であり、正規化の対象に戻す。
+frontend/vendor/vendor.json text eol=lf
+
+# E2E の検証用データ（E2E-012）。**不正な UTF-8 をそのまま保つ。**
+# text=auto は内容から種別を推測するため、改行の正規化で中身が変わりうる。
+testdata/e2e/broken/invalid-utf8.md -text

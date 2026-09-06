@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "MarkView",
+  "outputfilename": "MarkView",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "author": {
+    "name": "kznagamori"
+  },
+  "info": {
+    "companyName": "kznagamori",
+    "productName": "MarkView",
+    "comments": "A lightweight Markdown viewer"
+  },
+  "preBuildHooks": {
+    "*/*": "go run github.com/kznagamori/go_MarkView/scripts/copyicons"
+  }
+}

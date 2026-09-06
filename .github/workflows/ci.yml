@@ -1,0 +1,226 @@
+# 継続的検証（BR-052）。
+#
+# main と develop 系への push / PR を契機に、配布前に壊れていないことを
+# 機械的に確かめる。合否にするものと記録に留めるものを BR-052 の表どおりに
+# 分ける。**カバレッジ率とバイナリサイズで CI を失敗させない**
+# （UT-060, BR-060）。
+#
+# タグは対象にしない。v で始まるタグはリリース CI が受け持つ（BR-050）。
+#
+# アクションはメジャータグで参照する。修正が自動で流れてくる一方、
+# 破壊的変更は取り込まれない。**Node.js 20 を対象とする版（checkout@v4、
+# setup-go@v5）は使わない。** ランナーが Node.js 24 で強制実行し、
+# 実行のたびに警告が出る（2026-09-02 の初回実行で確認）。
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "develop/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+# 同じブランチで走っている古いジョブは打ち切る。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Linux 側。検査の大半をここで行う。
+  #
+  # ビルドに cgo と WebKitGTK が要るため（AR-003）、依存を入れる手間が
+  # かかる。gofmt・vet・テスト・鮮度検査を同じジョブへまとめて、
+  # 同じ準備を 2 度しないようにする。
+  verify:
+    name: Verify (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 描画スモークテストの実行要否を git diff で決めるため、履歴を全部取る
+      # （BR-052）。浅いクローンだと比較対象のコミットが手元に無い。
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # **4.1 系を入れる。** 4.0 系にリンクされると Ubuntu 24.04 で
+      # 起動しない（AR-003, BR-010）。
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Download modules
+        run: go mod download
+
+      # --- 合否にする検査（BR-052） ---
+
+      - name: gofmt
+        run: |
+          diff=$(gofmt -l .)
+          if [ -n "$diff" ]; then
+            echo "整形されていないファイルがある:"
+            echo "$diff"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet -tags webkit2_41 ./...
+
+      - name: Unit tests
+        run: go test -race -tags webkit2_41 ./...
+
+      # 生成物が古いままコミットされていないことを見る（BR-041）。
+      #
+      # **生成してから git diff で比べる。** 生成スクリプトを直したのに
+      # 生成物を更新し忘れた、という食い違いはこれでしか捕まらない。
+      - name: Generated files are up to date
+        run: |
+          go run ./scripts/genlicenses
+          go run ./scripts/genchroma
+          if ! git diff --exit-code --stat licenses/THIRD_PARTY.md frontend/css/chroma.css; then
+            echo "生成物が古い。go run ./scripts/genlicenses と ./scripts/genchroma を実行してコミットする"
+            exit 1
+          fi
+
+      # 同梱資産が決め打ちする DOM の id と、index.html の id が交差しないこと
+      # （BR-042, BR-043, IMP-202）。
+      #
+      # **毎回走らせる。** 衝突は資産の更新でも index.html の編集でも生まれる。
+      # 描画スモークテスト（BR-054）は index.html を配らないため、この検査の
+      # 代わりにならない。
+      - name: DOM id collision
+        run: go run ./scripts/domids
+
+      - name: Build (linux/amd64)
+        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-s -w" -o MarkView
+
+      # 描画スモークテスト（BR-054, E2E-109）。
+      #
+      # **描画に関わるパスが変わったときだけ実行する**（BR-052）。同梱資産を
+      # 更新しても Go 側のテストは何も見ないため、この検査だけが「更新した
+      # Mermaid / KaTeX を今のコードで描けるか」に答える。逆に Go だけを直した
+      # PR では結果が変わらず、毎回ブラウザを起動するのは待ち時間の無駄になる。
+      - name: Detect render-related changes
+        id: render
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+
+          # 新しいブランチの初回 push では before が全ゼロで、force push の後は
+          # 比較対象が消えていることがある。**判断が付かないときは実行する側へ倒す。**
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "比較対象 ${base} が無いため実行する"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          paths="frontend/vendor/ frontend/js/lazy.js frontend/js/viewer.js frontend/css/markdown.css scripts/smoke/ testdata/smoke.md testdata/e2e/plantuml-limits.md"
+          if git diff --quiet "$base" "$head" -- $paths; then
+            echo "描画に関わる変更なし"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only "$base" "$head" -- $paths
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ブラウザは ubuntu-latest に同梱されている Google Chrome を使う。
+      # **この依存は CI の中に閉じている**（BR-054）。配布物にも BR-001 にも及ばない。
+      - name: Render smoke test
+        if: steps.render.outputs.changed == 'true'
+        run: go run ./scripts/smoke
+
+
+      # --- 記録に留める項目（BR-052, BR-060, UT-060） ---
+
+      # **カバレッジ率を合否にしない**（UT-060）。網羅性は要求 ID ごとの
+      # 対応で追跡しており、率は判断材料に過ぎない。
+      - name: Coverage (record only)
+        run: |
+          go test -cover -tags webkit2_41 ./internal/... | tee coverage.txt
+          {
+            echo "## Coverage"
+            echo
+            echo '```'
+            cat coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # **閾値を超えても失敗させない**（BR-060）。資産の更新でリリースが
+      # 機械的に止まると、利用者へ新しい版を届けられなくなる。
+      - name: Binary size (record only)
+        run: |
+          size=$(stat -c%s build/bin/MarkView)
+          limit=$((25 * 1024 * 1024))
+          {
+            echo "## Binary size (linux/amd64)"
+            echo
+            echo "| Item | Bytes | MiB | Limit |"
+            echo "| --- | ---: | ---: | ---: |"
+            printf '| MarkView | %s | %s | 25 MiB |\n' "$size" "$(awk -v s="$size" 'BEGIN{printf "%.1f", s/1048576}')"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$size" -gt "$limit" ]; then
+            echo "::warning::実行ファイルが 25 MiB を超えている（${size} バイト）。NFR-021 を再評価する"
+          fi
+
+  # Windows 側。ビルドが通ることだけを見る（BR-052）。
+  #
+  # 検査を重ねないのは、gofmt・vet・テストの結果が OS で変わらないため。
+  # 変わりうるのは「ビルドが通るか」であり、そこは _windows.go の分岐
+  # （IMP-031）があるため実際に確かめる価値がある。
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Build (windows/amd64)
+        run: wails build -platform windows/amd64 -ldflags "-s -w" -o MarkView.exe
+
+      # OS 依存の分岐（console_windows.go など）が壊れていないかを見る。
+      #
+      # **-race を付けない。** 競合検出は cgo（gcc）を要求し、Windows
+      # ランナーの構成に依存する。競合の検出は Linux 側で行っており、
+      # 対象コードは OS で変わらない。
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Binary size (record only)
+        shell: bash
+        run: |
+          size=$(stat -c%s build/bin/MarkView.exe)
+          {
+            echo "## Binary size (windows/amd64)"
+            echo
+            echo "| Item | Bytes | MiB | Limit |"
+            echo "| --- | ---: | ---: | ---: |"
+            printf '| MarkView.exe | %s | %s | 25 MiB |\n' "$size" "$(awk -v s="$size" 'BEGIN{printf "%.1f", s/1048576}')"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$size" -gt $((25 * 1024 * 1024)) ]; then
+            echo "::warning::実行ファイルが 25 MiB を超えている（${size} バイト）。NFR-021 を再評価する"
+          fi

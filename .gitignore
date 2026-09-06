@@ -30,8 +30,31 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-# AI �G�[�W�F���g�p�̈ꎞ��Ɨ̈�
-# AI �G�[�W�F���g�p�̈ꎞ��Ɨ̈�
+# AI エージェント用の一時作業領域
 
 # Scratch area for AI agents - not tracked
 workspace/
+
+# Excel の一時ファイル
+~$*.xlsx
+~$*.xls
+
+# Python (docs/tests のスクリプト用)
+__pycache__/
+*.pyc
+
+# Wails がビルドのたびに生成するバインディング（AR-050: 手で書くものではない）
+frontend/wailsjs/
+
+# Wails のビルド生成物。アイコンは assets/ を正としてビルドのたびに複製する（BR-013）
+build/bin/
+build/appicon.png
+build/windows/icon.ico
+
+# 配布アーカイブ（BR-020）。scripts/pack の既定の出力先であり、リリース CI が
+# 成果物を置く場所でもある。手元で E2E を回すと数 MB の zip が残る
+dist/
+
+# E2E の検証用データのうち、検証のたびに生成するもの（E2E-012）
+# 巨大ファイルはリポジトリに含めない。go run ./scripts/gentestdata で作る
+testdata/e2e/generated/

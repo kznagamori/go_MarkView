@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  harness.html — 描画スモークテストのページ（BR-054, E2E-109）。
+  scripts/smoke がこの雛形へ変換済みの本文を差し込んで配信する。
+
+  **本番の index.html を使わない。** あちらは #app のグリッド（base.css）と
+  ツールバー・ペイン・ステータスを前提としており、Go 側の初期状態が
+  返らないと本文の領域が立ち上がらない。スモークテストが確かめたいのは
+  「同梱した資産が描けるか」であり、画面の組み立てではない。
+
+  一方で幅は与える。Mermaid は描画時に親要素の幅を測るため、幅ゼロの中で
+  描かせると寸法の検査（BR-054）が意味を失う。
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MarkView render smoke test</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/markdown.css" />
+    <style>
+      body {
+        margin: 0;
+      }
+
+      #markdown {
+        width: 900px;
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="markdown" class="markdown-body">{{.Body}}</div>
+    <script type="module" src="_smoke.js"></script>
+  </body>
+</html>

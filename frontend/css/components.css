@@ -1,0 +1,1072 @@
+/*
+  components.css — ツールバー・ペイン・ステータス・検索バー・状態画面・
+  情報ダイアログ・ドロップオーバーレイの外観（DSP-100〜DSP-190）。
+
+  ツールバー・ペイン・ステータス・検索バー（DSP-100〜161）は T5-4 で、
+  コードブロック・Alerts・Mermaid・数式（DSP-250〜271）は T5-5 で揃えた。
+
+  状態画面・情報ダイアログ・ドロップオーバーレイ（DSP-170〜190）は T5-6 で
+  揃えた。z-index は tokens.css の 8 段階だけを使う（DSP-015）。
+*/
+
+/* --- ツールバー（DSP-100, DSP-101） --- */
+
+/* 背景・下境界・高さ・ボタンの寸法は base.css が配置とともに与える
+   （DSP-100, DSP-032）。ここは**状態の表現**（DSP-101）を持つ。 */
+
+.tb-btn {
+  /* 背景色だけを 80ms でフェードさせる（DSP-050）。
+     prefers-reduced-motion では base.css が無効にする（DSP-051）。 */
+  transition: background-color var(--motion-hover) ease;
+}
+
+.tb-btn:hover {
+  color: var(--fg-default);
+  background: var(--neutral-muted);
+}
+
+.tb-btn:active {
+  color: var(--fg-default);
+  background: var(--neutral-muted-strong);
+}
+
+/* フォーカスリング自体は base.css の :focus-visible が引く（DSP-016） */
+.tb-btn:focus-visible {
+  color: var(--fg-default);
+}
+
+/* トグル ON。**:hover より後に置く。** 同じ詳細度のため、先に置くと
+   ホバーした瞬間に ON の色が消える（DSP-101, UI-021）。 */
+.tb-btn[aria-pressed="true"] {
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+.tb-btn:disabled {
+  color: var(--fg-subtle);
+  background: transparent;
+  cursor: default;
+}
+
+/* --- ツールチップ（DSP-102） ---
+   位置と遅延は tooltip.js が与える（IMP-247）。 */
+
+.tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+
+  padding: var(--space-1) var(--space-2);
+
+  /* 背景と文字を反転させる（DSP-102） */
+  color: var(--canvas-default);
+  background: var(--fg-default);
+  border-radius: var(--radius-control);
+
+  font-size: 12px;
+  line-height: 1.4;
+  /* 英日併記で横に長くなるが**折り返さない**（DSP-102, UI-024） */
+  white-space: nowrap;
+
+  /* ポインタを奪わない。奪うと pointerout が飛んで点滅する */
+  pointer-events: none;
+}
+
+/* --- ステータス領域（DSP-150） --- */
+
+.status-path {
+  display: flex;
+  min-width: 0;
+}
+
+/* **先頭を省略する**（DSP-150）。末尾のファイル名が識別に最も重要。
+
+   direction: rtl にすると、行が溢れる側が左になり、省略記号も左へ付く。
+   パスは英数字と区切り記号だけで構成され、区切りは前後を英数字に挟まれる
+   ため、文字の並び自体は左から右のまま保たれる。 */
+.status-path-text {
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ツリー外の印。パスより淡く出す（FR-052, DSP-150） */
+.status-outside {
+  flex: none;
+  color: var(--fg-subtle);
+}
+
+.status-meta {
+  display: flex;
+  gap: var(--space-3); /* 項目間 12px（DSP-150） */
+  margin-left: auto;
+  color: var(--fg-subtle);
+}
+
+/* 一時メッセージはステータス領域の全幅を占める（DSP-151, UI-060） */
+.status-message {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--status-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  z-index: var(--z-status-message);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--canvas-subtle);
+}
+
+.status-message[data-level="error"] {
+  color: var(--danger-fg);
+  background: var(--danger-subtle);
+}
+
+.status-message[data-level="warning"] {
+  color: var(--attention-fg);
+  background: var(--attention-subtle);
+}
+
+.status-message[data-level="info"] {
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+}
+
+/* --- 状態画面（DSP-180, DSP-181） --- */
+
+.state-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  text-align: center;
+  z-index: var(--z-state-screen);
+  /* オーバーレイにしない。本文と同じ地にする（DSP-180） */
+  background: var(--canvas-default);
+}
+
+/* 最大幅 420px（DSP-180）。**中身に効かせる。**
+   状態画面そのものは本文ペイン全体を覆うため、ここを狭めると
+   本文が透けて見えてしまう。 */
+.state-screen > * {
+  max-width: 420px;
+}
+
+.state-icon {
+  width: 32px;
+  height: 32px;
+  fill: currentColor;
+  color: var(--fg-subtle);
+}
+
+.state-screen[data-tone="attention"] .state-icon {
+  color: var(--attention-fg);
+}
+
+.state-screen[data-tone="danger"] .state-icon {
+  color: var(--danger-fg);
+}
+
+.state-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--fg-default);
+}
+
+.state-hint {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.state-detail {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* DSP-182 */
+.state-button {
+  height: 32px;
+  padding: 0 var(--space-4);
+  margin-top: var(--space-2);
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font: inherit;
+  cursor: pointer;
+  transition: filter var(--motion-hover) ease;
+}
+
+/* ホバーで明度を 8 % 下げる（DSP-182）。
+   **色を別に持たない。** --accent-emphasis は Light / Dark で違う値であり、
+   暗くした色をもう 1 組トークンに増やすと、片方だけずれる余地が生まれる。 */
+.state-button:hover {
+  filter: brightness(0.92);
+}
+
+/* --- ペイン見出し（DSP-111） --- */
+
+.pane-title {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-pane-title);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.pane-subtitle {
+  padding: 0 var(--space-3) var(--space-1);
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* --- ファイルツリー（DSP-112, DSP-330） --- */
+
+.tree,
+.tree-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* アイコンと名前の間隔（DSP-112） */
+  height: 24px; /* 行の高さ（DSP-112） */
+  /* 1 レベルあたり 12px のインデント（DSP-112） */
+  padding-left: calc(var(--space-2) + var(--depth, 0) * var(--space-3));
+  padding-right: var(--space-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: var(--neutral-muted);
+}
+
+.tree-arrow {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: currentColor;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+
+.tree-name {
+  overflow: visible; /* ファイル名は省略しない（UI-030） */
+}
+
+/* 選択中（表示中のファイル）（DSP-330） */
+.tree-item.selected > .tree-row {
+  background: var(--accent-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-fg);
+}
+
+/* キーボードで移動したときのフォーカスリング（DSP-016, DSP-330, IMP-248）。
+
+   **li ではなく行に出す。** li は配下の <ul> を含むため、展開中にリングを
+   出すと木全体が囲まれる。base.css の :focus-visible が全要素にリングを
+   引くので、li の側は打ち消したうえで同じ体裁を行へ移す。
+   **消しているのではなく移しているだけであり、DSP-016 に反しない。** */
+.tree-item:focus-visible {
+  outline: none;
+}
+
+.tree-item:focus-visible > .tree-row {
+  outline: 2px solid var(--accent-fg);
+  outline-offset: -1px;
+}
+
+/* 切り詰め表示。クリック不可（DSP-112） */
+.tree-more > .tree-row {
+  color: var(--fg-subtle);
+  cursor: default;
+}
+
+.tree-more > .tree-row:hover {
+  background: transparent;
+}
+
+/* --- アウトライン（DSP-113, DSP-340） --- */
+
+.outline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  height: 24px; /* 行の高さ（DSP-113） */
+  /* 1 レベルあたり 12px のインデント（UI-040, DSP-113） */
+  padding-left: calc(var(--space-2) + var(--depth, 0) * var(--space-3));
+  padding-right: var(--space-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+/* h1〜h3 は 13px、h4 以降は 12px（DSP-113） */
+.outline-item[data-level="4"],
+.outline-item[data-level="5"],
+.outline-item[data-level="6"] {
+  font-size: 12px;
+}
+
+.outline-item:hover {
+  color: var(--fg-default);
+  background: var(--neutral-muted);
+}
+
+/* 現在位置（FR-042, DSP-340）。同時に 1 つのみ */
+.outline-item.current {
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-fg);
+}
+
+/* 横スクロールさせず省略する。全文はツールチップ（DSP-113） */
+.outline-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-empty {
+  padding: var(--space-2);
+  font-size: 12px;
+  text-align: center;
+  color: var(--fg-subtle);
+}
+
+/* --- コードブロック（DSP-250） --- */
+
+/* 寸法は本文 1 文字ぶんを基準にした --md-N を使う（markdown.css が
+   .markdown-body に置いている）。px で書くと、倍率を上げたときに文字だけが
+   大きくなって余白が置いていかれる（DSP-021）。 */
+
+.code-block {
+  position: relative;
+  margin: var(--md-16) 0;
+
+  background: var(--canvas-subtle);
+  border-radius: var(--radius-block);
+
+  /* コード用スタック・85 %・行高 1.45（DSP-250, DSP-020） */
+  font-family: var(--font-mono);
+  font-size: 85%;
+  line-height: var(--line-height-code);
+}
+
+/* markdown.css の pre への指定（下マージン 16px）を打ち消すため、
+   .markdown-body を付けて詳細度を上げる。 */
+.markdown-body .code-block > pre {
+  margin: 0;
+  padding: var(--md-16);
+  /* 溢れたら**折り返さずに**横スクロールさせる（MD-032, DSP-250） */
+  overflow-x: auto;
+}
+
+/* --- コピーボタン（DSP-251, DSP-252） --- */
+
+.copy-btn {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--canvas-default);
+  color: var(--fg-muted);
+  /* 既定でも見える状態に置く。display: none にしない（FR-060） */
+  opacity: 0.5;
+  z-index: var(--z-copy);
+  cursor: pointer;
+}
+
+.copy-btn:hover,
+.copy-btn:focus-visible {
+  opacity: 1;
+  background: var(--neutral-muted);
+}
+
+/* 成功直後の 1.5 秒。アイコンの差し替えは copy.js が行う（DSP-252） */
+.copy-btn.copied {
+  opacity: 1;
+  color: var(--success-fg);
+}
+
+/* --- GitHub Alerts（DSP-260, DSP-261） --- */
+
+/* 種別ごとの色は --alert-color に入れ、枠とラベルの両方から参照する
+   （DSP-261）。**この宣言は #app の内側で行うため**、var() はテーマの
+   切り替わった値に解決される（:root に置くと Light に固定される）。 */
+.markdown-alert-note {
+  --alert-color: var(--accent-fg);
+}
+
+.markdown-alert-tip {
+  --alert-color: var(--success-fg);
+}
+
+.markdown-alert-important {
+  --alert-color: var(--done-fg);
+}
+
+.markdown-alert-warning {
+  --alert-color: var(--attention-fg);
+}
+
+.markdown-alert-caution {
+  --alert-color: var(--danger-fg);
+}
+
+.markdown-alert {
+  margin: var(--md-16) 0;
+  padding: var(--md-8) var(--md-16);
+
+  /* 左だけ角丸にしない。色の帯を途切れさせないため（DSP-260） */
+  border-left: var(--md-4) solid var(--alert-color);
+  border-radius: 0 var(--radius-block) var(--radius-block) 0;
+
+  /* 背景は敷かない（DSP-260）。本文と地続きに見せる */
+}
+
+/* 内側の段落が上下に余白を作らないようにする（DSP-260）。
+
+   **.markdown-body を付けて詳細度を上げる。** 中身は <p> であり、
+   markdown.css の `.markdown-body p`（0,1,1）はクラス 1 つ（0,1,0）より
+   強い。付けないと下マージン 16px が残ったままになる。 */
+.markdown-body .markdown-alert > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: var(--md-8); /* アイコンとラベルの間隔（DSP-260） */
+  margin-top: 0;
+  margin-bottom: var(--md-8);
+
+  color: var(--alert-color);
+  /* GitHub は本文と同じ大きさで出す。14px にすると弱く見える（MD-002） */
+  font-size: var(--md-16);
+  font-weight: 600;
+}
+
+/* --- Mermaid（DSP-270） --- */
+
+/* 描画が済んだブロックは図として見せる。コードブロックの地を外す。
+   コピーボタンは残す（FR-060, IMP-115）。 */
+.code-block:has(> .mermaid-rendered) {
+  background: var(--canvas-default);
+  border-radius: 0;
+}
+
+.mermaid-rendered {
+  text-align: center; /* 本文幅の中央（DSP-270） */
+}
+
+.mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 描画に失敗したときの理由。ソースはコードブロックのまま残す（FR-023, DSP-270） */
+.markdown-body .mermaid-error {
+  margin: 0;
+  padding: var(--md-8) var(--md-16) 0;
+  font-size: var(--md-12);
+  color: var(--danger-fg);
+}
+
+/* --- PlantUML（DSP-272） --- */
+
+/* DSP-270（Mermaid）と同じ枠に収める。値の違うところだけを書く。 */
+.code-block:has(> .plantuml-rendered) {
+  background: var(--canvas-default);
+  border-radius: 0;
+}
+
+.plantuml-rendered {
+  text-align: center; /* 本文幅の中央（DSP-272） */
+}
+
+.plantuml-rendered svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 描画しなかった理由。ソースはコードブロックのまま残す（FR-110, DSP-272）。
+   **構文エラーはここへ来ない。** PlantUML 自身がエラー図を返すため、
+   図として表示する（FR-024）。 */
+.markdown-body .plantuml-error {
+  margin: 0;
+  padding: var(--md-8) var(--md-16) 0;
+  font-size: var(--md-12);
+  color: var(--danger-fg);
+}
+
+/* --- 数式（DSP-271） --- */
+
+/* KaTeX の既定色を上書きし、テーマに追従させる（DSP-271） */
+.math-inline,
+.math-block {
+  color: var(--fg-default);
+}
+
+.math-block {
+  margin: var(--md-16) 0;
+  text-align: center;
+  /* 横に溢れる場合はその要素の中で横スクロールさせる（DSP-271） */
+  overflow-x: auto;
+}
+
+/* 描画に失敗した数式。元のソースがそのまま残る（MD-060, DSP-271） */
+.katex-error {
+  font-family: var(--font-mono);
+  color: var(--danger-fg);
+}
+
+/* --- リサイザ（DSP-114） --- */
+
+.resizer:hover::after,
+#app.dragging .resizer::after {
+  background: var(--accent-fg);
+}
+
+/* ドラッグ中はテキスト選択を抑止する（DSP-114） */
+#app.dragging {
+  user-select: none;
+}
+
+/* --- 検索バー（DSP-160） --- */
+
+/* 本文ペインの右上に重ねる。**本文を押し下げない**（UI-080） */
+/* 検索バーの受け皿（IMP-202, DSP-160）。
+
+   **高さ 0 の sticky にする。** 本文ペインはスクロールする器であり、その中の
+   絶対配置は内容と一緒に流れて画面外へ出る。sticky なら留まり、高さ 0 なので
+   本文を押し下げない（UI-080）。
+
+   **本文ペインの外へ出さない。** 外の器に置くと right の基準がスクロールバーの
+   外側へ移り、その幅だけ内側が詰まる。**その幅を CSS だけで得る手段は無い。**
+   この受け皿は本文ペインの内容領域に置かれるため、下の right: 16px が
+   そのまま DSP-160 の「スクロールバーの内側」の意味になる。
+
+   **z-index を与える。** position: sticky は z-index の指定に関わらず
+   重ね合わせ文脈を作る。与えないとこの受け皿が z-index: auto の層に落ち、
+   中の .searchbar の z-index: 20 は受け皿の中でしか効かない。本文のコード
+   ブロック（position: relative）やコピーボタン（z-index: 10）が検索バーの
+   手前に来て、**クリックが届かなくなる**（DSP-015, IMP-202）。 */
+.searchbar-anchor {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: var(--z-search);
+}
+
+.searchbar {
+  position: absolute;
+  /* 上 16px / 右 16px。スクロールバーの内側（DSP-160） */
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: var(--z-search);
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  height: 32px;
+  padding: 0 var(--space-2);
+
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-overlay);
+}
+
+.search-icon {
+  color: var(--fg-muted);
+  flex: none;
+}
+
+.search-input {
+  width: 200px;
+  height: 22px;
+  padding: 0 6px;
+
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg-default);
+
+  background: var(--canvas-inset);
+  border: none;
+  border-radius: var(--radius-control);
+}
+
+.search-input::placeholder {
+  color: var(--fg-subtle);
+}
+
+/* 件数表示。`3 / 12` 形式（DSP-160） */
+.search-count {
+  min-width: 48px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ヒットなしは危険色で示す（DSP-160） */
+.search-count[data-empty="true"] {
+  color: var(--danger-fg);
+}
+
+.search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+
+  width: 24px;
+  height: 24px;
+  padding: 0;
+
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.search-btn:hover {
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+}
+
+/* --- ヒットの強調（DSP-161） --- */
+
+/* **.markdown-body を付けて詳細度を上げる。** markdown.css が
+   `.markdown-body mark`（0,1,1）で本文中のハイライトを塗っており、
+   同じ詳細度だと読み込み順で負けて検索の色が出ない（MD-072, DSP-121）。 */
+.markdown-body mark.search-hit {
+  color: var(--fg-default);
+  background: var(--search-hit);
+  border-radius: 2px;
+}
+
+/* 現在位置には枠も付け、**色覚に依存せず判別できるようにする**（DSP-161） */
+.markdown-body mark.search-hit-current {
+  background: var(--search-hit-current);
+  box-shadow: 0 0 0 1px var(--attention-fg);
+}
+
+/* --- 情報ダイアログ（DSP-170, DSP-171） --- */
+
+/* 暗幕。**ウィンドウ全体を覆い、背後の操作を受け付けない**（UI-100） */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: var(--overlay-backdrop);
+
+  /* 表示は 100ms のフェードイン（DSP-050）。
+     prefers-reduced-motion では base.css が無効にする（DSP-051） */
+  animation: dialog-in var(--motion-dialog) ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.dialog {
+  position: relative;
+
+  /* 720 × 560px。ウィンドウが小さい場合は内側に収まるよう縮小（DSP-170） */
+  width: 720px;
+  height: 560px;
+  max-width: calc(100% - var(--space-8));
+  max-height: calc(100% - var(--space-8));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  padding: var(--space-6);
+
+  background: var(--canvas-overlay);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-overlay);
+}
+
+.dialog-x {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 28px;
+  height: 28px;
+  padding: 0;
+
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.dialog-x:hover {
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+}
+
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4); /* アイコンとタイトルの間隔（DSP-171） */
+}
+
+.about-icon {
+  width: 48px;
+  height: 48px;
+  flex: none;
+}
+
+.about-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.about-version {
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* ラベル列 96px 固定、行高 24px（DSP-171） */
+.about-table {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 0 var(--space-2);
+  margin: 0;
+  font-size: 13px;
+}
+
+.about-table dt {
+  color: var(--fg-muted);
+  line-height: 24px;
+}
+
+.about-table dd {
+  margin: 0;
+  color: var(--fg-default);
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-link {
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+
+.about-link:hover {
+  text-decoration: underline;
+}
+
+/* Bundled 行。項目を横に並べる（UI-100） */
+.about-vendors {
+  display: inline-flex;
+  gap: var(--space-3);
+}
+
+/* ライセンス欄だけがダイアログの残りを受け持つ。ここが縮むことで、
+   小さいウィンドウでも全体が内側に収まる（DSP-170） */
+.about-licenses-box {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* 見出しの上マージンは 16px（DSP-171）。.dialog の gap が既に 12px を
+     作っているため、ここでは残りの 4px だけを足す。 */
+  margin-top: var(--space-1);
+}
+
+.about-licenses-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 等幅 12px、高さ 240px、選択可（UI-101, DSP-171）。
+   **伸びはせず、収まらないときだけ縮む。** */
+.about-licenses {
+  flex: 0 1 240px;
+  min-height: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-block);
+
+  overflow: auto;
+  white-space: pre;
+  user-select: text;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* DSP-182 の副次スタイル（DSP-171） */
+.dialog-button {
+  height: 32px;
+  padding: 0 var(--space-4);
+
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dialog-button:hover {
+  background: var(--neutral-muted);
+}
+
+/* DSP-182 の主スタイル。**1 つのダイアログにつき高々 1 つ**とする。
+   値は状態画面の .state-button と同じ表であり、変えるときは両方を見る。 */
+.dialog-button-primary {
+  height: 32px;
+  padding: 0 var(--space-4);
+
+  color: var(--fg-on-emphasis);
+  background: var(--accent-emphasis);
+  border: none;
+  border-radius: var(--radius-control);
+  font: inherit;
+  cursor: pointer;
+  transition: filter var(--motion-hover) ease;
+}
+
+.dialog-button-primary:hover {
+  filter: brightness(0.92);
+}
+
+/* 選択が無い間の Open（DSP-172）。DSP-101 の「無効」に倣い、文字は
+   --fg-subtle、**カーソルは既定のまま、ホバー効果を出さない。** */
+.dialog-button-primary:disabled {
+  color: var(--fg-subtle);
+  background: var(--neutral-muted);
+  cursor: default;
+}
+
+.dialog-button-primary:disabled:hover {
+  filter: none;
+}
+
+/* --- エディタ選択ダイアログ（UI-103, DSP-172） --- */
+
+/* 枠は情報ダイアログと同一で、寸法だけが違う（DSP-172）。
+   幅 420px 固定、高さは内容に従う。 */
+.dialog-narrow {
+  width: 420px;
+  height: auto;
+}
+
+/* 見出しは 13px 太字（DSP-172） */
+.editor-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-default);
+}
+
+.editor-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 行高 28px。**ラベル全体をクリック対象とする**（DSP-172） */
+.editor-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  height: 28px;
+  padding: 0 var(--space-2);
+
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.editor-row:hover {
+  background: var(--neutral-muted);
+}
+
+/* 選択できない行（DSP-172）。**ホバー効果を出さない**
+   （DSP-101 の「無効」と揃える） */
+.editor-row.is-disabled {
+  color: var(--fg-subtle);
+  cursor: default;
+}
+
+.editor-row.is-disabled:hover {
+  background: none;
+}
+
+.editor-radio {
+  flex: none;
+  margin: 0;
+}
+
+.editor-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 行の右端に添える (not installed)（DSP-172） */
+.editor-note {
+  flex: none;
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+
+/* Other... の前に 1 行あける（UI-103 の図） */
+.editor-custom {
+  margin-top: var(--space-2);
+}
+
+/* 選んだ結果は Other... の行の下に 1 段（DSP-172）。
+   ラジオの幅ぶん字下げし、上の行の名前と左端を揃える。 */
+.editor-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-6);
+}
+
+/* **実行ファイル名だけを出す。** パスは画面に出さない（NFR-035 の 3） */
+.editor-file {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* Cancel と Open の上マージンは 16px（DSP-172）。.dialog の gap が既に
+   12px を作っているため、ここでは残りの 4px だけを足す。 */
+.editor-actions {
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* --- ドロップオーバーレイ（DSP-190） --- */
+
+/* **ウィンドウ全体**（ツールバー・ステータスを含む。UI-070） */
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dropzone);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+
+  /* **背景だけを 0.9 の不透明度で重ねる**（DSP-190）。
+     要素ごと opacity を下げると、アイコンと文字まで薄くなる。 */
+  background: color-mix(in srgb, var(--accent-subtle) 90%, transparent);
+
+  /* 内側 8px の位置に 2px の破線（DSP-190） */
+  outline: 2px dashed var(--accent-fg);
+  outline-offset: -8px;
+
+  /* 表示は 80ms のフェードイン、消去は即座（DSP-050, DSP-190） */
+  animation: dropzone-in var(--motion-dropzone) ease-out;
+
+  /* ドロップの判定は Wails のランタイムが行う。オーバーレイ自身が
+     マウスイベントを奪うと、その下の要素を検出できなくなる（IMP-245） */
+  pointer-events: none;
+}
+
+.dropzone-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--accent-fg);
+}
+
+.dropzone-hint {
+  margin: 0;
+  font-size: 16px;
+  color: var(--accent-fg);
+}
+
+@keyframes dropzone-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

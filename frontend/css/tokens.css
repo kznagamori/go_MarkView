@@ -1,0 +1,161 @@
+/*
+  tokens.css — 表示仕様書 20 章の値を CSS カスタムプロパティとして実装する（DSP-002）。
+  他の CSS はここで定義したトークンを参照し、色コードや寸法を直接書かない。
+
+  色は Light を :root に定義し、Dark は [data-theme="dark"] で上書きする（DSP-011）。
+  切り替えは #app の data-theme 属性のみで行い、prefers-color-scheme には反応させない。
+  OS 設定の反映は起動時に Go 側が解決した値で行う（FR-071, IMP-303）。
+*/
+
+:root {
+  /* **OS が描く部品をテーマへ追従させる**（DSP-011）。
+     チェックボックス（MD-022 のタスクリスト）は色を CSS で指定できず、
+     この宣言だけが効く。宣言しないと Dark でも白い枠のまま浮く。 */
+  color-scheme: light;
+
+  /* --- カラートークン: Light（DSP-010） --- */
+  --canvas-default: #ffffff;
+  --canvas-subtle: #f6f8fa;
+  --canvas-inset: #f6f8fa;
+  --canvas-overlay: #ffffff;
+
+  --fg-default: #1f2328;
+  --fg-muted: #59636e;
+  --fg-subtle: #818b98;
+  --fg-on-emphasis: #ffffff;
+
+  --border-default: #d1d9e0;
+  --border-muted: #d8dee4;
+
+  --accent-fg: #0969da;
+  --accent-emphasis: #0969da;
+  --accent-subtle: #ddf4ff;
+
+  --success-fg: #1a7f37;
+  --attention-fg: #9a6700;
+  --danger-fg: #d1242f;
+  --done-fg: #8250df;
+
+  --neutral-muted: rgba(129, 139, 152, 0.12);
+  /* ボタン押下中の背景。--neutral-muted の 1.5 倍の濃さ（DSP-101） */
+  --neutral-muted-strong: rgba(129, 139, 152, 0.18);
+  --attention-subtle: #fff8c5;
+  --danger-subtle: #ffebe9;
+  --shadow-overlay: 0 8px 24px rgba(31, 35, 40, 0.2);
+  /* 暗幕はテーマで変えない。Light でも背後を沈めるため黒を重ねる（DSP-170） */
+  --overlay-backdrop: rgba(0, 0, 0, 0.4);
+
+  --search-hit: #fff8c5;
+  --search-hit-current: #ffd33d;
+
+  /* --- 書体（DSP-020） --- */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica,
+    Arial, "Yu Gothic UI", Meiryo, "Noto Sans CJK JP", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", "Noto Sans Mono", monospace;
+
+  --font-size-body: 16px;
+  --font-size-code: 13.6px;
+  --font-size-app: 13px;
+  --font-size-status: 12px;
+  --font-size-pane-title: 11px;
+
+  --line-height-body: 1.6;
+  --line-height-code: 1.45;
+  --line-height-app: 1.5;
+  --line-height-status: 1.4;
+
+  /* --- レイアウト寸法（DSP-030） --- */
+  --toolbar-height: 40px;
+  --status-height: 24px;
+
+  /* ペイン幅は利用者の操作で変わる（UI-030, UI-040）。JS が #app へ上書きする */
+  --pane-filetree-width: 260px;
+  --pane-outline-width: 240px;
+  --pane-min-width: 160px;
+
+  --resizer-line: 1px;
+  --resizer-hit: 8px;
+
+  --content-max-width: 980px;
+  --content-padding-x: 32px;
+  --content-padding-x-min: 16px;
+  --content-padding-y: 24px;
+
+  --dialog-width: 720px;
+  --dialog-height: 560px;
+
+  /* --- ツールバー内の寸法（DSP-032） --- */
+  --tb-btn-size: 28px;
+  --tb-gap: 4px;
+  --tb-padding-x: 8px;
+  --tb-group-gap: 12px;
+
+  /* --- 間隔の基準（DSP-031）。中間値を使わない --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* --- 角丸（DSP-040） --- */
+  --radius-control: 6px;
+  --radius-block: 6px;
+  --radius-dialog: 12px;
+
+  /* --- アイコン（DSP-014） --- */
+  --icon-size: 16px;
+
+  /* --- 重なり順（DSP-015）。この 8 段階以外を使わない --- */
+  --z-content: 0;
+  --z-copy: 10;
+  --z-search: 20;
+  --z-status-message: 30;
+  --z-state-screen: 40;
+  --z-dialog: 50;
+  --z-dropzone: 60;
+  --z-tooltip: 70;
+
+  /* --- モーション（DSP-050）。テーマ切り替えとペイン開閉には掛けない --- */
+  --motion-hover: 80ms;
+  --motion-dialog: 100ms;
+  --motion-dropzone: 80ms;
+}
+
+/* --- カラートークン: Dark（DSP-010, DSP-011） --- */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas-default: #0d1117;
+  --canvas-subtle: #151b23;
+  --canvas-inset: #010409;
+  --canvas-overlay: #151b23;
+
+  --fg-default: #e6edf3;
+  --fg-muted: #9198a1;
+  --fg-subtle: #6e7681;
+  --fg-on-emphasis: #ffffff;
+
+  --border-default: #3d444d;
+  --border-muted: #2f353d;
+
+  --accent-fg: #4493f8;
+  --accent-emphasis: #1f6feb;
+  --accent-subtle: #121d2f;
+
+  --success-fg: #3fb950;
+  --attention-fg: #d29922;
+  --danger-fg: #f85149;
+  --done-fg: #ab7df8;
+
+  --neutral-muted: rgba(101, 108, 118, 0.2);
+  --neutral-muted-strong: rgba(101, 108, 118, 0.3);
+  --attention-subtle: rgba(187, 128, 9, 0.15);
+  --danger-subtle: rgba(248, 81, 73, 0.15);
+  --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.6);
+  --overlay-backdrop: rgba(0, 0, 0, 0.4);
+
+  --search-hit: #3b2300;
+  --search-hit-current: #9e6a03;
+}

@@ -1,0 +1,464 @@
+/*
+  markdown.css — 本文（.markdown-body の内側）の描画（DSP-012, DSP-022, DSP-121〜123）。
+
+  **github-markdown-css v5.9.0（MIT）を参照して書き起こしたもの**であり、
+  同梱物をそのまま読み込んではいない。IMP-200 が markdown.css を
+  「github-markdown-css 由来」と定めており、BR-042 が実ファイルで管理すると
+  定めているのは Mermaid と KaTeX だけである。
+
+  値が食い違ったときの扱い:
+
+  - MD-011 / DSP-020 / DSP-022 / DSP-121〜123 が明示している値は**仕様を正とする**。
+    要求層（MD）と表示層（DSP）は同梱物より上位にある。
+  - 仕様が触れていない値は github-markdown-css に合わせる（DSP-001）。
+  - 差異は進捗ファイルの「決定と逸脱の記録」に残す。
+
+  配色はトークンから採る（DSP-002）。ここに色コードを直接書かない。
+*/
+
+.markdown-body {
+  /* --- 同梱物の変数名へトークンを渡す（DSP-012） ---
+     この 6 つは github-markdown-css の側の名前である。本文の規則は
+     トークンではなくこちらを参照し、**対応表を 1 か所に閉じ込める**。
+     表にない色（--border-muted など）はトークンを直接参照する。
+
+     なお v5.9.0 の同梱物自体は --fgColor-default 等の新しい名前へ
+     移行済みで、DSP-012 が挙げる名前はもう使っていない。将来 同梱物の
+     ファイルをそのまま読み込む形へ変えるなら、ここも新名称へ揃える。 */
+  --color-canvas-default: var(--canvas-default);
+  --color-canvas-subtle: var(--canvas-subtle);
+  --color-fg-default: var(--fg-default);
+  --color-fg-muted: var(--fg-muted);
+  --color-border-default: var(--border-default);
+  --color-accent-fg: var(--accent-fg);
+
+  /* --- 倍率に追随する長さの基準（DSP-021） ---
+     --md-em は本文 1 文字ぶんの長さ。**見出しの中で em を使わない**ため
+     に置く。見出しの中の em は見出し自身の文字サイズが基準になり、
+     24px のはずの上マージンが h1 では 48px になる。
+
+     --md-N の N は表示倍率 100 % のときの px 値。同梱物の --base-size-N に
+     対応するが、あちらは固定 px であり倍率に追随しない。
+
+     **本文の内側であればどこからでも参照してよい。** コードブロック・
+     Alerts・数式（DSP-250〜271）は components.css が持つが、寸法は
+     同じ基準に揃える必要があるためここから継承させる。 */
+  --md-em: calc(var(--font-size-body) * var(--zoom, 100) / 100);
+  --md-4: calc(var(--md-em) * 0.25);
+  --md-6: calc(var(--md-em) * 0.375);
+  --md-8: calc(var(--md-em) * 0.5);
+  --md-12: calc(var(--md-em) * 0.75);
+  --md-13: calc(var(--md-em) * 0.8125);
+  --md-16: var(--md-em);
+  --md-24: calc(var(--md-em) * 1.5);
+
+  color: var(--color-fg-default);
+  font-family: var(--font-ui);
+  /* 16px（DSP-020）に倍率を掛ける。ツールバー・ペイン・ステータスへは
+     波及させない（FR-081, DSP-021） */
+  font-size: var(--md-em);
+  /* 1.6（MD-011）。同梱物は 1.5 だが、要求層のほうが上位である */
+  line-height: var(--line-height-body);
+  word-wrap: break-word;
+}
+
+/* 本文の上端・下端に余分な余白を作らない */
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* --- ブロックの間隔（MD-011: 段落間 16px） --- */
+
+.markdown-body p,
+.markdown-body blockquote,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body dl,
+.markdown-body table,
+.markdown-body pre,
+.markdown-body details {
+  margin-top: 0;
+  margin-bottom: var(--md-16);
+}
+
+/* --- 見出し（DSP-022, MD-020） --- */
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin-top: var(--md-24);
+  margin-bottom: var(--md-16);
+  font-weight: 600;
+  line-height: 1.25;
+  /* アンカーを左外側へ絶対配置するための基準（DSP-023） */
+  position: relative;
+}
+
+/* --- 見出しのアンカー（DSP-023, MD-020, IMP-227） --- */
+
+.markdown-body .heading-anchor {
+  position: absolute;
+  left: -1.2em;
+  /* 本文の折り返しに影響させない。見出しの文字の位置を動かさない */
+  display: inline-flex;
+  align-items: center;
+  height: 1em;
+  color: var(--color-fg-muted);
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+}
+
+/* hover に加えてキーボードでも出す（DSP-016, DSP-023） */
+.markdown-body h1:hover .heading-anchor,
+.markdown-body h2:hover .heading-anchor,
+.markdown-body h3:hover .heading-anchor,
+.markdown-body h4:hover .heading-anchor,
+.markdown-body h5:hover .heading-anchor,
+.markdown-body h6:hover .heading-anchor,
+.markdown-body .heading-anchor:focus-visible {
+  opacity: 1;
+}
+
+/* 本文中のリンクと違い、下線は引かない。アイコンだけのため意味がない */
+.markdown-body .heading-anchor:hover {
+  text-decoration: none;
+}
+
+/* h1 と h2 だけ下端に境界線を引く（MD-020, DSP-022） */
+.markdown-body h1,
+.markdown-body h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.markdown-body h1 {
+  font-size: 2em;
+}
+
+.markdown-body h2 {
+  font-size: 1.5em;
+}
+
+.markdown-body h3 {
+  font-size: 1.25em;
+}
+
+.markdown-body h4 {
+  font-size: 1em;
+}
+
+.markdown-body h5 {
+  font-size: 0.875em;
+}
+
+.markdown-body h6 {
+  font-size: 0.85em;
+  color: var(--color-fg-muted);
+}
+
+/* 見出しの中のコードは、見出しの文字サイズに合わせる */
+.markdown-body h1 code,
+.markdown-body h2 code,
+.markdown-body h3 code,
+.markdown-body h4 code,
+.markdown-body h5 code,
+.markdown-body h6 code {
+  padding: 0 0.2em;
+  font-size: inherit;
+}
+
+/* --- リンク（DSP-121） ---
+   遷移は viewer.js が必ず止める（IMP-223, AR-060）。ここは見た目だけ。 */
+
+.markdown-body a {
+  color: var(--color-accent-fg);
+  /* **常に下線を引く。** GitHub は既定でリンクに下線を引いており、
+     色だけで区別すると色覚に依存する（MD-001, MD-002）。
+     offset は em にして表示倍率に追随させる（DSP-021）。 */
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.markdown-body b,
+.markdown-body strong {
+  font-weight: 600;
+}
+
+/* --- リスト（DSP-121, MD-022） --- */
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 2em;
+}
+
+/* 入れ子のリストは前後に余白を持たない。持たせると段が深いほど間延びする */
+.markdown-body ul ul,
+.markdown-body ul ol,
+.markdown-body ol ol,
+.markdown-body ol ul {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* 項目の中に段落が立つ形（項目間に空行がある書き方）でのみ間隔を空ける */
+.markdown-body li > p {
+  margin-top: var(--md-16);
+}
+
+.markdown-body li + li {
+  margin-top: 0.25em;
+}
+
+/* 深さでマーカーを変える（GitHub と同じ） */
+.markdown-body ol ol,
+.markdown-body ul ol {
+  list-style-type: lower-roman;
+}
+
+.markdown-body ul ul ol,
+.markdown-body ul ol ol,
+.markdown-body ol ul ol,
+.markdown-body ol ol ol {
+  list-style-type: lower-alpha;
+}
+
+/* --- タスクリスト（DSP-121, MD-022） ---
+   **goldmark は .task-list-item クラスを付けない。** 同梱物はそのクラスを
+   前提にしているため、チェックボックスを直接持つ項目を :has() で拾う。 */
+
+.markdown-body li:has(> input[type="checkbox"]) {
+  list-style-type: none;
+}
+
+.markdown-body input[type="checkbox"] {
+  /* 負の左マージンでマーカーの位置まで引き出す（GitHub と同じ）。
+
+     **左だけ本文基準にする。** input は文字サイズを継承せず、Chromium の
+     既定（13.33px）が基準になるため、同梱物の -1.4em は実測 -18.67px に
+     なる。em のままだと本文が倍率で広がってもここだけ動かず、ずれていく
+     （DSP-021）。18.67 / 16 = 1.1667 を本文 1 文字ぶんに掛け、100 % では
+     GitHub と同じ位置に、倍率を上げると一緒に広がるようにする。
+     右と下は 2〜3px であり、ずれても目に見えないため em のままとする。 */
+  margin: 0 0.2em 0.25em calc(var(--md-em) * -1.1667);
+  vertical-align: middle;
+  /* 読み取り専用であることを見た目でも示す（MD-022）。ファイルを書き換えない */
+  cursor: default;
+  pointer-events: none;
+}
+
+/* --- 引用（DSP-121, MD-023） --- */
+
+.markdown-body blockquote {
+  /* **左右のマージンを 0 にする。** ブラウザ既定の blockquote は
+     `margin: 1em 40px` を持ち、これを消さないと引用だけが本文から 40px
+     右へずれる（入れ子ならその倍）。上下は上のまとめ書きで 0 と 16px に
+     している。同じ理由で dd（既定 40px）も 0 にする。 */
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0 1em;
+  color: var(--color-fg-muted);
+  border-left: 0.25em solid var(--color-border-default);
+}
+
+.markdown-body dd {
+  margin-left: 0;
+}
+
+.markdown-body blockquote > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* --- 水平線（DSP-121, MD-025） ---
+   GitHub と同じ 0.25em（倍率 100 % で 4px）の帯にする。 */
+
+.markdown-body hr {
+  height: var(--md-4);
+  padding: 0;
+  margin: var(--md-24) 0;
+  background-color: var(--color-border-default);
+  border: 0;
+}
+
+/* --- インラインコード（DSP-121） --- */
+
+.markdown-body code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 85%;
+  white-space: break-spaces;
+  background-color: var(--neutral-muted);
+  border-radius: var(--radius-block);
+}
+
+/* コードブロックの中の <code> には地も余白も持たせない。
+   ブロック自体の体裁は DSP-250 が定める（components.css）。 */
+.markdown-body pre > code {
+  padding: 0;
+  font-size: 100%;
+  white-space: pre;
+  background-color: transparent;
+  border-radius: 0;
+}
+
+/* --- 生 HTML のインライン要素（MD-072, DSP-121） ---
+
+   MD-072 が許可する要素のうち、ブラウザ既定のままでは GitHub と
+   見た目が変わるものを揃える。**<mark> の既定は純黄色**で、
+   Dark では地から浮き、Light でも本文の配色から外れる。 */
+
+.markdown-body mark {
+  background-color: var(--attention-subtle);
+  color: var(--color-fg-default);
+}
+
+.markdown-body small {
+  font-size: 90%;
+}
+
+.markdown-body abbr[title] {
+  border-bottom: none;
+  text-decoration: underline dotted;
+}
+
+/* キー表記。等幅・小さめで、押せる面のように縁と影を付ける */
+.markdown-body kbd {
+  display: inline-block;
+  padding: var(--md-4);
+
+  font-family: var(--font-mono);
+  font-size: 0.6875em; /* 11px 相当 */
+  line-height: 1;
+  color: var(--color-fg-default);
+  vertical-align: middle;
+
+  background-color: var(--color-canvas-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-block);
+  box-shadow: inset 0 -1px 0 var(--border-muted);
+}
+
+/* 打ち消し線の中のコードは、コード側の装飾で上書きしない */
+.markdown-body del code {
+  text-decoration: inherit;
+}
+
+/* --- 表（DSP-122, MD-024） --- */
+
+.markdown-body table {
+  /* **表の内部だけを横スクロールさせる**（UI-050）。display: block と
+     width: max-content の組み合わせで、ラッパ要素を足さずに実現する。
+     本文の DOM に手を入れないため、アンカーの位置も検索の走査も変わらない。 */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  padding: var(--md-6) var(--md-13);
+  border: 1px solid var(--color-border-default);
+}
+
+.markdown-body table th {
+  font-weight: 600;
+  background-color: var(--color-canvas-subtle);
+}
+
+.markdown-body table tr {
+  background-color: var(--color-canvas-default);
+}
+
+.markdown-body table tr:nth-child(2n) {
+  background-color: var(--color-canvas-subtle);
+}
+
+.markdown-body table td > :last-child {
+  margin-bottom: 0;
+}
+
+/* --- 画像（DSP-123, FR-022） --- */
+
+.markdown-body img {
+  max-width: 100%;
+  box-sizing: content-box;
+  /* 透過 PNG が Dark テーマで潰れないよう地を敷く（DSP-123） */
+  background-color: var(--color-canvas-default);
+  border-style: none;
+}
+
+/* 表の中の画像には地を敷かない。行の縞模様が途切れて見える */
+.markdown-body table img {
+  background-color: transparent;
+}
+
+/* 読み込みに失敗した画像（DSP-123, IMP-226）。
+
+   **img ではなく span である。** JavaScript が <img> を置き換えて作る。
+   失敗した img を選ぶセレクタがどちらのエンジンにも存在せず、さらに
+   **代替テキストの描画をブラウザ既定に委ねると WebKitGTK で中身が空になる**
+   （NFR-061, BUG-008）。枠はこちらが描き、文字も自前で入れる。
+
+   背景は指定しない。span は上の .markdown-body img の地を継がないため、
+   既定の transparent になる（DSP-123 の「成功時の地は失敗時には意味がない」）。 */
+.markdown-body .img-broken {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border-default);
+  color: var(--color-fg-muted);
+}
+
+/* --- 折りたたみ（MD-026） --- */
+
+.markdown-body details {
+  display: block;
+}
+
+.markdown-body summary {
+  display: list-item;
+  cursor: pointer;
+}
+
+/* --- 脚注（DSP-121, MD-051） ---
+   **区切り線は goldmark が .footnotes の内側に <hr> として出す。**
+   同梱物のように .footnotes へ border-top を引くと線が 2 本になる。 */
+
+.markdown-body .footnotes {
+  font-size: var(--md-12);
+  color: var(--color-fg-muted);
+}
+
+.markdown-body .footnotes ol {
+  padding-left: var(--md-16);
+}
+
+/* 参照は `[1]` の形で出す（GitHub と同じ）。Go 側の出力は数字だけであり、
+   括弧は装飾のためここで足す。選択してコピーすると括弧も入るが、
+   GitHub でも同じである。 */
+.markdown-body .footnote-ref::before {
+  content: "[";
+}
+
+.markdown-body .footnote-ref::after {
+  content: "]";
+}
+
+/* 脚注の区切りだけは細いままにする。本文の水平線と同じ 4px の帯にすると、
+   GitHub の細い区切りと見た目が変わる（MD-002）。 */
+.markdown-body .footnotes > hr {
+  height: 1px;
+}
