@@ -39,9 +39,10 @@ go_MarkView/
 ├── open.go                     文書を開く共通処理（IMP-192）
 ├── bind.go                     バインドメソッドとドロップ判定（IMP-310, IMP-313）
 ├── editor.go                   エディタで開く 3 つのバインドメソッド（IMP-310, IMP-331）
+├── editmode.go                 編集モードのバインドメソッド。錠・読み書きの呼び出し・イベント送出だけ（IMP-195, IMP-316）。外部エディタの editor.go と混ぜない
 ├── link.go                     リンク遷移の判定（IMP-312）
 ├── errors.go                   エラーの分類（IMP-315）
-├── dto.go                      フロントエンドとの境界の型（IMP-302〜307）
+├── dto.go                      フロントエンドとの境界の型（IMP-302〜IMP-309, IMP-316）
 ├── console_windows.go          親プロセスのコンソールへ繋ぎ直す（IMP-031, IMP-193）
 ├── console_other.go            同上。Windows 以外は何もしない（IMP-031）
 ├── webview_windows.go          WebView2 の版の取得（IMP-031, IMP-181）
@@ -61,7 +62,11 @@ go_MarkView/
 │   ├── document/               IMP-100 系
 │   │   ├── document.go         Document 型、Load、サイズ判定、番兵エラー
 │   │   ├── encoding.go         BOM・改行・UTF-8 検証、行数
-│   │   └── document_test.go
+│   │   ├── edit.go             書き換え位置と生バイト列の対応、Patch（IMP-106）
+│   │   ├── write.go            一時ファイル + リネームによる置き換え（IMP-107）
+│   │   ├── editlog.go          取り消し履歴（IMP-108）
+│   │   ├── editsession.go      編集モードの状態と判断（IMP-109）
+│   │   └── *_test.go
 │   ├── renderer/               IMP-110 系
 │   │   ├── renderer.go         goldmark パイプラインの構築と実行
 │   │   ├── alerts.go           GitHub Alerts 拡張
@@ -70,6 +75,7 @@ go_MarkView/
 │   │   ├── plantuml.go         plantuml ブロックの取り出しと指令の検査
 │   │   ├── highlight.go        chroma 設定
 │   │   ├── anchor.go           見出しスラッグ生成
+│   │   ├── editref.go          編集・並べ替え・リンクの目印と、書き換え位置の特定（IMP-120, IMP-121）
 │   │   ├── sanitize.go         bluemonday ポリシー
 │   │   └── *_test.go
 │   ├── filetree/               IMP-130 系
@@ -103,7 +109,7 @@ go_MarkView/
 │   └── session/                IMP-190 系のうち Wails に依存しない部分
 │       ├── history.go          表示履歴（IMP-191）
 │       ├── startup.go          起動時の対象解決（IMP-193）
-│       ├── path.go             表示用パスの算出（IMP-025）
+│       ├── path.go             表示用パスの算出、パスの比較、同じファイルの判定（IMP-025, IMP-191）
 │       └── *_test.go
 ├── frontend/                   IMP-200 系（12-impl-frontend.md）
 │   ├── index.html
@@ -164,7 +170,8 @@ flowchart TD
 - `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
 - `applog`（IMP-023）を例外としているのは、「既定ではログを出さない」（NFR-041）が**判定を 1 か所に集めないと守れない**ためである。`MARKVIEW_DEBUG` の判定が散れば、そのうち 1 か所が漏れて配布物が出力を始める。実際に go-webview2 が標準ロガーへ直接書いていた件（IMP-023）を E2E-104 で検出しており、これは自前のコードでも同じように起こりうる。`mdfile` / `localurl` と同じく**標準ライブラリしか使わない葉**であり、**`applog` に依存を追加してはならない**。
 - `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼んでよいのは `package main`（ルート直下の `.go`。IMP-011）だけとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。**「`main.go` と `app.go` の 2 つだけ」ではない。** ルート直下は責務ごとに分割されており（`bind.go` / `editor.go` / `link.go` ほか）、ファイル名を数え上げる書き方では、追加されたファイルの扱いが読めなくなる。境界は**パッケージ**で引く。
-- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に置き、`app.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
+- **編集モードの書き換え処理と判断（IMP-106〜IMP-109）は `document` に置く。新しいパッケージ（`internal/editor` など）を作らない。** 位置を求めるには `renderer` の goldmark の構成が要り（IMP-121）、上の 2 系統のうち `renderer` を呼べるのは `document` だけである。**`internal/editor` という名前は特に使わない**——外部エディタの起動（IMP-171）と取り違えやすく、そちらを別パッケージに分けない理由（IMP-170）とも紛れる。
+- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に、**編集モードの状態と書き込みの判断は `internal/document`（IMP-109）に**置き、`app.go` と `editmode.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
 ## 10.3 実装規約（IMP-020 系）
 
@@ -183,7 +190,7 @@ flowchart TD
 - 関数は `error` を返して呼び出し元へ委ねる。`panic` は使用しない。
 - 事象の判別が必要なエラーは番兵エラー（`errors.New` によるパッケージ変数）として定義し、呼び出し側は `errors.Is` で判定する。
 - 文脈を追加する場合は `fmt.Errorf("...: %w", err)` でラップする。
-- ユーザに見せる文言はエラー値に含めない。`app.go` が UI 用の英語メッセージへ変換する（IMP-315）。エラー値そのものは開発者向けの英語とする。
+- ユーザに見せる文言はエラー値に含めない。`package main`（`errors.go`。IMP-011）が `ErrorDTO` の種別へ写し、文言はフロントエンドが選ぶ（IMP-315）。エラー値そのものは開発者向けの英語とする。
 
 主要な番兵エラーは以下とする。
 
@@ -195,14 +202,31 @@ var (
     ErrNotMarkdown  = errors.New("not a markdown file")
     ErrTooLarge     = errors.New("file exceeds the maximum size")
     ErrNeedsConfirm = errors.New("file requires confirmation before rendering")
+
+    // 編集モード（IMP-106）
+    ErrBadRef      = errors.New("malformed edit reference")
+    ErrRefNotFound = errors.New("edit target not found")
+    ErrNotEditable = errors.New("document is not editable")
+    ErrChanged     = errors.New("file changed on disk")
+    ErrStale       = errors.New("edit instruction is stale") // IMP-109。通知しない
+)
+
+// internal/opener（IMP-170, IMP-171）
+var (
+    ErrUnsupportedScheme = errors.New("unsupported URL scheme")
+    ErrNotFound          = errors.New("file not found")
+    ErrNotAbsolute       = errors.New("editor path must be absolute")
+    ErrSelf              = errors.New("MarkView cannot be used as an editor")
 )
 ```
+
+- **パッケージが違えば、同じ名前の番兵エラーも別の値である**（`document.ErrNotFound` と `opener.ErrNotFound`）。写すときは経路ごとに分ける（IMP-315。エディタは `editor-failed`、リンクの委譲は `open-failed`）。
 
 ### IMP-022: パニックの遮断 **MUST**
 
 FR-111（異常終了の回避）を実装レベルで保証するため、以下の 2 点で `recover` を行う。
 
-1. `app.go` の各バインドメソッドの入口。回復したパニックはエラーとして返し、UI には状態画面（UI-052）を表示させる。
+1. `package main` の各バインドメソッドの入口（`bind.go` / `editor.go` / `link.go` / `editmode.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタの 3 つは `editor-failed`、書き込みの 4 つは `edit-failed`、`SetEditMode` と `GetCellSource` は通知しない。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
 2. `renderer` の変換処理。goldmark 拡張や chroma の想定外の入力で発生したパニックを、変換エラーとして返す。
 
 `recover` した内容は、開発モード（IMP-023）でのみ標準エラー出力へスタックトレースを出力する。
@@ -245,7 +269,10 @@ func Recovered(where string, v any)
 
 - Wails のバインドメソッドは複数のゴルーチンから呼ばれうる。アプリケーション状態（表示中の文書、ツリールート、履歴）は `App` 内のミューテックスで保護する。
 - ファイル監視（`watcher`）はゴルーチンでイベントを待ち受け、チャネル経由で `App` へ通知する。`App` はイベントを受けてからフロントエンドへ送出する。
+  - **通知のチャネルへの送信で止まらない**（バッファ 1、未取り出しなら新しい値で置き換える。IMP-140）。受け手は `ioMu` を待つため取り出しが遅れうる。送信で止まると監視のゴルーチンが止まり、`ioMu` を持ったまま `Watch` を呼んだ処理と互いに待ち合う（Windows の fsnotify。IMP-140）。
+  - **`watcher.Watch` / `Unwatch` を `mu` の内側で呼ばない**（IMP-192）。
 - 変換処理（`renderer`）は状態を持たず、goldmark インスタンスを使い回す。goldmark の `Convert` はゴルーチンセーフであるため、インスタンスを共有してよい。
+- **表示中ファイルの読み直しと書き込みは `App.ioMu` で 1 つずつ順に行う**（FR-143, IMP-190, IMP-195）。錠を取る順序は `ioMu` → `mu` に固定する。**`ioMu` を持ったまま文書を開く処理を呼ぶときは、錠を取らない `openLocked` を使う**（`sync.Mutex` は再入できない。IMP-192）。
 - ゴルーチンはアプリ終了時に必ず停止させる。`context.Context` をアプリのライフサイクルに紐付け、監視ゴルーチンはその `Done` で終了する（NFR-020 のリーク禁止）。
 
 ### IMP-025: パスの扱い **MUST**
@@ -278,7 +305,7 @@ var thirdPartyLicenses string
 | `webkit2_41` | Linux ビルドで必ず指定する（AR-003, BR-010） |
 | `dev` | 開発ビルド。開発者ツールの有効化に用いる（BR-012） |
 
-OS 差異のある実装（設定パスの解決、既定アプリの起動）は、ビルドタグではなく `runtime.GOOS` による分岐、またはファイル名サフィックス（`_windows.go` / `_linux.go`）で分ける。後者を優先する。
+OS 差異のある実装（設定パスの解決、既定アプリの起動）は、ビルドタグではなく `runtime.GOOS` による分岐、またはファイル名サフィックスで分ける。後者を優先する。**サフィックスは `_windows.go` と `_other.go`（`//go:build !windows`）の対とする**（IMP-011 の一覧と v1.0.0 の実装）。
 
 ### IMP-032: アプリケーションアイコン **MUST**
 
@@ -317,23 +344,24 @@ wails.Run(&options.App{
 
 ### IMP-040: テストの対象 **MUST**
 
-GUI に依存しない層にユニットテストを用意する（NFR-070）。対象と対象外の判断は UT-002 に従う。
+GUI に依存しない層にユニットテストを用意する（NFR-070）。**対象と対象外の判断は UT-002 を正とする。** 下の表はパッケージごとの主な観点であり、個々のケースは 31 章にある。
 
 | パッケージ | 主なテスト対象 | 対応要求 |
 | --- | --- | --- |
 | `mdfile` | 拡張子の判定（大小の別、多重拡張子、境界） | FR-010, FR-031 |
 | `localurl` | `/__local/` URL の組み立てと解読（**逆変換の対**。UT-808） | AR-040 |
-| `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類 | FR-021, FR-016, FR-110 |
-| `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・**PlantUML 抽出と指令の検査**・サニタイズ・アンカー生成 | MD-020〜MD-085 |
+| `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類、**書き換え位置と生バイト列の対応・`Patch`・置き換え・取り消し履歴・編集モードの状態と判断（`EditSession`。IMP-109）・鍵の引き継ぎの条件（IMP-102）** | FR-021, FR-016, FR-110, FR-140〜FR-144, NFR-030 |
+| `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・**PlantUML 抽出と指令の検査**・サニタイズ・アンカー生成・**文書の id の接頭辞（AR-053）**・**目印の付与（図のブロックを含む）と書き換え位置の特定**（`Render` と `Locate` の番号が一致すること） | MD-020〜MD-085, FR-141, FR-142, AR-053, NFR-030 |
 | `filetree` | フィルタ規則、除外ディレクトリ、並び順、件数上限 | FR-031, FR-032 |
 | `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め | UI-112, UI-113 |
-| `watcher` | デバウンス、削除とリネームの区別、監視対象の切り替え | FR-014, AR-070 |
+| `watcher` | デバウンス、削除とリネームの区別、監視対象の切り替え、**実体のディレクトリの監視（IMP-141）** | FR-014, AR-070 |
 | `assetsrv` | 拡張子の許可・拒否、パス正規化、ヘッダ | AR-041, NFR-031 |
 | `opener` | 引数の組み立てと起動前の検査（実際の起動は行わない） | FR-053, FR-090 |
 | `ostheme` | レジストリ値と gsettings 出力の解釈（実際の問い合わせは行わない） | FR-071 |
 | `applog` | `MARKVIEW_DEBUG` の判定と出力先の切り替え（`"1"` 以外はすべて無効） | NFR-041 |
 | `buildinfo` | `vendor.json` の解析と環境情報の組み立て | BR-042, UI-100 |
-| `session` | 表示履歴、起動時の対象解決、表示用パスの算出 | FR-051, FR-013, FR-052 |
+| `session` | 表示履歴、起動時の対象解決、表示用パスの算出、**同じファイルの判定（`SameFile`。UT-809）** | FR-051, FR-013, FR-052, FR-140 |
+| `scripts/domids`・`scripts/smoke`（**判定だけ**） | 同梱資産と画面の id の衝突、描画スモークの結果の判定（ページが返した事実から合否を決める関数） | BR-043, BR-054, AR-053 |
 
 ### IMP-041: ゴールデンテスト **SHOULD**
 
@@ -346,7 +374,7 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 ### IMP-042: テストで行わないこと **MUST**
 
 - WebView を起動する自動テストは行わない。CI ランナーでの安定性が確保できないため。表示の確認は BR-054 のスモークテストと手動確認による。
-  - 描画スモークテスト（BR-054）はこれに当たらない。**MarkView を起動せず**、`frontend/` を配信したヘッドレスブラウザで `lazy.js` の描画だけを走らせるものであり、ウィンドウの操作も要素のクリックも行わない。
+  - 描画スモークテスト（BR-054）はこれに当たらない。**MarkView を起動せず**、`frontend/` を配信したヘッドレスブラウザで本番のモジュールを読み込み、`lazy.js` の描画と、BR-054 の表が定める検査のための関数の呼び出し（目印の照合、表の並べ替えの比較など）だけを走らせるものであり、ウィンドウの操作も要素のクリックもキー入力も行わない。
 - ネットワークアクセスを伴うテストを書かない。リモート画像（MD-071）の検証は手動とする。
 
 ## 10.6 要求一覧

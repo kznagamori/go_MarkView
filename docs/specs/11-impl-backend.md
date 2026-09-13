@@ -48,7 +48,13 @@ type Document struct {
     NeedsKaTeX    bool               // KaTeX の遅延ロード判定（AR-021）
     NeedsPlantUML bool               // PlantUML の遅延ロード判定（AR-021, MD-085）
     Warnings      []Warning          // 描画は継続するが利用者に伝える事象
+    Digest        [sha256.Size]byte  // 読み込んだ生バイト列の要約（FR-143 の「把握している内容」）
+    RefKey        string             // この描画の目印の鍵（IMP-120）。描画のたびに作り直す
 }
+
+// Editable は編集モードを開始できる文書かを返す（FR-140 の表）。
+// 不正なバイト列を置き換えた文書は、表示とファイルの内容が一致しないため偽とする。
+func (d *Document) Editable() bool
 
 // Warning は FR-110 のうち「描画を継続する」事象を表す。
 type Warning struct {
@@ -81,8 +87,15 @@ const (
 ```go
 type LoadOptions struct {
     // Confirmed が true の場合、ConfirmThreshold を超えていても描画する。
-    // FR-016 の「Open anyway」に対応する。
+    // FR-016 の「Open anyway」と、確認して描画した文書を同じファイルとして
+    // 読み直すとき（IMP-192 の currentConfirmed）に渡す。
     Confirmed bool
+
+    // RefKey が空でなく、読んだ生バイト列の要約が ExpectDigest と一致すれば、
+    // 新しい鍵を作らずにこの値を使う（IMP-120）。
+    // 編集モードの書き込みの直後の読み直しだけが渡す（IMP-195 の 8, FR-143）。
+    RefKey       string
+    ExpectDigest [sha256.Size]byte // RefKey を使ってよい内容の要約（書き込んだ内容の SHA-256）
 }
 
 // Load はファイルを読み込み、変換して Document を返す。
@@ -104,11 +117,18 @@ flowchart TD
     D -->|"> MaxSize"| E4["ErrTooLarge"]
     D -->|"> ConfirmThreshold かつ !Confirmed"| E5["ErrNeedsConfirm"]
     D -->|それ以外| F["os.ReadFile"]
-    F --> G["Normalize (IMP-103)"]
+    F --> K["Digest を求め、鍵（RefKey）を決める"]
+    K --> G["Normalize (IMP-103)"]
     G --> H["renderer.Render"]
     H --> I["Document を組み立てて返す"]
 ```
 
+- **`Digest` は `os.ReadFile` で得た生バイト列（正規化の前）の SHA-256 とする**（FR-143, FR-144）。内容の写しは保持しない。
+- **`RefKey` は `crypto/rand` の 8 バイトを 16 進 16 文字にしたものとし、`Load` のたびに作り直して `renderer.Render` へ渡す**（IMP-120）。同じファイルを読み直しても値は変わる。**鍵が変わること自体が「その描画の後に再描画が起きた」ことの印になる**（FR-143 の「指示を作った描画に対してだけ有効」）。
+- **例外は `LoadOptions.RefKey` が空でなく、`Digest` が `LoadOptions.ExpectDigest` と一致するときで、その値をそのまま使う。** 編集モードの書き込みの直後の読み直し（IMP-195 の 8）だけが、表示中の文書の鍵と、書き込んだ内容の要約を渡す。**自分の書き込みでは、それより前の描画で作った指示を有効なまま保つ**（FR-143）——作り直すと、続けてクリックした 2 つ目が拒まれる。
+  - **要約が一致しなければ、新しい鍵を作る。** 書き込み（IMP-195 の 7）と読み直し（8）の間に外部の書き込みが入ると、読み直した内容は自分の書き込みではない。鍵を引き継ぐと、古い描画で作った指示が `Check`（IMP-109）を通り、`Loaded` が把握している内容を外部の内容で作り直すため要約の照合も通る。**外部で項目が挿入されていれば、別のチェックボックスを書き換える**（FR-143 の「自分の書き込み以外による再描画の後の指示は拒む」）。
+  - 要約と鍵は `os.ReadFile` の直後、変換の前に決める（上の図）。
+- **`Confirmed` が真でも、`MaxSize` を超えれば `ErrTooLarge` とする。** 同意が効くのは `ConfirmThreshold` だけである（FR-016）。
 - `ErrTooLarge` と `ErrNeedsConfirm` は、サイズ情報を添えて返す。呼び出し側が状態画面（UI-052）に表示できるよう、`*SizeError` 型でラップする。
 
 ```go
@@ -144,6 +164,287 @@ func Normalize(raw []byte) (text []byte, replaced bool)
 
 `LineCount` は正規化後のテキストの LF の個数に 1 を加えた値とする。末尾が LF で終わる場合は加算しない。
 
+### IMP-106: 書き換え位置の対応 **MUST**
+
+FR-141 / FR-142 / AR-031 を実装する。**書き換える位置を、ファイルの生バイト列の上で求める。** 配置は `internal/document/edit.go`。
+
+**書き換え処理を置くパッケージは `document` とする。** 位置を求めるには `renderer` と同じ goldmark の構成が要り（IMP-121）、`internal/` 同士の依存で許されているのは `document` → `renderer` だけである（IMP-012）。**`internal/editor` のような新しいパッケージを作らない**——`renderer` を呼べず、構成が 2 か所に複製される。
+
+```go
+// RefKind は書き換え対象の種類。
+type RefKind int
+
+const (
+    RefTask RefKind = iota // タスクリストのチェックボックス（FR-141）
+    RefCell                // 表のセル（FR-142）
+)
+
+// Ref はフロントエンドから届く書き換え対象の指示を解いたもの（IMP-120 の目印の値）。
+type Ref struct {
+    Key   string  // 描画の鍵（Document.RefKey と照合する）
+    Kind  RefKind
+    Index int     // RefTask: 文書の中で何番目のタスクか（0 起点）。RefCell: 何番目の表か
+    Row   int     // RefCell: 行（0 が見出し行、1 以降が本体の行。ソース上の順）
+    Col   int     // RefCell: 列（0 起点）
+}
+
+var (
+    ErrBadRef      = errors.New("malformed edit reference")
+    ErrRefNotFound = errors.New("edit target not found")
+    ErrNotEditable = errors.New("document is not editable")
+    ErrChanged     = errors.New("file changed on disk")
+)
+
+// ParseRef は data-ref 属性の値（IMP-120）を解く。形が違えば ErrBadRef。
+// 書き込みの対象（task / cell）以外の目印（table / mermaid / plantuml。IMP-120）も ErrBadRef とする。
+// 数は IMP-116 の正規表現と同じ形（符号なしの 10 進数）だけを受け付け、int に収まらなければ ErrBadRef。
+func ParseRef(s string) (Ref, error)
+
+// Patch は生バイト列の 1 か所の置き換え。取り消し（IMP-108）にもそのまま使う。
+type Patch struct {
+    Offset int    // 生バイト列の上の位置
+    Old    []byte // 置き換える前のバイト列
+    New    []byte // 置き換えた後のバイト列
+}
+
+// Apply は raw に p を適用した新しいバイト列を返す。
+// raw[Offset:Offset+len(Old)] が Old と一致しなければ ErrChanged を返す。
+func (p Patch) Apply(raw []byte) ([]byte, error)
+
+// Inverse は p を打ち消す Patch を返す（Old と New を入れ替える）。
+func (p Patch) Inverse() Patch
+
+// PlanTask は raw の中で ref のチェックボックスを checked にする Patch を返す（FR-141）。
+// 既にその状態なら changed は false。
+func PlanTask(r *renderer.Renderer, raw []byte, ref Ref, checked bool) (p Patch, changed bool, err error)
+
+// PlanCell は raw の中で ref のセルを text に置き換える Patch を返す（FR-142）。
+func PlanCell(r *renderer.Renderer, raw []byte, ref Ref, text string) (p Patch, changed bool, err error)
+
+// CellSource は raw の中の ref のセルのソースを返す（FR-142 の編集欄の初期値）。
+func CellSource(r *renderer.Renderer, raw []byte, ref Ref) (string, error)
+```
+
+**処理の順序を固定する。**
+
+1. `raw` を IMP-103 と同じ規則で正規化し、**正規化後の位置から生バイト列の位置への対応表**を作る。対応が崩れるのは次の 2 つだけである。
+   - 先頭の UTF-8 BOM（3 バイト）の除去
+   - `CRLF` と単独の `CR` の `LF` への置き換え（除いた `CR` の位置を昇順に持ち、二分探索で数える）
+   
+   **不正なバイト列の置き換え（IMP-103 の 3）が起きる場合は `ErrNotEditable` を返す。** 置き換えは長さを変え、位置を対応させられない。FR-140 はこの文書で編集モードを始めさせないが、**書き込みの直前に読み直した内容で改めて確かめる**（その間に外部で壊されうる）。
+2. 正規化後のテキストを `r.Locate`（IMP-121）に渡し、ソース上の位置を得る。**`Render` と `Locate` は同じ数え方を共有しており**、`Ref.Index` / `Row` / `Col` は描画時の目印（IMP-120）と一致する。
+3. 位置を 1 の対応表で生バイト列へ移し、`Patch` を組み立てる。**生バイト列のそれ以外の部分には触れない**（FR-143 の「1 バイトも変えない」）。
+
+**チェックボックス**（`PlanTask`）
+
+- 置き換えるのは括弧の中の 1 バイトだけとする。`checked` が真なら `x`、偽なら半角空白を書く。
+- 現在の文字が `x` / `X` なら「オン」、それ以外（goldmark のタスクの正規表現の `\s` に当たる半角空白・タブ・改ページ）なら「オフ」とみなす。**`X` をオフにすると半角空白になる**（FR-141）。
+- 指示された状態と既に同じなら `changed` を偽にする。**反転ではなく「この状態にする」で受け取る**のは、同じ指示が 2 度届いても元へ戻らないようにするためである。
+- **求めた位置の前後が `[` と `]` であり、中の 1 バイトが半角空白・タブ・改ページ・`x`・`X` のいずれかであることを確かめる。** 違えば `Patch` を返さず `ErrNotEditable` とする。位置の求め方（IMP-121）が構文木と食い違ったときに、別のバイトを書き換えないための防御である（リストの字下げにタブを含むと、goldmark は字下げを桁に換算して扱うため、行の中の位置の数え方がずれうる）。
+
+**セル**（`PlanCell`）
+
+- 入力は次の順で整える。
+  1. 改行（`\r\n` / `\r` / `\n`）を半角空白 1 つへ置き換える（FR-142）。
+  2. 前後の空白を除く。
+  3. **直前の 1 文字が `\` でない `|`** を `\|` にする。**`\` の個数は数えない**——goldmark v1.8.5 の表の解析は、`|` の直前の 1 文字だけを見て区切りかどうかを決める（`extension/table.go`）。`\` を数えて「偶数ならエスケープされていない」とすると、パーサと食い違う。
+  4. **新しい内容が `\` で終わり、セルの内容の直後が区切りの `|`（間に空白が無い）なら、内容の末尾に半角空白を 1 つ足す。** そのままでは `\` が区切りの `|` をエスケープし、隣のセルと結合して表の形が変わる。空白があれば何も足さない。
+- 置き換える範囲はセルの**内容**（前後の空白を除いた範囲。IMP-121 の `Content`）とする。区切りの `|` と、その内側の前後の空白は残す（FR-142）。
+- **空のセルに書き込むときは、区切りの間の空白（`Between`）の 1 文字目の直後へ入れる。** 空白が無ければ前の区切りの直後へ入れる。`|  |` は `| x |` になり、区切りの間の空白の数は変わらない。
+- 整えた結果が元の内容と同じなら `changed` を偽にする（FR-142 の「内容が変わっていなければ書き込まない」）。
+- **組み立てた `Patch` を適用した生バイト列を、1 と同じ規則で正規化してから `r.Locate` で解き直し**、次のすべてを確かめる。どれかが違えば `Patch` を返さず `ErrNotEditable` とする（書き込まない。IMP-195 が `edit-failed` で通知する）。**エスケープの規則はパーサの実装に依存し、手で書いた規則だけでは形が変わらないことを保証できない**（4.43.0 で、`\` の個数を数える規則が goldmark と食い違っていた）。
+  - 文書の中の表の数とタスクの数が変わらない（**見出し行の書き換えで表として解析されなくなると、後ろの表とセルの番号がずれる**）
+  - その表の行数と、各行のセルの数が変わらない
+  - 書き換えたセル以外のセルについて、`Content` の区間が指すバイト列が変わらない（**区間の位置そのものは、書き換えたセルより後ろでずれる。** 比べるのは位置ではなく中身である）
+  - 書き換えたセルの `Content` の区間が指すバイト列が、整えた文字列（4 で足した空白を除く）と一致する
+- 表の番号・行・列が文書の範囲を超える場合は `ErrRefNotFound` とする。panic しない。
+- **ソース上に存在しないセル**（IMP-121 で `nil`）は `ErrRefNotFound` とする（FR-142）。
+
+> [!IMPORTANT]
+> **位置は書き込みのたびに、その時点のファイルの内容から求め直す。** 描画時に求めた位置を持ち回らない。**続けて編集すると前の書き込みで後ろのセルの位置がずれる**（FR-143）。`Ref` が持つのは「何番目か」だけであり、構造を変えない編集（[2.14](02-functional.md) の IMPORTANT）では何番目かは変わらない（上のセルの確かめが、それを書き込みのたびに保証する）。
+
+### IMP-107: 置き換えによる書き込み **MUST**
+
+FR-143 / NFR-031 / NFR-033 を実装する。配置は `internal/document/write.go`。
+
+```go
+// Replace は path の実体を data で置き換える。
+// 返しうるエラー: ErrNotFound / ErrPermission / 書き込み時のエラー
+func Replace(path string, data []byte) error
+```
+
+処理の順序を固定する。**どこで失敗しても、元のファイルは変わらず、一時ファイルは残らない。**
+
+| # | 処理 | 失敗したとき |
+| --- | --- | --- |
+| 1 | `filepath.EvalSymlinks(path)` で実体のパスを得る。以降はすべて実体に対して行う | `ErrNotFound` |
+| 2 | `os.Stat` で権限ビットを控える | `ErrNotFound` |
+| 3 | **`os.OpenFile(実体, os.O_WRONLY, 0)` で開けるかを確かめ、すぐ閉じる**（切り詰めない） | `ErrPermission` |
+| 4 | `os.CreateTemp(filepath.Dir(実体), "." + ベース名 + ".markview-*.tmp")` | `ErrPermission`（ディレクトリに書けない） |
+| 5 | 一時ファイルへ `data` を書き、`Sync` して閉じる | 一時ファイルを消して返す |
+| 6 | Windows 以外では、一時ファイルの権限ビットを 2 で控えた値にする（`Chmod`） | 一時ファイルを消して返す |
+| 7 | `os.Rename(一時ファイル, 実体)` | 一時ファイルを消して返す |
+
+- **3 を省かない。** ディレクトリに書き込めればリネームは成功するため、**読み取り専用のファイルを置き換えてしまう**（FR-143 の「元のファイルが書き込み可能でなければ置き換えない」）。Windows でも、読み取り専用属性とアクセス制御の両方をこの 1 回で確かめられる。
+- **一時ファイルの名前を `.` で始める。** ファイルツリーは `.` で始まる名前を出さない（FR-031）。書き込みの途中でツリーを読み直しても現れない。
+- **一時ファイルを実体と同じディレクトリに置く。** 別のボリュームへのリネームは置き換えにならない（コピーと削除になり、途中の状態が残りうる）。`%TEMP%` に置かない（NFR-033 の例外の範囲。FR-143）。
+- **リンクそのものを置き換えない。** 1 で実体を得てから 7 で実体へリネームするため、シンボリックリンクは残る（FR-143）。
+- 監視（IMP-141）は実体のディレクトリを見ており、リネームは `Rename` / `Create` として届く。IMP-142 が 150 ms 後に存在を確かめて `Modified` にするため、**削除とは誤認しない**（FR-140 の「保存に伴う一時的な削除」）。
+- ハードリンクが切れること、Windows でファイル個別に設定したアクセス制御が引き継がれないことは許容する（FR-143）。
+
+### IMP-108: 取り消し履歴 **MUST**
+
+FR-144 を実装する。配置は `internal/document/editlog.go`。**ファイルに触れない純粋なデータ構造**とし、単体テストでファイルを要さない。
+
+```go
+const MaxUndo = 100 // FR-144
+
+// EditLog は編集モードの 1 回分の書き込みの記録。編集モードを始めたときに作り、
+// 終えたときに捨てる（FR-140）。
+type EditLog struct {
+    known [sha256.Size]byte // 把握している内容の要約（FR-143）
+    undo  []Patch           // 古い順。末尾が直前の書き込み
+    redo  []Patch           // 取り消した書き込み。末尾が直前に取り消したもの
+}
+
+func NewEditLog(known [sha256.Size]byte) *EditLog
+
+// Known は把握している内容の要約を返す。
+func (l *EditLog) Known() [sha256.Size]byte
+
+// Record は書き込みを記録する。known を after にし、redo を捨て、undo が MaxUndo を超えたら先頭を捨てる。
+func (l *EditLog) Record(p Patch, after [sha256.Size]byte)
+
+// Undo は取り消しに使う Patch（直前の書き込みの Inverse）を返す。無ければ ok は偽。
+// 返しただけでは履歴を動かさない。書き込みに成功してから CommitUndo を呼ぶ。
+// CommitUndo は known を after にし、undo の末尾を redo へ移す。
+func (l *EditLog) Undo() (p Patch, ok bool)
+func (l *EditLog) CommitUndo(after [sha256.Size]byte)
+
+// Redo / CommitRedo は Undo / CommitUndo の逆向き。
+func (l *EditLog) Redo() (p Patch, ok bool)
+func (l *EditLog) CommitRedo(after [sha256.Size]byte)
+```
+
+- **履歴に文書全体の写しを持たない。** `Patch` は書き換えた箇所の前後の文字列だけを持ち、内容の一致は要約で確かめる（FR-144, NFR-020）。50 MB の文書でも、1 回の記録はセルの文字列程度の大きさで済む。
+- **「取り出す」と「確定する」を分ける。** 書き込みに失敗した取り消しで履歴が動くと、次の `Ctrl+Z` が 1 つ先を取り消してしまう。
+- `Undo` が返す `Patch` を適用できるのは、ファイルの内容が `Known()` と一致しているときだけである。**位置（`Offset`）は直前の書き込みの後の内容に対するもの**であり、他者の変更の上に適用すると別の箇所を壊す。一致を確かめるのは呼び出し側（IMP-109 の `Plan`）である。
+
+### IMP-109: 編集モードの判断 **MUST**
+
+FR-140〜FR-144 / NFR-030 を実装する。配置は `internal/document/editsession.go`。
+
+**編集モードの状態と、書き込んでよいかの判断をすべてここに置く。** ファイルにも Wails にも触れず、錠も持たない。**バインドメソッドの側（IMP-195）は、錠を取り、ファイルを読み書きし、イベントを送るだけにする。** 判断を `package main` に置くと単体テストの対象外になり（UT-002, IMP-012）、**書き込みの安全性を担う部分が検証されない。**
+
+```go
+// ErrStale は、指示を作った描画の後に再描画が起きていたことを表す（FR-143）。通知しない。
+var ErrStale = errors.New("edit instruction is stale")
+
+// OpKind は書き込みの種類。
+type OpKind int
+
+const (
+    OpTask OpKind = iota // SetTask（FR-141）
+    OpCell               // SetCell（FR-142）
+    OpUndo               // UndoEdit（FR-144）
+    OpRedo               // RedoEdit（FR-144）
+)
+
+// Op はフロントエンドから届いた 1 回の書き込みの指示。
+type Op struct {
+    Kind    OpKind
+    Ref     string // OpTask / OpCell: data-ref の値そのもの（IMP-316）
+    Checked bool   // OpTask
+    Text    string // OpCell
+}
+
+// EditSession は編集モードの状態（FR-140）。ゼロ値は「編集モードでない」。
+type EditSession struct {
+    on      bool
+    removed bool     // 監視が表示中のファイルの削除を送った。次に読み込めたら偽に戻す
+    log     *EditLog // on の間だけ非 nil（IMP-108）
+    seq     uint64   // 状態を変えうる呼び出しのたびに増やす（IMP-302 の EditSeq）
+}
+
+func (s *EditSession) On() bool
+func (s *EditSession) Seq() uint64
+
+// CanStart は doc で編集モードを始められるかを返す（DocumentDTO.Editable）。
+// showing は、画面が doc を表示していること（状態画面・文書未表示でない。IMP-190 の showing）。
+func (s *EditSession) CanStart(doc *Document, showing bool) bool
+
+// Start は CanStart が真なら編集モードを始めて真を返す。偽なら何も変えない。
+func (s *EditSession) Start(doc *Document, showing bool) bool
+
+// Stop は編集モードを終え、履歴を捨てる。
+func (s *EditSession) Stop()
+
+// Loaded は文書を開く処理（IMP-192）で読み込みに成功したときに呼ぶ。same は SameDocument。
+func (s *EditSession) Loaded(doc *Document, same bool)
+
+// Left は状態画面を出したときに呼ぶ（文書の切り替えとして終える。IMP-192）。
+func (s *EditSession) Left()
+
+// Removed は監視が表示中のファイルの削除を送ったときに呼ぶ（IMP-195, IMP-320）。
+func (s *EditSession) Removed()
+
+// Deleted は削除の印が立っているか（Removed の後、まだ読み込めていないか）を返す（IMP-192）。
+func (s *EditSession) Deleted() bool
+
+// Discard は取り消し・やり直しの履歴だけを捨てる。把握している内容（Known）は変えない（IMP-195 の 4）。
+func (s *EditSession) Discard()
+
+// Check は、指示がいまの描画に対して有効かを確かめる（IMP-195 の 1, 2）。ファイルを読む前に呼ぶ。
+func (s *EditSession) Check(doc *Document, showing bool, op Op) error
+
+// Plan は読んだ生バイト列 raw に対する Patch を作る（IMP-195 の 4, 5）。
+func (s *EditSession) Plan(r *renderer.Renderer, raw []byte, op Op) (p Patch, changed bool, err error)
+
+// Commit は書き込みに成功した後に呼び、履歴を確定する（IMP-195 の 7）。after は書き込んだ内容。
+func (s *EditSession) Commit(op Op, p Patch, after []byte)
+
+// CellSource は raw の中の ref のセルのソースを返す（GetCellSource。IMP-195）。
+func (s *EditSession) CellSource(r *renderer.Renderer, raw []byte, ref string) (string, error)
+```
+
+**開始できる条件**（`CanStart`。FR-140 の表）
+
+次のすべてを満たすときだけ真とする。`doc` が nil でない、`showing` が真、`doc.Editable()` が真、`removed` が偽。**`Start` はこの関数だけで判断する**——`DocumentDTO.Editable` とボタンの淡色（UI-021）と、開始の可否を 1 つの式に揃える。
+
+**読み込みの後の扱い**（`Loaded` / `Left`。FR-140, FR-144）
+
+| 呼び出し | 条件 | 編集モード | 取り消し履歴 |
+| --- | --- | --- | --- |
+| `Loaded` | `on` が偽 | 変えない（始めない） | —（持っていない） |
+| `Left` | 状態画面を出した（文書の切り替え） | **終える** | 捨てる |
+| `Loaded` | `same` が偽（文書の切り替え） | **終える** | 捨てる |
+| `Loaded` | `same` が真で、`doc.Editable()` が偽（読み直したら不正なバイト列を含んでいた） | **終える** | 捨てる |
+| `Loaded` | `same` が真で、`doc.Digest` が `log.Known()` と一致しない | 保つ | **捨てて、新しい `Digest` で作り直す**（外部で変更された。FR-144） |
+| `Loaded` | `same` が真で、一致する | 保つ | 保つ |
+
+- 表は上から順に当てはめる。
+- `Loaded` は `removed` を偽に戻す（読み込めた以上、ファイルはある）。`Left` は戻さない。
+- `Start` は編集モードを始めるとき、`NewEditLog(doc.Digest)` で履歴を作る（IMP-108）。
+- **表示を変えない失敗**（`not-found` など。IMP-192 の `target` の表）では、どちらも呼ばない。
+
+**書き込みの判断**（`Check` / `Plan`）
+
+| # | 確かめること | 当てはまらないとき |
+| --- | --- | --- |
+| 1 | `on` が真、`doc` が nil でない、`showing` が真 | `ErrStale` |
+| 2 | `OpTask` / `OpCell` なら、`ParseRef` で解け、**`Ref.Key` が `doc.RefKey` と一致し、`Ref.Kind` が `Op.Kind` と一致する**（取り消し・やり直しは鍵を持たないため省く） | `ErrStale`——指示を作った描画の後に、文書の切り替えか、自分の書き込み以外による再描画が起きている（FR-143）。**種類が食い違う指示（セルの目印でタスクを書き換える）も拒む** |
+| 4 | **`raw` の SHA-256 が `log.Known()` と一致する** | `ErrChanged`（書き込まない。FR-143） |
+| 5 | `OpTask` は `PlanTask`、`OpCell` は `PlanCell`、`OpUndo` は `log.Undo()`、`OpRedo` は `log.Redo()` | `ErrBadRef` / `ErrRefNotFound` は `ErrStale`。**`ErrNotEditable` はそのまま返す**（IMP-195 が `edit-failed` で通知する。表の形の確かめ（IMP-106）で拒んだ場合など）。変わらない・履歴が空なら `changed` が偽 |
+
+- 番号は IMP-195 の手順の番号と揃えている（3 のファイルの読み込みは IMP-195 が行う）。
+- **`Commit` は、`OpTask` / `OpCell` なら `log.Record`、`OpUndo` なら `log.CommitUndo`、`OpRedo` なら `log.CommitRedo` を、`after` の SHA-256 で呼ぶ。** 書き込みに失敗したときは呼ばない（IMP-108 の「取り出す」と「確定する」を分ける）。
+- **5 で `ErrNotEditable` を `ErrStale` にしない。** 形の確かめで拒んだのは、エスケープの規則が働かなかった場合であり、古い指示ではない。黙って戻すと、**確定した入力が通知も無く消える**（FR-142, FR-110）。
+- `CellSource` は 4 と同じ確かめを行い（一致しなければ `ErrChanged`）、`document.CellSource` の結果を返す。`ErrBadRef` / `ErrRefNotFound` / `ErrNotEditable` は `ErrStale` とする（編集欄が開かないだけで済み、書き込みではないため通知しない）。呼ぶ前に `Check`（`OpCell`）を通す。
+- **`seq` は、`Stop` / `Loaded` / `Left` / `Removed` のたびと、`Start` が編集モードを始めたとき（偽を返した `Start` と、既に編集モードの間の `Start` を除く）に 1 増やす。** フロントエンドは、先に届いた新しい値を後から届いた古い値で上書きしない（IMP-260）。
+- **`Removed` は編集モードを終え、履歴を捨て、削除の印を立てる**（FR-140 の表の「削除された」）。
+- **`Discard` は `seq` を増やさない**（編集モードの状態を変えない）。**把握している内容を作り直さない**——作り直すと、読み直しに失敗して描画が古いまま（鍵も古いまま）なのに、次の書き込みが 4 を通ってしまう。次に読み込めたときに `Loaded` が作り直す。
+- **既に編集モードの間に `Start` を呼んでも、何も変えずに真を返す**（履歴を保つ。ボタンの二重押しで履歴が消えないようにする）。
+
 ## 11.3 renderer パッケージ（IMP-110 系）
 
 責務: goldmark パイプラインの構築と実行。Markdown → サニタイズ済み HTML への変換と、見出しの抽出。
@@ -156,7 +457,7 @@ package renderer
 type Heading struct {
     Level int    `json:"level"` // 1..6
     Text  string `json:"text"`  // インライン記法を除去したプレーンテキスト
-    ID    string `json:"id"`    // 見出しアンカー（MD-021）
+    ID    string `json:"id"`    // 見出しの id 属性の値。user-content- 付き（MD-021, AR-053）
 }
 
 type Result struct {
@@ -175,11 +476,17 @@ type Renderer struct {
 func New() *Renderer
 
 // Render は Markdown を変換する。baseDir は相対パス解決の基準ディレクトリ
-// （表示中ファイルのディレクトリ。AR-042）。
-func (r *Renderer) Render(source []byte, baseDir string) (Result, error)
+// （表示中ファイルのディレクトリ。AR-042）。refKey は目印の鍵（IMP-120）。
+// 空文字なら目印を付けない。
+func (r *Renderer) Render(source []byte, baseDir, refKey string) (Result, error)
+
+// Locate は変換を行わずに構文木だけを作り、書き換え位置を返す（IMP-121）。
+func (r *Renderer) Locate(source []byte) (Locations, error)
 ```
 
-- `Renderer` は状態を持たず、複数のゴルーチンから同時に `Render` を呼べる（IMP-024）。
+- `Renderer` は状態を持たず、複数のゴルーチンから同時に `Render` / `Locate` を呼べる（IMP-024）。
+- **`refKey` を空にできるのはテストのためである。** ゴールデンテスト（IMP-041）は固定の鍵を渡して目印も含めて比べ、目印を見ないテストは空文字を渡す。**アプリケーションは必ず鍵を渡す**（IMP-102）。鍵を渡さないと、並べ替え（FR-130）とリンクのコピー（FR-063）も働かない。
+- **`Render` を呼ぶのは `internal/document`（IMP-102）と、描画スモークテストの `scripts/smoke`（BR-054）である。** 引数を足すときは両方を直す。**描画スモークテストも、アプリと同じく実行のたびに作った鍵を渡す**——目印の照合（BR-054）を検査するためである。
 - `Render` 内でパニックが発生した場合は `recover` し、エラーとして返す（IMP-022）。
 
 ### IMP-111: goldmark の構成 **MUST**
@@ -197,29 +504,40 @@ goldmark.New(
         extension.Linkify,       // 裸の URL の自動リンク（MD-070）
         extension.NewFootnote(  // 脚注（MD-050）。戻りリンクの記号を指定する
             extension.WithFootnoteBacklinkHTML("&#x21a9;"),
+            extension.WithFootnoteIDPrefix("user-content-"), // AR-053
         ),
         emoji.Emoji,            // 絵文字ショートコード（MD-051）
         meta.Meta,              // Front Matter（MD-073）
+        alertExtension{},       // GitHub Alerts（IMP-112）
+        mathExtension{},        // 数式の保護（IMP-113）
+        mermaidExtension{},     // Mermaid ブロックの取り出し（IMP-115）
+        plantUMLExtension{},    // PlantUML ブロックの取り出し（IMP-119）
+        refExtension{},         // 編集・並べ替え・リンクの目印（IMP-120）
+        // ハイライトは数式・Mermaid・PlantUML より後に置く（下記）
         highlighting.NewHighlighting(...), // IMP-114
-        &alertExtension{},      // GitHub Alerts（IMP-112）
-        &mathExtension{},       // 数式の保護（IMP-113）
-        &mermaidExtension{},    // Mermaid ブロックの取り出し（IMP-115）
-        &plantumlExtension{},   // PlantUML ブロックの取り出し（IMP-119）
     ),
     goldmark.WithParserOptions(
         // parser.WithAutoHeadingID() は使用しない（理由は後述）。
         parser.WithASTTransformers(
             util.Prioritized(headingTransformer{}, 100), // 見出し ID と一覧（IMP-117）
+            util.Prioritized(imageTransformer{}, 95),    // 画像 URL の書き換え（IMP-118）
         ),
     ),
     goldmark.WithRendererOptions(
         html.WithUnsafe(),      // 生 HTML を通し、後段の bluemonday で除去する
+        // インデント形式のコードブロックもラッパで包む（IMP-115）。
+        // 既定の描画器（優先度 1000）より小さい値で上書きする
+        gmrenderer.WithNodeRenderers( // goldmark の renderer パッケージ
+            util.Prioritized(codeBlockRenderer{}, 500),
+        ),
     ),
 )
 ```
 
+- **ハイライト（IMP-114）は、数式（IMP-113）・Mermaid（IMP-115）・PlantUML（IMP-119）の拡張より後に登録する。** これらは先に専用のノードへ差し替わり、chroma に渡らない。先に登録すると、`mermaid` や `plantuml` のフェンスがハイライト済みのコードブロックとして出力される（v1.0.0 の `renderer.go` と同じ並び）。
 - **`html.WithUnsafe()` を有効にする。** 生 HTML を goldmark 段階で落とすと、`<details>` 等の許可要素（MD-072）まで失われるため。安全性の担保は後段のサニタイズ（IMP-116）に一元化する。この 2 つは必ず対で実装する。
 - **見出し ID は goldmark の `WithAutoHeadingID` を使わない。** GitHub 互換のスラッグ規則（MD-021）と生成結果が異なるため、独自の AST 変換で付与する（IMP-117）。上のコードブロックが `parser.WithASTTransformers` を渡しているのはこのためであり、`WithAutoHeadingID` を併用してはならない（後から付与される ID に上書きされる）。
+- **脚注の id には `extension.WithFootnoteIDPrefix("user-content-")` で接頭辞を付ける**（MD-050, AR-053）。goldmark はこの値を `id` 属性とリンクの `href`（`#user-content-fn:1`）の両方に付ける。フロントエンドは接頭辞付きのフラグメントもそのまま探せる（IMP-223）。
 - **脚注の戻りリンクは `extension.NewFootnote(extension.WithFootnoteBacklinkHTML("&#x21a9;"))` で指定する。** goldmark の既定は `&#x21a9;&#xfe0e;` で、異体字セレクタにより白黒の記号として描かれる。GitHub はセレクタを付けないため見た目が変わる（MD-050, MD-002）。
 - TOML の Front Matter（`+++`）は `meta.Meta` が扱わないため、`Render` の前段で文字列として除去する。
 
@@ -318,6 +636,7 @@ FR-060 / MD-080 を実装する。すべてのコードブロックを共通の�
 </div>
 
 <div class="code-block" data-lang="mermaid" data-mermaid="1"
+     data-ref="0123456789abcdef:mermaid:0"
      data-source="graph TD&#10;  A--&gt;B">
   <pre class="mermaid-source">graph TD
   A--&gt;B</pre>
@@ -326,7 +645,8 @@ FR-060 / MD-080 を実装する。すべてのコードブロックを共通の�
 
 - **Mermaid ブロックにのみ `data-source` 属性を付け、原文を重複して持たせる。** Mermaid は描画後に `<pre>` が SVG へ置き換わり、DOM から原文が失われる。これがないと、描画後にコピーボタン（FR-060）がソースを取得できず、テーマ切り替え時の再描画（IMP-231）もできない。
 - `data-source` の値は HTML 属性としてエスケープする（改行は `&#10;`）。Base64 等の追加のエンコードは行わない。デバッグ時に目視できる形を保つため。ただし最後段のサニタイズ（IMP-116）が数値文字参照を実体へ戻すため、**最終的な出力では改行がそのまま現れる**。要求は「値として改行が保たれること」であり、表記の形ではない。
-- 通常のコードブロックには `data-source` を付けない。原文は `pre code` の `textContent` から取得できる（IMP-221）。
+- **Mermaid ブロックには目印 `data-ref="<鍵>:mermaid:<n>"` を付ける**（IMP-120, NFR-030）。n は文書の中の Mermaid ブロックの出現順（0 起点。描画に失敗するものも数える。FR-120 の「同じ対象」と同じ数え方）。**フロントエンドは鍵の合うブロックだけを描画し、鍵の合うブロックの `data-source` だけを使う**（IMP-230, IMP-221）。生 HTML で `class="code-block"` と `data-mermaid` と `data-source` を書けば同じ形を作れる（サニタイズは形しか見られない。IMP-116）。**目印で見分けないと、Go 側を経ていない図が描かれ、見えている内容と違う原文がコピーされる**（[BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。鍵が空なら付けない（IMP-110）。
+- 通常のコードブロックには `data-source` も目印も付けない。原文は `pre code` の `textContent` から取得できる（IMP-221）。**コピーされるのは見えている文字列そのもの**であり、偽装の余地が無い。
 - ラッパが出すのは `<div class="code-block">` だけであり、内側の `<pre>` / `<code>` は chroma が出力する。ハイライトできない場合（言語指定なし・未知の言語）は chroma を通らないため、ラッパ側で `<pre><code>` を補う。`chroma` クラスが付くのは `<pre>` であり、ハイライトされたブロックに限る。
 - `mermaid` ブロックを 1 つ以上出力した場合、`Result.NeedsMermaid = true` とする。
 - `math` 言語のコードブロックは Mermaid ではなく数式として扱う（IMP-113）。
@@ -347,10 +667,22 @@ func Policy() *bluemonday.Policy
 - `img` には `src` / `alt` / `title` / `width` / `height` を許可する。`src` は `http`, `https`, および内部アセットサーバのパス（`/__local/`）のみ許可する。
 - `abbr` には `title` を許可する。これがないと許可要素として意味を持たない。
 - `a` には `href` / `title` を許可する。`href` は `http`, `https`, `mailto`, 相対パス、`#` アンカーのみ許可する。`javascript:` 等は除去する。
-- コードブロックとハイライトのために、`span` / `code` / `pre` / `div` の `class` 属性を許可する。ただし許可する値は接頭辞で制限する（`chroma`, `code-block`, `markdown-alert`, `math-`, `mermaid-source`, `plantuml-source`）。**「など」で濁さず、自前で出力するものをすべて列挙する。** 任意のクラス名を通さない。
-- `data-lang` / `data-mermaid` / **`data-plantuml`** / **`data-puml-error`** / `data-source` / `id`（見出しアンカーと脚注）を許可する。**PlantUML の 2 つを落とすと、描画対象と拒んだブロックがフロントエンドから見えなくなる**（IMP-119, IMP-233）。
+- `class` 属性は `a` / `p` / `div` / `span` / `pre` / `code` / `ol` / `li` / `sup` に許可する。**値は、次の語を空白で区切って並べたものだけを通す**（語の完全一致。接頭辞で許可しない）。**「など」で濁さず、自前で出力するものをすべて列挙する。** 任意のクラス名を通さない。
+  - `code-block` / `mermaid-source` / `plantuml-source`（IMP-115, IMP-119）
+  - `markdown-alert` / `markdown-alert-title` / `markdown-alert-note` / `markdown-alert-tip` / `markdown-alert-important` / `markdown-alert-warning` / `markdown-alert-caution`（IMP-112）
+  - `math-inline` / `math-block`（IMP-113）
+  - `footnotes` / `footnote-ref` / `footnote-backref`（goldmark の脚注。MD-050）
+  - chroma のクラス（`chroma` とトークンクラス。下記）
+- `div` の `data-lang` / `data-mermaid` / **`data-plantuml`** / **`data-puml-error`** / `data-source` / `data-ref`（図のブロックの目印。下記）と、`id`（見出しアンカーと脚注）を許可する。**PlantUML の 2 つを落とすと、描画対象と拒んだブロックがフロントエンドから見えなくなる**（IMP-119, IMP-233）。
 - 表の桁揃えのため `th` / `td` の `align`（`left` / `center` / `right`）を許可する。goldmark に align 属性で出力させることで、`style` 属性を許可せずに MD-024 を満たす（IMP-111）。
-- タスクリスト（MD-022）のため `input` の `type="checkbox"` / `checked` / `disabled` を許可する。MD-072 の許可要素に `input` はないが、これがないとタスクリストが描画されない。**bluemonday では属性を許可した要素が許可要素になる**ため、要素の一覧には足さず、この属性指定だけで例外を閉じ込める。
+- タスクリスト（MD-022）のため `input` の `type="checkbox"` / `checked` / `disabled` を許可する。MD-072 の許可要素に `input` はないが、これがないとタスクリストが描画されない。**bluemonday では属性を許可した要素が許可要素になる**ため、要素の一覧には足さない。**`disabled` は編集モードでも出力し続ける。** 外すのはフロントエンドであり、目印（IMP-120）の鍵が合う要素に限る（IMP-261）。
+- **生 HTML の `id` 属性は、サニタイズの後に `user-content-` を前に付けた値へ書き換える**（MD-072, AR-053）。既に `user-content-` で始まる値には付けない。**書き換えは下の `input` の後処理と同じ 1 回の走査で行い**、`id` 属性を持つ**開始タグと自己終了タグ（`StartTagToken` / `SelfClosingTagToken`）**だけを組み立て直す（トークンの種類、つまり末尾の `/>` の有無は保つ）。それ以外のトークンは `Raw()` のバイト列をそのまま書く。**bluemonday は `<div id="x"/>` を自己終了タグのまま出力し、ブラウザはこれを開始タグとして扱う**（bluemonday v1.0.27 の `sanitize.go`）。開始タグだけを見ると、接頭辞の無い `id` が本文に残る。**見出しと脚注の id は、出力の時点で接頭辞が付いている**（IMP-117, IMP-111）ため、この走査では変わらない。
+  - **文書に生 HTML が 1 つも無い（構文木に `HTMLBlock` / `RawHTML` が無い）なら、この走査を省いてよい**（NFR-011）。生 HTML が無ければ、出力の `id` と `input` はすべて自分で出したものである。
+- **`type="checkbox"` を持たない `input` を残さない。** bluemonday は、許可した属性が 1 つでも残れば要素を残す。**`<input disabled>` や `<input data-ref="…">` と書くと、`type` が落ちて文字の入力欄として本文に出る**（`type` の既定は `text`。bluemonday v1.0.27 で確認）。**属性指定だけでは例外を閉じ込められない。** サニタイズの後に `golang.org/x/net/html` のトークナイザで `input` の開始タグと自己終了タグ（`<input disabled/>`）を調べ、`type="checkbox"` を持たないものを取り除く。**それ以外のトークンは `Raw()` のバイト列をそのまま書き、出力を変えない**（ゴールデンテストに差分を出さない）。
+  - **生 HTML がある場合は、数を数えて走査を省いてはならない。** bluemonday は `object` / `noscript` / `style` / `title` などの**中身ごと捨てる**（bluemonday v1.0.27 の `policy.go` の `addDefaultSkipElementContent`）。`<object>` の中に Markdown の見出しを置くと Go が出した `id` が 1 つ消え、同じ数だけ生 HTML の `id="statusbar"` を足せば数が一致する。**`id` の数も `<input` の数も、書き手が合わせられる**（AR-053 の [BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md) の再発、`<input disabled>` が入力欄として残る）。
+  - **組み立て直すタグの属性値は、HTML の属性値としてエスケープし直す。**
+  - **「既に `user-content-` で始まる値には付けない」はこの走査に必須の規則である**——見出しと脚注の id は出力の時点で接頭辞が付いており、付け直すと二重になる。
+- **目印の属性（IMP-120）を、値の形を正規表現で縛って許可する。** `data-ref` は `input` / `table` / `th` / `td` に限り `^[0-9a-f]{16}:(task:[0-9]+|table:[0-9]+|cell:[0-9]+:[0-9]+:[0-9]+)$`、`div` に限り `^[0-9a-f]{16}:(?:mermaid|plantuml):[0-9]+$`、`data-link` は `a` に限り `^[0-9a-f]{16}:` で始まる値だけを通す。**形を縛っても偽装は防げない**（書き手は同じ形を書ける）。**防ぐのは鍵である**——鍵は変換のたびに作られ、書き手は知りようがない（IMP-120）。形を縛るのは、それ以外の用途で属性を通さないためである。
 - 脚注の `role`（`doc-*`）を許可する。
 - **chroma のトークンクラス（`k` `s2` `nf` など）は接頭辞を持たない。** 値を書き写すと chroma の更新で取りこぼし、コードが無色になる。`chroma.StandardTypes` から許可リストを組み立て、一覧の維持を不要にする。
 - **`data:` の判定に bluemonday の `AllowDataURIImages` を使わない。** あれは `image/svg+xml` を許可する（MD-072 参照）。許可する種別を自前で `gif` / `jpeg` / `png` / `webp` に限る。
@@ -380,8 +712,14 @@ func (s *slugger) Slug(text string) string
 3. **前後の空白を落としたうえで、残った空白（`unicode.IsSpace`）1 つにつき `-` を 1 つ書く。** **連続をまとめない**（MD-021 の 3）。まとめると、記号を除いた跡に並んだ空白が 1 つのハイフンになり、GitHub と食い違う。
 4. **英数字・`-`・`_` と、`unicode.IsLetter` / `unicode.IsDigit` に当たる文字だけを残す。** それ以外は除去する（MD-021 の 4）。**「非 ASCII なら残す」と書かない。** 全角の括弧・中黒・矢印まで残り、GitHub と違うアンカーになる。
 5. 重複時に連番を付与する。
+6. **`id` 属性の値は、スラッグの前に `user-content-` を付けたものとする**（MD-021, AR-053）。`Heading.ID` も同じ値にする（アウトラインが本文の要素を探すため。IMP-224）。重複の判定と連番はスラッグで行う（`test` / `test-1`）。
+   - **スラッグが `user-content-` で始まっていても、必ず付ける**（`## user-content-foo` の id は `user-content-user-content-foo`）。「二重に付けない」は生 HTML の `id` だけの規則である（IMP-116）。
+   - **スラッグが空なら、`id` 属性も `Heading.ID` も空とする**（接頭辞だけの `user-content-` を出さない。空の見出しがいくつあっても同じ id が並ばない）。
 
 同じ処理で得たプレーンテキストを `Heading.Text` にも用いる（FR-040）。
+
+> [!IMPORTANT]
+> **接頭辞を `Slug` の中で付けない。** `Slug` は MD-021 の 1〜5 を実装する関数であり、UT-202 はスラッグそのものを見る。接頭辞は `id` 属性へ書くときに 1 か所で付ける。**2 か所で付けると、`user-content-user-content-` が生まれる。**
 
 ### IMP-118: 画像 URL の書き換え **MUST**
 
@@ -406,6 +744,7 @@ FR-024 / MD-083 / MD-084 を実装する。IMP-115 のラッパの上に乗り�
 
 ```html
 <div class="code-block" data-lang="plantuml" data-plantuml="1"
+     data-ref="0123456789abcdef:plantuml:0"
      data-source="@startuml&#10;Alice -&gt; Bob&#10;@enduml">
   <pre class="plantuml-source">@startuml
 Alice -&gt; Bob
@@ -415,6 +754,7 @@ Alice -&gt; Bob
 
 - 対象は言語指定が `plantuml` または `puml` のフェンス。**大文字小文字を区別しない**（chroma の言語名解決と揃える）。**`uml` は対象としない**（MD-083）。
 - **`data-source` を付ける**。描画後に `<pre>` が SVG へ置き換わり原文が失われるためであり、理由は IMP-115 と同じである（コピーボタンとテーマ切り替え時の再描画）。
+- **目印 `data-ref="<鍵>:plantuml:<n>"` を、描画するブロックにも、下の検査で拒んだブロック（`data-puml-error`）にも付ける**（IMP-120）。n は文書の中の PlantUML ブロックの出現順（0 起点。拒んだものも数える。FR-120 の「同じ対象」と同じ数え方）。**フロントエンドは鍵の合うブロックだけを描画と理由の表示の対象にし、資産を読むかどうかも鍵の合うブロックの有無で決める**（IMP-233, NFR-013）。**目印が無いと、生 HTML で `data-plantuml` と `data-source` を書いたブロックが、下の検査を経ずに描画へ回る**（MD-084, NFR-032。[BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。鍵が空なら付けない（IMP-110）。
 - **`data-plantuml` を付けたブロック**を 1 つ以上出力した場合、`Result.NeedsPlantUML = true` とする（下記の検査で拒んだブロックは数えない）。
 
 **取り込み指令の検査**（MD-084, NFR-032）
@@ -440,6 +780,77 @@ func hasIncludeDirective(source string) bool
 > **判定を Go 側に置くのは、描画処理系の振る舞いに依存しないためである**（MD-084, AR-031）。資産は BR-043 で自動更新されるため、上流がリモート取得を有効化してもこちらは気づかない。
 >
 > **フロント側で `XMLHttpRequest` を一時的に潰す方式は採らない。** 描画中だけ差し替える実装は副作用が読みにくく、描画が非同期（IMP-233）であるため元に戻す契機も定まらない。
+
+### IMP-120: 編集・並べ替え・リンクの目印 **MUST**
+
+FR-061 / FR-063 / FR-130 / FR-141 / FR-142 / MD-084 / NFR-030 を実装する。配置は `internal/renderer/editref.go`（図のブロックの目印は IMP-115 / IMP-119 の描画器が出す）。
+
+**GFM の構文に由来する要素にだけ、変換時に目印の属性を付ける。** フロントエンドは目印を見て、編集できる要素・並べ替えられる表・書かれたとおりのリンク先・**描画してよい図と、コピーに使ってよい原文（`data-source`）**を知る。**生 HTML で書かれた要素には付かない。**
+
+| 対象（goldmark のノード） | 出力する属性 | 値 |
+| --- | --- | --- |
+| `TaskCheckBox`（タスクリストの項目） | `input` の `data-ref` | `<鍵>:task:<n>`。n は文書の中で何番目のタスクか |
+| `Table`（GFM の表） | `table` の `data-ref` | `<鍵>:table:<t>`。t は文書の中で何番目の GFM の表か |
+| `TableCell`（**ソース上に存在するセル**） | `th` / `td` の `data-ref` | `<鍵>:cell:<t>:<r>:<c>`。r は 0 が見出し行、c は列 |
+| `Link` / `AutoLink` | `a` の `data-link` | `<鍵>:<書かれたとおりのリンク先>` |
+| Mermaid のブロック（IMP-115） | `div.code-block` の `data-ref` | `<鍵>:mermaid:<n>`。n は文書の中で何番目の Mermaid ブロックか |
+| PlantUML のブロック（IMP-119。検査で拒んだものを含む） | `div.code-block` の `data-ref` | `<鍵>:plantuml:<n>`。n は文書の中で何番目の PlantUML ブロックか |
+
+- **鍵（`refKey`）は変換のたびに作る乱数である**（IMP-102）。文書の書き手は変換より前に文書を書くため、**鍵を知りようがなく、生 HTML で目印を偽装できない**（FR-141, FR-063, NFR-030）。サニタイズ（IMP-116）が属性の形を通しても、鍵の合わない目印はフロントエンドが無視し（IMP-260）、Go 側も拒む（IMP-195）。
+- 番号は 0 起点で、**文書の中の出現順**とする。数え方は IMP-121 の `Locate` と**同じ関数で**決める（`walkRefs`）。**2 か所に書くと、描画で付けた番号と書き込みで探す番号が食い違い、別のセルを書き換える。**
+  - **図のブロックの番号は、描画器（IMP-115, IMP-119）が文書の順に振る。** 図は書き換えの対象ではなく `Locate` は位置を返さないため、`walkRefs` と共有しなくてよい。描画に失敗するブロック・拒んだブロックも数える（FR-120 の「同じ対象」）。
+- **補われたセルには `data-ref` を付けない。** 行のセル数が見出し行より少ないとき、goldmark は空の `TableCell` を補う（ソース上の位置を持たない。`Lines().Len() == 0`）。付けないことで、フロントエンドは編集できないセルとして扱う（FR-142）。
+- **`TaskCheckBox` は描画器を差し替える。** goldmark 標準の描画器は属性を出力しない。**差し替えた描画器は、標準の描画器と同じ文字列（属性の順と、末尾の半角空白 `> ` を含む）に `data-ref` を足しただけにする。** 違えると、ゴールデンテスト（IMP-041）の差分が目印以外にも出る。`Table` / `TableCell` / `Link` / `AutoLink` は、AST 変換で属性を与えれば標準の描画器が `data-` 属性として出力する（`html.RenderAttributes` は `data-` で始まる属性をフィルタに関わらず出す。goldmark v1.8.5 で確認）。
+- **リンク先の「書かれたとおり」は `Link.Destination` の値とする**（FR-063）。goldmark は参照リンクを解決した後の宛先（定義に書かれた形）を `Destination` に持ち、`href` へ出すときにエスケープと実体参照を解いて百分率エンコードする。**`Destination` は原文そのものではない。** 山括弧で囲んだ宛先（`<./a b.md>`）は括弧が外れ（`./a b.md`）、バックスラッシュのエスケープと実体参照は解かれずに残る（`./a\_b.md` はそのまま）。**これを「書かれたとおり」とする。**
+- **`AutoLink` は `Label(source)` の値とする。** `URL(source)` は `www.` で始まる裸の URL（MD-070）に `http://` を足すため、書かれた形ではない（`www.example.com/p` が `http://www.example.com/p` になる）。メールアドレスの `mailto:` は `href` にだけ付き、どちらにも入らない。
+- **生 HTML の `<a>` には付かないため、フロントエンドは `href` を使う**（FR-063）。
+- 属性値は HTML 属性としてエスケープする（IMP-115 の `data-source` と同じ扱い）。
+
+> [!IMPORTANT]
+> **目印を「生 HTML か GFM か」を区別する唯一の手段にする。** サニタイズを通った後の HTML では、GFM のタスクリストのチェックボックスと、生 HTML で書かれた `<input type="checkbox" disabled>` は**区別がつかない**（MD-072 の NOTE）。属性の有無や形で判断すると、書き手が同じ属性を書くだけで偽装できる。**鍵が合うかどうかだけで判断する。**
+>
+> **図のブロックも同じである。** `data-mermaid` / `data-plantuml` / `data-source` の有無で判断すると、生 HTML で書いたブロックが Go 側の検査（IMP-119）を経ずに描画され、見えている内容と違う原文がコピーされる（[BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)。v1.0.0 から残っていた）。
+
+### IMP-121: 書き換え位置の特定 **MUST**
+
+FR-141 / FR-142 / AR-031 を実装する。配置は `internal/renderer/editref.go`。
+
+```go
+// Span はソース上の半開区間 [Start, Stop)。
+type Span struct{ Start, Stop int }
+
+// CellSpan は 1 つのセルの位置。
+type CellSpan struct {
+    Content Span // 前後の空白を除いた内容（空のセルでは Start == Stop）
+    Between Span // 前後の区切り（|）の間。空白を含む
+}
+
+type TableLocation struct {
+    Cells [][]*CellSpan // [行][列]。0 行目が見出し行。nil はソース上に存在しないセル
+}
+
+type Locations struct {
+    Tasks  []Span          // 各タスクの括弧の中の 1 文字
+    Tables []TableLocation // GFM の表
+}
+```
+
+- **`Render` と同じ goldmark の構成で構文木だけを作り、HTML を出力しない。** サニタイズも通さない。位置を求めるのに要らない。
+- **前処理も `Render` と同じにする。** 前処理（Front Matter の扱い。IMP-111）は位置を次の 2 通りでずらすため、ずれた分を位置から戻す。**前処理とずれの量は 1 つの関数が返し、`Render` と `Locate` の 2 か所に書かない。**
+  - TOML の Front Matter（`+++`）を文字列として除いた場合: 除いた長さを足す。
+  - **1 行目が `---` で閉じの無い YAML の場合: 前処理が先頭に改行を 1 バイト足しているため、1 を引く。**
+  - 閉じた YAML は `meta.Meta` がパーサの中で読み飛ばすため、位置はずれない。
+- 番号付けは IMP-120 と共有する `walkRefs` で行う。
+- **タスクの位置**は、`TaskCheckBox` の親（`TextBlock` または `Paragraph`）の先頭行の開始位置から、GFM のタスクリストの正規表現（`^\[([\sxX])\]\s*`）で括弧の中の 1 文字を求める。
+- **セルの位置**は `TableCell.Lines().At(0)` の区間とする。goldmark は前後の空白を除いた区間を持つ。`Between` は、その区間を区切りの `|` の直後・直前まで広げたものとする。**引用やリストの中の表**でも、区間はソース上の実際の位置を指す（行頭の `> ` などは区間の外にある）。
+  - **空のセル（`|  |`）の区間は `Start == Stop` で、位置は閉じる `|` の位置（空白の後ろ）にある。** `Between` は前の `|` の直後からその位置までとなる。
+  - **行頭に `|` が無い行の最初のセル**の `Between` は、行の内容の先頭（引用の `> ` などの後ろ）から始まる。
+  - **エスケープした `\|` を含むセルの区間は `\` を含む。** `CellSource` はそれをそのまま返す（編集欄には書かれたとおりに出る）。
+  - **見出し行より多いセルは、goldmark が構文木から捨てる。** 描画されず、目印も位置も持たない。
+- 変換と同じく、パニックは `recover` してエラーとして返す（IMP-022）。
+
+> [!NOTE]
+> **位置は「正規化後のテキスト」の上の値である。** 生バイト列の上の位置へ移すのは `document` の役目である（IMP-106）。`renderer` は BOM や改行コードの正規化を知らない（IMP-103 は `document` にある）。
 
 ## 11.4 filetree パッケージ（IMP-130 系）
 
@@ -547,15 +958,22 @@ func (w *Watcher) Watch(path string) error
 func (w *Watcher) Unwatch()
 
 // Events は通知チャネルを返す。デバウンス後のイベントのみが流れる。
+// バッファは 1 とし、受け手が取り出す前に次のイベントが出たら、新しい値で置き換える。
 func (w *Watcher) Events() <-chan Event
 
 func (w *Watcher) Close() error
 ```
 
+- **送信で止まらない。** 通知を受ける側（IMP-192 の読み直し、IMP-195 の削除）は `ioMu` を待つため、取り出しが秒単位で遅れうる。送信で止まると、監視のゴルーチンが fsnotify のイベントを読まなくなる。**fsnotify v1.10.1 の Windows 実装は、イベントの送信が詰まっている間、`Add` / `Remove` の要求も処理しない**（同じゴルーチンで処理する）。その間に文書を開く処理が `ioMu` を持ったまま `Watch` を呼ぶと止まり、`mu` を取るバインドメソッドがすべて止まる（FR-111）。**v1.0.0 はバッファの無いチャネルで送っていた**（読み込みと変換が `ioMu` の外にあり、窓が狭かった）。
+- 置き換えてよいのは、監視対象が常に 1 つで（NFR-020）、受け手が必要とするのは「いまファイルがあるか」の最新の状態だけだからである。`Modified` の後の `Removed` も、その逆も、後の値だけで正しく扱える。
+- `Watch` / `Unwatch` は `App.mu` の外で呼ぶ（IMP-192）。
+
 ### IMP-141: 監視方式 **MUST**
 
 - fsnotify では**対象ファイルの親ディレクトリを監視し**、イベントのファイル名が対象と一致するものだけを拾う。ファイル単体の監視は、エディタの「一時ファイル作成 → リネーム」保存で監視ハンドルが外れるため採用しない（FR-014）。
-- 親ディレクトリの監視で拾ったイベントのうち、対象ファイル以外のものは破棄する。ツリーの更新契機には使わない（FR-035）。
+- 親ディレクトリの監視で拾ったイベントのうち、対象ファイル以外のものは破棄する。ツリーの更新契機には使わない（FR-035）。**編集モードの一時ファイル（`.<名前>.markview-*.tmp`。IMP-107）もここで捨てられる。**
+- **監視するのは、シンボリックリンクを解決した実体のあるディレクトリとする**（AR-070）。`Watch` は受け取ったパスを `filepath.EvalSymlinks` で解決してから親ディレクトリを求め、イベントのファイル名も実体の名前と比べる。リンクの置き場所を監視すると、実体への書き込み（外部のエディタ、IMP-107）を拾えない。解決に失敗した場合は、受け取ったパスのまま監視する。**v1.0.0 の実装は解決していない**（4.41.0 で足した規則）。
+- **`Event.Path` は `Watch` に渡したパスとする**（リンクを開いていればリンクのパス）。実体のパスを載せると、`openFromReload` で開き直したときに画面の対象（`target`）とウィンドウタイトルがリンクのパスから実体のパスへ変わる（IMP-190）。
 
 ### IMP-142: デバウンス **MUST**
 
@@ -563,9 +981,8 @@ func (w *Watcher) Close() error
 const debounceInterval = 150 * time.Millisecond // FR-014
 ```
 
-- 最後のイベントから 150 ms 追加のイベントがなければ、1 件の `Modified` を送出する。
-- タイマはイベントごとにリセットする。
-- `Remove` / `Rename` を受けた場合、150 ms 待って対象ファイルが再び存在すれば `Modified`、存在しなければ `Removed` を送出する。これにより、リネーム型の保存を削除と誤認しない。
+- 対象のファイル名のイベントを受けるたびに、**種類を問わず**タイマをリセットする。
+- 最後のイベントから 150 ms 追加のイベントがなければ、**その時点で対象ファイルの存在を確かめ**、存在すれば `Modified`、存在しなければ `Removed` を 1 件送出する。これにより、リネーム型の保存（`Remove` / `Rename` の後に `Create`）を削除と誤認しない。
 
 ## 11.6 config パッケージ（IMP-150 系）
 
@@ -597,6 +1014,8 @@ type Config struct {
 | ウィンドウ位置（`X`, `Y`） | UI-111。起動時は常にプライマリモニタの中央 |
 | 表示倍率（`Zoom`） | UI-111, UI-115。セッション内の値であり、フロントエンドだけが持つ（IMP-242） |
 | 最大化状態（`WindowMaximized`） | UI-111, UI-115。起動時は常に通常状態 |
+| 編集モードの状態（`EditMode`） | UI-111, FR-140。起動時は常に編集モードでない。多重起動で後勝ちになる値にしない |
+| 取り消し履歴・表の並べ替え・原寸表示・拡大画面の状態 | UI-111, NFR-042。取り消し履歴は文書の断片を含む。いずれも Go 側（IMP-108）かフロントエンドのメモリ上だけに持つ |
 
 倍率と最大化状態は「保存しないだけ」であり、セッション内では機能する。**保存しないことを構造で保証する**という点で、ウィンドウ位置と同じ扱いにする。
 
@@ -735,6 +1154,12 @@ FR-050 / FR-053 を実装する。Wails に依存しない（IMP-012）。**利�
 ```go
 package opener
 
+// 番兵エラー（IMP-021）。
+var (
+    ErrUnsupportedScheme = errors.New("unsupported URL scheme") // http / https / mailto 以外（NFR-030）
+    ErrNotFound          = errors.New("file not found")          // 開く対象、またはエディタの実行ファイルが無い
+)
+
 // OpenURL は既定ブラウザで URL を開く。http/https/mailto のみ受け付ける。
 func OpenURL(rawurl string) error
 
@@ -748,14 +1173,15 @@ func OpenFile(path string) error
 | Linux | `xdg-open <target>` を起動する。存在しない場合はエラーを返し、呼び出し側がステータス表示する |
 
 - 引数は必ず `exec.Command` の可変長引数として渡し、シェルを経由しない。文字列連結でコマンドを組み立てない。
-- URL は事前にスキームを検査し、`http` / `https` / `mailto` 以外を拒否する。
+- URL は事前にスキームを検査し、`http` / `https` / `mailto` 以外を `ErrUnsupportedScheme` で拒否する。
+- **失敗（`ErrUnsupportedScheme`・`ErrNotFound`・プロセスを起動できない）は、リンクの経路では `open-failed` として伝える**（IMP-312, IMP-315）。**文書の変換の失敗（`render-error`）と同じ種別にしない**——フロントエンドは `render-error` を状態画面として出し、本文が消える（[BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)。FR-053 はステータス表示を求める）。
 
 ### IMP-171: エディタの起動 **MUST**
 
 FR-090 と [NFR-035](07-nonfunctional.md) を実装する。
 
 ```go
-// 番兵エラー（IMP-021）。
+// 番兵エラー（IMP-021）。ErrNotFound は IMP-170 のものを使う。
 var (
     ErrNotAbsolute = errors.New("editor path must be absolute")
     ErrSelf        = errors.New("MarkView cannot be used as an editor")
@@ -947,15 +1373,19 @@ func webviewVersion() string   // WebKitGTK の版を取る
 
 ## 11.11 App と session（IMP-190 系）
 
-`app.go` は Wails にバインドされる唯一の型であり、Wails に依存する。**判断を伴うロジックは `internal/session` に置き、`app.go` からは呼ぶだけにする**（IMP-012）。この分離により、履歴・起動解決・パス算出を Wails なしでテストできる（UT-803〜UT-805）。
+`App`（`app.go`）は Wails にバインドされる唯一の型であり、**ルート直下の `package main` のファイル（IMP-011）が Wails に依存する。** **判断を伴うロジックは `internal/session` / `internal/document` に置き、`package main` からは呼ぶだけにする**（IMP-012）。この分離により、履歴・起動解決・パス算出・同じファイルの判定を Wails なしでテストできる（UT-803〜UT-805, UT-809）。
 
 | 責務 | 置き場所 |
 | --- | --- |
-| Wails のバインドメソッド、イベント送出、ウィンドウ操作 | `app.go` |
+| Wails のバインドメソッド | `bind.go` / `editor.go` / `link.go` / `editmode.go`（IMP-011） |
+| イベント送出、ウィンドウ操作、ライフサイクル | `app.go` |
 | アプリケーション状態の保持と排他制御 | `app.go` |
+| 文書を開く共通処理（IMP-192） | `open.go` |
 | 表示履歴の操作（IMP-191） | `internal/session` |
 | 起動時の対象解決（IMP-193） | `internal/session` |
-| 表示用パスの算出とパス比較（IMP-025） | `internal/session` |
+| 表示用パスの算出、パスの比較、**同じファイルの判定**（IMP-025, IMP-191） | `internal/session` |
+| 書き換え位置の対応・書き込み・取り消し履歴・**編集モードの状態と判断**（IMP-106〜IMP-109） | `internal/document` |
+| 編集モードのバインドメソッド・錠・ファイルの読み書きの呼び出し・イベント送出（IMP-195） | `editmode.go`（`package main`） |
 
 ### IMP-190: 保持する状態 **MUST**
 
@@ -974,21 +1404,44 @@ type App struct {
 
     // target は画面がいま対象にしているファイルの絶対パス。
     // 本文を表示していればその文書、状態画面を出していればその対象。
-    // 文書未表示（welcome）なら空。「エディタで開く」が使う（FR-090）。
+    // 文書未表示（welcome）なら空。「エディタで開く」と再読み込みが使う（FR-090, FR-015）。
     target string
+
+    // showing は、画面が current を表示しているか（状態画面・文書未表示なら偽。IMP-192）。
+    // target と current.Path を比べて代わりにしない（同じファイルの状態画面がありうる）。
+    showing bool
+
+    // currentConfirmed は、current を確認画面の Open anyway で開いたか、
+    // その同意を引き継いで読み直したか（FR-016）。同じファイルの読み直しで
+    // LoadOptions.Confirmed を渡すために持つ（IMP-192）。
+    currentConfirmed bool
 
     // 確認画面を表示中のファイル（FR-016）。OpenConfirmed が受け付ける
     // 対象をこの 1 つに限定するために保持する（IMP-314）。
     pendingConfirm string
     pendingSource  openSource // 確認画面を出したときの経路（IMP-192）
+
+    // pendingEditor は BrowseEditor で選ばれた「確定前の候補」（IMP-310）。
+    // 実行ファイルの絶対パスであり、フロントエンドへ渡さない（IMP-309, NFR-035）。
+    pendingEditor string
+
+    // ioMu は表示中ファイルの読み直しと書き込みを 1 つずつ順に行うための錠（FR-143）。
+    // 取る順序は常に ioMu → mu とする。
+    ioMu sync.Mutex
+
+    // edit は編集モードの状態と判断（IMP-109）。Go 側が正（IMP-300 の 4）。
+    // ioMu の内側でだけ触る。
+    edit document.EditSession
 }
 ```
 
-- すべての状態変更は `mu` で保護する（IMP-024）。
+- すべての状態変更は `mu` で保護する（IMP-024）。**`edit` だけは例外で、`ioMu` で保護する**（`edit` を触る経路はすべて `ioMu` を取るため。`Plan` の構文解析の間 `mu` を持ち続けない）。
+- **`ioMu` は、文書を開く処理（IMP-192）、編集モードの切り替えと書き込み（IMP-195）、削除の受け取り（IMP-195）の全体を包む。** 読み込みと変換は `mu` の外で行う（IMP-192）が、`ioMu` の内側で行う。**`mu` だけでは、読み直しの途中に書き込みが割り込み、自分の書き込みを外部の変更と取り違える**（FR-143, FR-144）。**錠を取る順序を逆にしない**（デッドロックを避ける）。
+- **`sync.Mutex` は再入できない。** `ioMu` を持ったまま文書を開く処理を呼ぶ経路（IMP-195 の 4 と 8）は、錠を取らない `openLocked`（IMP-192）を呼ぶ。`open` を呼ぶと止まる。
 - **ファイルパスの履歴やツリールートをディスクへ書き出す経路を持たない**（NFR-042）。`config.Config` にそれらのフィールドが存在しないことで構造的に保証する（IMP-150）。
 
 > [!IMPORTANT]
-> **`target` と `current` を取り違えない。** `current` は「読み込みと変換に成功した文書」であり、状態画面（`confirm-large` / `too-large` / `render-error`）を出している間は**前に開いていた文書のまま残る**（IMP-192）。一方 `target` は画面が示している対象であり、**ウィンドウタイトル（UI-013）およびステータスのパス表示（DSP-302）と常に一致する。**
+> **`target` と `current` を取り違えない。** `current` は「読み込みと変換に成功した文書」であり、状態画面（`confirm-large` / `too-large` / `render-error`）を出している間は**前に開いていた文書のまま残る**（IMP-192）。一方 `target` は画面が示している対象であり、**ウィンドウタイトル（UI-013）およびステータスのパス表示（DSP-302）と常に一致する。** 画面が `current` を表示しているかは `showing` で表す——**`target == current.Path` で代えない。** 表示中の文書を読み直したら 50 MB を超えていた場合、状態画面の対象は `current` と同じファイルになる。
 >
 > 「エディタで開く」（FR-090）は `target` を使う。ここで `current` を渡すと、利用者が `big.md — too large` の画面を見ながら押したのに前の文書が開き、**エラーも出ないため気づけない**（NFR-035 の 2）。
 
@@ -1002,7 +1455,7 @@ package session
 type Entry struct {
     Path      string
     ScrollTop int    // フロントエンドから受け取るスクロール位置
-    Anchor    string // アンカー付きリンクで開いた場合の見出し ID
+    Anchor    string // アンカー付きリンクで開いた場合のフラグメント（復号済み。IMP-302）
 }
 
 type History struct {
@@ -1045,6 +1498,18 @@ func SamePath(a, b string) bool
 
 `app.go` はツリールートの変更判定にこれを使う（IMP-192）。単純な `!=` で比べると、Windows で大文字小文字だけが違うパスを別のルートとみなし、同じ場所を指しているのに `tree:root-changed` を送ってツリーを組み直してしまう。
 
+**同じファイルかどうか**（[1.7](01-overview.md)）の判定も同じパッケージに置く（UT-809）。
+
+```go
+// SameFile は a と b が同じファイル（1.7）かを返す。両方を filepath.EvalSymlinks で
+// 解決し、SamePath で比べる。解決に失敗した側は、解決前のパスのまま比べる。
+func SameFile(a, b string) bool
+```
+
+- **`DocumentDTO.SameDocument` の値を決める判断そのもの**であり、編集モードを終えるか（FR-140 の MUST）の入力になる（IMP-192 → IMP-109 の `Loaded`）。**`package main` に置くと単体テストの対象外になる**（UT-002）。4.44.0 で `package main` の `sameFile` から移した。
+- 標準ライブラリだけで書ける（`path/filepath`）。`session` の依存（IMP-012）は増えない。
+- ファイルシステムに触れる（`EvalSymlinks`）。`DisplayPath` と違い、存在しないパスでも失敗にせず、解決前のパスで比べる。
+
 ### IMP-192: 文書を開く共通処理 **MUST**
 
 FR-010 / FR-011 / FR-012 / FR-033 / FR-050 / FR-051 のすべてが、この 1 つの内部処理を通る（AR-060）。
@@ -1066,17 +1531,35 @@ const (
 // openRequest は open への指示。アンカー（FR-050）と復元位置（FR-051）を
 // 渡す必要があるため、位置引数ではなく構造体で受ける。
 type openRequest struct {
-    path      string
-    src       openSource
-    anchor    string // アンカー付きリンクを踏んだときの見出し ID
-    scrollTop int    // openFromHistory で復元する位置
-    confirmed bool   // FR-016 の Open anyway
+    path        string
+    src         openSource
+    anchor      string // アンカー付きリンクを踏んだときのフラグメント（復号済み。IMP-302）
+    scrollTop   int    // openFromHistory で復元する位置
+    confirmed   bool   // FR-016 の Open anyway。同じファイルの読み直しでは下の規則で決める
+    trigger     string // DocumentDTO.Trigger（IMP-302）。"open" | "reload" | "watch" | "edit"
+    refKey      string // 空でなければ LoadOptions.RefKey に渡す（IMP-102）。IMP-195 の 8 だけが渡す
+    expectDigest [sha256.Size]byte // refKey と対で LoadOptions.ExpectDigest に渡す（IMP-102）
 }
 
+// open は ioMu を取って openLocked を呼ぶ。バインドメソッドと監視のイベントはこちらを呼ぶ。
 func (a *App) open(req openRequest) (*DocumentDTO, error)
+
+// openLocked は ioMu を持った呼び出し元から呼ぶ（IMP-195 の 4 と 8）。錠を取らない。
+func (a *App) openLocked(req openRequest) (*DocumentDTO, error)
 ```
 
-各 `openSource` による差異は以下に限る。
+**呼び出し元ごとの `src` / パス / `trigger`** は次のとおりとする。
+
+| 呼び出し元 | `src` | 開くパス | `trigger` |
+| --- | --- | --- | --- |
+| ダイアログ・ドロップ・引数・ツリー・リンク・履歴 | それぞれの経路 | 受け取った（解決した）パス | `open` |
+| 確認画面の `Open anyway`（`OpenConfirmed`） | `openFromConfirm` | `pendingConfirm` | `open` |
+| 手動の再読み込み（`Reload`） | `openFromReload` | **`target`**（状態画面の間はその対象。IMP-310） | `reload` |
+| 監視のイベント（IMP-140） | `openFromReload` | `current.Path`（下の「イベントの照合」を通ったもの） | `watch` |
+| 書き込み前の不一致による読み直し（IMP-195 の 4） | `openFromReload` | `current.Path` | `reload` |
+| 書き込みの直後の読み直し（IMP-195 の 8） | `openFromReload` | `current.Path` | `edit` |
+
+ツリールート・履歴・スクロールについて、各 `openSource` による差異は以下に限る。
 
 | source | ツリールート | 履歴 | スクロール |
 | --- | --- | --- | --- |
@@ -1086,11 +1569,11 @@ func (a *App) open(req openRequest) (*DocumentDTO, error)
 | `openFromReload` | 変更しない | **積まない**（FR-051） | `keep`: 現在位置を維持 |
 | `openFromConfirm` | **変更しない**（確認時に変更済み） | **積まない**（確認時に積み済み） | 先頭 |
 
-この表以外の差異を持ち込まない。分岐が増えると FR-030 の不変条件（リンク遷移でツリールートが動かない）を壊しやすくなる。
+ツリールート・履歴・スクロールについては、この表以外の差異を持ち込まない。分岐が増えると FR-030 の不変条件（リンク遷移でツリールートが動かない）を壊しやすくなる。`trigger` による違い（同じ内容なら送らない、鍵の引き継ぎ、同意の引き継ぎ）は、下の規則だけで定める。
 
 実装上の規約を以下に定める。
 
-- **読み込みと変換はミューテックスの外で行う。** 10 MB 近い文書では時間がかかり、その間ほかのバインドメソッドを止める理由がない。`renderer` は状態を持たず同時に呼んでよい（IMP-024）。状態への反映だけをロックの内側で行う。
+- **読み込みと変換は `mu` の外で行う。** 10 MB 近い文書では時間がかかり、その間ほかのバインドメソッド（ツリー・設定・情報など）を止める理由がない。`renderer` は状態を持たず同時に呼んでよい（IMP-024）。状態への反映だけを `mu` の内側で行う。**`ioMu` の内側では行う**——文書を開く処理と書き込みどうしは 1 つずつ順に行う（IMP-190。`ioMu` を取らないバインドメソッドは止まらない）。
 - **Wails の呼び出し（`tree:root-changed` の送出）もロックの外で行う。** ツリールートが変わったかどうかはロックの内側で判定し、送出は解いた後に行う。
 - ツリールートが変わるのは `filepath.Dir` を取った結果が現在の値と異なる場合に限る。比較は `session.SamePath` で行う（IMP-191）。
 - 確認待ちのパス（`pendingConfirm`）はこの処理の中でのみ更新する。`ErrNeedsConfirm` で立て、**開けたときと、確認以外の失敗のときに消す**（IMP-314）。残したままにすると、確認画面を閉じたあとの操作で開けてしまう。
@@ -1103,7 +1586,48 @@ func (a *App) open(req openRequest) (*DocumentDTO, error)
 | 表示を変えない失敗（`not-found` / `permission` / `not-markdown`） | **変えない。** FR-110 が「直前の内容を維持」と定めており、画面の対象も変わっていない |
 
   **判定はタイトル更新と同じ条件で行い、2 か所に分けて書かない。** 片方だけ直すと、タイトルと「エディタで開く」の対象が食い違う。
-- 監視対象の切り替え（`watcher.Watch`）もここで行う。監視は常に 1 つ以下とし、失敗しても開く操作は成功とする。自動更新が効かなくなるだけで、利用者は再読み込みできる（FR-014, FR-015, FR-111）。
+- **`showing` と監視も、`target` と同じ 3 つの結果で決める。**
+
+  | 結果 | `showing` | 監視（`watcher`） | `currentConfirmed` |
+  | --- | --- | --- | --- |
+  | 読み込みに成功した | 真 | 開いた文書へ切り替える（`Watch`） | `req.confirmed` の値 |
+  | 状態画面を出した | **偽** | **外す（`Unwatch`）** | 偽 |
+  | 表示を変えない失敗 | 変えない | 変えない | 変えない |
+
+  **状態画面を出したら、前の文書の監視を外す**（FR-014 の「表示対象を切り替えたときは、以前のファイルの監視を解除する」、FR-016 の「確認画面を表示しているだけの状態では監視しない」）。**v1.0.0 は外していなかった**——確認画面の間に前の文書が外部で更新されると、`ev.Path` をそのまま開き直して `document:changed` を送り、**確認画面が前の文書の表示に置き換わっていた**（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)）。
+- 監視は常に 1 つ以下とし、`Watch` の失敗でも開く操作は成功とする。自動更新が効かなくなるだけで、利用者は再読み込みできる（FR-014, FR-015, FR-111）。**`Watch` / `Unwatch` は `mu` の外で呼ぶ**（IMP-140。`ioMu` の内側ではある）。
+- **状態画面の失敗を返すときは、`ErrorDTO.DisplayPath` / `OutsideTree` に画面の対象の表示用パスを入れる**（IMP-307。`session.DisplayPath(treeRoot, target)`。ツリールートは、確認画面でツリーを移した後の値）。フロントエンドは状態画面の間、ステータス領域の左にこれを出す（DSP-302, FR-016）。**v1.0.0 は渡しておらず、状態画面の間も前の文書のパスが残っていた**（BUG-012）。
+- **処理の全体を `ioMu` で包む**（IMP-190, FR-143）。包むのは `open` であり、中身は `openLocked` に書く。
+
+**同じファイルかどうか**（[1.7](01-overview.md)）もこの処理の中で 1 度だけ判定し、`DocumentDTO.SameDocument`（IMP-302）として返す。判定は `session.SameFile`（IMP-191）で行う。
+
+| 条件 | `SameDocument` |
+| --- | --- |
+| 読み込みに成功し、**直前の `showing` が真**で、`session.SameFile(直前の current.Path, 開いた文書のパス)` が真 | 真（**開き直し・再読み込み・更新検知・書き込みの後の読み直しのいずれも**） |
+| それ以外（別のファイル、直前が状態画面や未表示だった） | 偽 |
+
+- **直前が状態画面なら、同じファイルでも偽とする。** 状態画面へ移った時点で文書の切り替えが起きており（DSP-352, IMP-109 の `Left`）、引き継ぐ状態が残っていない。`current` は前の文書のまま残っているため、`current` だけを見ると真になってしまう。
+
+**同意の引き継ぎ**（FR-016）
+
+- **読み込みの前に、`showing` が真で、`currentConfirmed` が真で、`session.SameFile(current.Path, 開くパス)` が真なら、`confirmed` を真にして読む。** 監視・再読み込み・書き込みの後の読み直し・同じファイルの開き直し（ツリーやドロップ）のいずれも同じに扱う。**確認して描画した 10 MB 超の文書で、保存や `F5` のたびに確認画面へ戻さないため**であり、**書き込みの直後の読み直しが `ErrNeedsConfirm` になって、裏で編集モードが終わるのに画面は編集モードのまま残る**ことを防ぐ（FR-140, FR-143）。
+- 50 MB を超えれば `ErrTooLarge`（IMP-102）。状態画面を出した時点で `currentConfirmed` は偽になり、以後の読み直しは確認し直す。
+
+**イベントの照合**（監視のイベントを受けたとき）
+
+- **`ioMu` を取った後で、`showing` が真で、`session.SameFile(ev.Path, current.Path)` が真であることを確かめる。** 違えば何もしない（読み直さず、送らない）。`ioMu` を待つ間に別の文書を開く処理が済んでいると、古いイベントが後から届く。**確かめないと、表示中の B に対して A を開き直し、B の表示が A に戻る。** 削除のイベント（IMP-195）も同じ照合を通す。
+
+**編集モードと取り消し履歴**（FR-140, FR-144）もこの処理の中で決める。**フロントエンドに判断させない**（IMP-300 の 2）。判断そのものは `document.EditSession`（IMP-109）が持ち、この処理は呼ぶだけにする。
+
+| 結果 | 呼ぶもの |
+| --- | --- |
+| 読み込みに成功した | `a.edit.Loaded(doc, SameDocument)` |
+| 状態画面を出した（`confirm-large` / `too-large` / `render-error`） | `a.edit.Left()` |
+| 表示を変えない失敗（`not-found` など。上の `target` の表） | 呼ばない |
+
+- **監視のイベント（`trigger` が `watch`）で読み直した内容が、表示中の `current.Digest` と同じで、かつ `edit.Deleted()` が偽なら、`document:changed` を送らない**（FR-014）。書き込み（IMP-195）の直後に届くイベントで、同じ再描画を繰り返さないためである。**このとき `current` を差し替えず、`edit.Loaded` も呼ばず、`openLocked` は `(nil, nil)` を返す**（呼び出し側は何も送らない）——差し替えると鍵（`RefKey`）だけが新しくなり、画面の目印と食い違って以後の指示がすべて `Stale` になる。**手動の再読み込み（FR-015。`trigger` が `reload`）は、同じでも送る。**
+  - **削除の印（`edit.Deleted()`）が立っていれば、同じ内容でも送り、`edit.Loaded` を呼ぶ。** 削除した後に同じ内容で戻る場合がある（`git checkout`、150 ms を超える削除と作成の保存）。送らないと、Go 側は削除の印が残って編集モードを二度と始められず、フロントエンドは `document:removed` で淡色にしたボタンとステータスの表示が戻らない。
+- 返す `DocumentDTO` の `EditMode` / `Editable` / `EditSeq` は、上の呼び出しの**後の**値（`edit.On()` / `edit.CanStart(current, true)` / `edit.Seq()`）とする。
 
 ### IMP-193: 起動シーケンス **MUST**
 
@@ -1181,6 +1705,11 @@ Windows: &windows.Options{
 - パスは `config.Dir()`（IMP-152）を使わず `os.TempDir()` から直接組み立てる。`config.Dir()` はディレクトリを作成しエラーを返しうるが、ここは `wails.Run` のオプション値であり、失敗しても起動を止めてはならない（FR-012）。ディレクトリは WebView2 が自分で作る。
 - Linux には対応するオプションが無い。`linux.Options` には渡さない（AR-004）。
 
+**WebView の標準の右クリックメニューを出さない**（AR-060 の MUST, FR-063）。
+
+- `options.App.EnableDefaultContextMenu` は**指定しない（`false` のまま）**。Wails v2.15.0 は、リリースビルドではこれが偽のとき、Windows では `AreDefaultContextMenusEnabled` を偽にし、Linux では WebKitGTK のメニューを抑止する。**`true` にしてはならない**——標準のメニューには「戻る」「再読み込み」「検証」が含まれる（AR-060）。
+- **開発ビルド（`wails dev`、`-debug`）では、Wails はこの指定に関わらず標準のメニューを出す。** そのためフロントエンドは `contextmenu` を常に `preventDefault()` する（IMP-249）。**リリースビルドと開発ビルドで右クリックの振る舞いを変えない。**
+
 > [!IMPORTANT]
 > **指定したパスが使えないと、WebView2 の環境生成に失敗して `os.Exit(1)` する**（go-webview2 の `Embed` → `errorCallback`）。これは FR-111 が禁じる異常終了に当たるが、**指定しない場合も `%APPDATA%` が書けなければ同じ結果になる**ため、この変更が新たな失敗経路を作るわけではない。むしろ書き込み先が UI-112 と同じテンポラリに揃い、前提が 1 つ減る。
 
@@ -1197,10 +1726,11 @@ Windows: &windows.Options{
 
 `confirm-large` で起動した場合、`pendingConfirm`（IMP-190）にそのパスを設定し、`OpenConfirmed` を受け付けられる状態にする。
 
-**`StateKind` が `welcome` 以外のとき、`target`（IMP-190）にもそのパスを設定する。** 起動直後に「エディタで開く」を押せる状態にするためであり、規則は IMP-192 と同一である。`welcome` のときは空のままとする。
+**`StateKind` が `welcome` 以外のとき、`target`（IMP-190）にもそのパスを設定する。** 起動直後に「エディタで開く」を押せる状態にするためであり、規則は IMP-192 と同一である（`showing` は偽、監視は張らない、`Error.DisplayPath` / `OutsideTree` を入れる）。`welcome` のときは空のままとする。
 
 ### IMP-194: 終了処理 **MUST**
 
+- **書き込みの途中なら、終わるまで上限つきで待つ。** `OnShutdown` は `ioMu` を最大 2 秒待ってから（`TryLock` を短い間隔で試す）後の処理へ進む。待たずに終わると、`document.Replace`（IMP-107）の途中でプロセスが終わり、**一時ファイルが残りうる**（FR-143, NFR-031）。上限を設けるのは、読み込みと変換（大きな文書では秒単位）で終了を止めないためである。
 - `watcher` を停止し、ゴルーチンを終了させる。
 - `config.Save` を呼ぶ（UI-114）。失敗しても終了を妨げない。
 - 履歴・表示中パスは保存しない（NFR-042）。
@@ -1220,7 +1750,7 @@ Windows: &windows.Options{
 > | --- | --- |
 > | `OnBeforeClose` | `captureWindowState` のみ。`false` を返して閉じる操作を通す |
 > | 保存の予約（UI-114 の 1 秒） | `captureWindowState` + `config.Save`。ウィンドウは生きている |
-> | `OnShutdown` | 保存の予約を止め、`watcher` を閉じ、`config.Save`。**Wails のランタイムを呼ばない** |
+> | `OnShutdown` | 保存の予約を止め、`ioMu` を上限つきで待ち、`watcher` を閉じ、`config.Save`。**Wails のランタイムを呼ばない** |
 >
 > `captureWindowState` 自体にも `recover` を置く。ウィンドウの状態を読む API は
 > ウィンドウの生存に依存しており、取りこぼしても保存は続けるべきである
@@ -1241,6 +1771,54 @@ func (a *App) captureWindowState() {
 - 最大化状態で終了した場合、**そのときの画面いっぱいのサイズを保存しない。** 保存すると、次回のウィンドウが画面いっぱいの大きさで開く。幅と高さは最大化する前の値を保つ。**最大化状態そのものは保存しないため、次回は通常状態で開く**（UI-111, UI-115）。
 - ウィンドウ位置と最大化状態は保存しない。構造体にフィールドが存在しない（IMP-150, UI-111）。
 
+### IMP-195: 編集モードの処理 **MUST**
+
+FR-140〜FR-144 を実装する。**バインドメソッドの入口は `editmode.go`（`package main`）に置く。ここに書くのは、錠を取ること、ファイルを読み書きする関数を呼ぶこと、イベントを送ることだけとする。** 状態と判断は `document.EditSession`（IMP-109）が持つ（IMP-012）。`editor.go`（外部エディタ。IMP-331）と混ぜない。
+
+**編集モードの開始と終了**（`SetEditMode`。IMP-316）
+
+- **`ioMu` を取る**（IMP-190）。取らないと、文書を開く処理が `edit` を決めてから `document:changed` を送るまでの間に割り込み、状態が食い違う。
+- `mu` の内側で `current` と `showing`（IMP-190）を控える。
+- 開始なら `a.edit.Start(current, showing)`、終了なら `a.edit.Stop()` を呼ぶ。**開始できなかった場合も失敗として通知しない**（ボタンは淡色のはずである）。
+- `EditModeDTO{On: a.edit.On(), Seq: a.edit.Seq()}` を返す。
+
+**書き込み**（`SetTask` / `SetCell` / `UndoEdit` / `RedoEdit`。IMP-316）
+
+処理の順序を固定する。**全体を `ioMu` で包む**（IMP-190）。番号は IMP-109 の判断の番号と揃えている。
+
+| # | 処理 | 当てはまらないとき |
+| --- | --- | --- |
+| 1, 2 | `mu` の内側で `current` と `showing` を控え、`a.edit.Check(current, showing, op)` を呼ぶ（IMP-109） | `ErrStale` なら `Stale` を返す（何もしない） |
+| 3 | 実体のパス（`filepath.EvalSymlinks`）を求め、`os.Stat` の大きさが `document.MaxSize` 以下なら `os.ReadFile` で読む | 解決・読み込みの失敗は `edit-failed`。**`MaxSize` を超えていれば読まずに `ErrChanged` として 4 へ進む**（把握している内容は `MaxSize` 以下で読み込んだものであり、一致しえない） |
+| 4, 5 | `a.edit.Plan(a.renderer, raw, op)` を呼ぶ（IMP-109） | **`ErrChanged` なら `edit-conflict`。** 書き込まず、**`a.edit.Discard()` を呼んでから**、`openLocked`（`trigger: "reload"`）で読み直して `document:changed` を送る。取り消し履歴は、読み直しに成功すれば `edit.Loaded` が作り直す（FR-143, FR-144）。**読み直しに失敗したら `error` イベント（`ErrorDTO`）を送る**（下記）。`ErrStale` なら `Stale`。**`ErrNotEditable` なら `edit-failed`**（パスを添える。表の形の確かめで拒んだ。IMP-106, IMP-109 の 5）。`changed` が偽なら `Changed: false`（何も書かない） |
+| 6 | `Patch.Apply` で新しい内容を作り、**3 で解決した実体のパス**を `document.Replace` に渡して書き込む | `edit-failed`（パスを添える）。**`Commit` を呼ばない**（履歴を動かさない）。`Patch.Apply` の `ErrChanged` は 4 と同じく `edit-conflict` として扱う |
+| 7 | `a.edit.Commit(op, patch, newContent)` を呼ぶ（IMP-109） | — |
+| 8 | **監視のイベントを待たずに `openLocked`（`trigger: "edit"`、`refKey: current.RefKey`、`expectDigest: sha256(newContent)`）を呼び、`document:changed` を送る**（FR-014, AR-061）。**内容が書き込んだものと一致すれば鍵を引き継ぐ**（IMP-102, FR-143）。同意は IMP-192 の規則で引き継ぐ（FR-016） | 書き込みは成功として返す。**読み直しに失敗したら `error` イベント（`ErrorDTO`）を送る**（下記） |
+
+- **読み直し（4 と 8）に失敗したら、監視のイベントと同じく `error` イベントで `ErrorDTO` を送る**（IMP-320）。状態画面になる失敗（しきい値をまたいだ・50 MB を超えた・変換に失敗した）では、`openLocked` が `edit.Left()` と `target` の書き換えと監視の解除を済ませており（IMP-192）、**送らないと Go 側だけが状態画面へ移り、画面は編集モードのまま残る**（以後の指示はすべて `Stale` で黙って戻り、セルは `.cell-pending` のまま残る。IMP-262）。表示を変えない失敗（削除・権限）では、フロントエンドはステータスに出すだけでよい。
+- **3 で解決した実体のパスを 6 に渡す。** `Replace` の 1（IMP-107）で改めて解決すると、その間にリンク先が変わった場合に、読んだファイルと書くファイルが食い違う。
+- **1 と 2 を省かない。** フロントエンドは見た目を先に変えてから呼ぶ（IMP-261, IMP-262）ため、呼び出しは描画より遅れて届きうる。**その間にドロップなどで文書が切り替わっていると、`current` は既に別の文書を指している**——鍵の照合がそれを止める（FR-143）。
+- **`Stale` は失敗として通知しない**（FR-143 の「拒んだことは通知しない」）。フロントエンドは見た目を戻すだけにする。
+- **4 と 8 は、1〜7 と同じ `ioMu` の内側で `openLocked` を呼ぶ。** 錠を解いてから読み直すと、その間に次の書き込みが入り、自分の書き込みを外部の変更と取り違える（FR-143）。**`open` を呼ばない**——`ioMu` を二重に取って止まる（IMP-190）。
+- **4 と 5 の構文解析（`Plan`）は `mu` の外で行う。** 50 MB の文書でも、その間ほかのバインドメソッドを止めない（IMP-192 と同じ考え方）。
+- **書き込みの呼び出しの戻り値に `DocumentDTO` を載せない**（AR-061）。表示は 8 の `document:changed` だけで届く。**戻り値とイベントの到着順は決まっていない**ため、フロントエンドはどちらが先でも成り立つように書く（IMP-261）。
+
+**セルのソースの取得**（`GetCellSource`。IMP-316）
+
+- 書き込みの 1〜3 と同じ手順を踏み（`ioMu` の内側）、`a.edit.CellSource(a.renderer, raw, ref)` の結果を返す。`ErrChanged` なら `edit-conflict` として 4 と同じ処理をする。**編集欄を開く前に食い違いに気づかせる**ためである。`ErrStale` なら `Stale` を返す。
+- **3 の解決・読み込みの失敗は `Stale` を真で返し、通知しない。** `edit-failed` の文言は「Failed to save: <path>」であり、保存していない操作には合わない（IMP-310 の `GetCellSource` の回復したパニックと同じ扱い）。編集欄が開かないだけで済み、ファイルの削除や権限の変化は監視と次の書き込みが伝える。
+
+**削除**
+
+- 監視が `Removed` を送ったとき、**`ioMu` を取って**、IMP-192 の「イベントの照合」（`showing` と `session.SameFile(ev.Path, current.Path)`）を通ったときだけ `a.edit.Removed()` を呼び、`document:removed`（IMP-320）を送る（IMP-109）。編集モードは終わり、次に読み込めるまで開始できない。**照合しないと、`ioMu` を待つ間に開いた別の文書 B に対して削除の印を立て、B で編集を始められなくなる。**
+
+**状態を変える経路**
+
+- `edit` を変えるのは、上の `SetEditMode`・書き込み・削除と、文書を開く処理（IMP-192 の `edit.Loaded` / `edit.Left`）だけとする。**いずれも `ioMu` の内側である。**
+
+> [!IMPORTANT]
+> **書き込みの判断をフロントエンドの状態に委ねない。** フロントエンドの `state.editMode`（IMP-210）は写しであり、ボタンの見た目のためにある。**Go 側が編集モードを持ち、書き込みのたびに確かめる**（IMP-109 の `Check`）。フロントエンドの不具合で編集モードの外から呼ばれても、ファイルは書き換わらない（FR-140）。
+
 ## 11.12 要求一覧
 
 | ID | 概要 | 必須度 |
@@ -1251,6 +1829,10 @@ func (a *App) captureWindowState() {
 | IMP-103 | 文字コードの正規化 | MUST |
 | IMP-104 | 行数の算出 | MUST |
 | IMP-105 | 拡張子の判定（`internal/mdfile`） | MUST |
+| IMP-106 | 書き換え位置の対応 | MUST |
+| IMP-107 | 置き換えによる書き込み | MUST |
+| IMP-108 | 取り消し履歴 | MUST |
+| IMP-109 | 編集モードの判断 | MUST |
 | IMP-110 | renderer 型定義 | MUST |
 | IMP-111 | goldmark の構成 | MUST |
 | IMP-112 | GitHub Alerts 拡張 | MUST |
@@ -1261,6 +1843,8 @@ func (a *App) captureWindowState() {
 | IMP-117 | 見出しアンカーの生成 | MUST |
 | IMP-118 | 画像 URL の書き換え | MUST |
 | IMP-119 | PlantUML ブロックの取り出し | MUST |
+| IMP-120 | 編集・並べ替え・リンクの目印 | MUST |
+| IMP-121 | 書き換え位置の特定 | MUST |
 | IMP-130 | filetree 型定義 | MUST |
 | IMP-131 | 読み込み | MUST |
 | IMP-132 | フィルタ規則 | MUST |
@@ -1286,3 +1870,4 @@ func (a *App) captureWindowState() {
 | IMP-192 | 文書を開く共通処理 | MUST |
 | IMP-193 | 起動シーケンス | MUST |
 | IMP-194 | 終了処理 | MUST |
+| IMP-195 | 編集モードの処理 | MUST |
