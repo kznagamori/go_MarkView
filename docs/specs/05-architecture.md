@@ -100,7 +100,7 @@ flowchart TB
     LAZY -->|埋め込み JS/CSS 要求| ASSET
 ```
 
-- **監視は App が張る。** Document は Watcher に依存しない。`internal/` 同士の依存は `document → renderer` と葉パッケージへの依存に限られ、それ以外の組み合わせは App（`package main`）で行う（IMP-012）。
+- **監視は App が張る。** Document は Watcher に依存しない。`internal/` 同士の依存は `document → renderer` と葉パッケージへの依存に限られ、それ以外の組み合わせは App（`desktop` パッケージ）で行う（IMP-012）。
 
 ### AR-011: ディレクトリ構成 **SHOULD**
 
@@ -108,11 +108,14 @@ flowchart TB
 
 ```
 go_MarkView/
-├── main.go                    アプリのエントリポイント、CLI 引数処理
-├── app.go                     App 型の状態とライフサイクル
-├── bind.go / editor.go / link.go / editmode.go   Wails にバインドするメソッド（責務で分割。editmode.go は編集モード。IMP-195）
-├── open.go / errors.go / dto.go    文書を開く共通処理・エラー分類・境界の型
-├── console_*.go / webview_*.go     OS 別の実装（ビルドタグで分ける。IMP-193, IMP-181）
+├── main.go                    アプリのエントリポイント、CLI 引数処理、埋め込み、Wails の起動
+├── console_*.go               親プロセスのコンソールへの接続（OS 別。IMP-193）
+├── desktop/                   Wails との境界（package desktop。IMP-011, IMP-012）
+│   ├── app.go                 App 型の状態とライフサイクル
+│   ├── bind.go / editor.go / link.go / editmode.go / clipboard.go   Wails にバインドするメソッド（責務で分割。editmode.go は編集モード。IMP-195）
+│   ├── open.go / watch.go / drop.go   文書を開く共通処理・監視のイベント・ドロップ
+│   ├── errors.go / recover.go / dto*.go   エラー分類・パニックの回復・境界の型
+│   └── webview_*.go           WebView の版の取得（OS 別。IMP-181）
 ├── go.mod / go.sum
 ├── wails.json                 Wails のプロジェクト設定
 ├── internal/
@@ -123,6 +126,7 @@ go_MarkView/
 │   │   ├── document.go
 │   │   ├── encoding.go        BOM・改行コードの処理（FR-021）
 │   │   ├── edit.go            書き換え位置と元のバイト列の対応（FR-141, FR-142）
+│   │   ├── editcell.go        表のセルの書き換え（FR-142）
 │   │   ├── write.go           一時ファイル + リネームによる書き込み（FR-143）
 │   │   ├── editlog.go         取り消し履歴（FR-144）
 │   │   └── editsession.go     編集モードの状態と判断（FR-140。IMP-109）
@@ -167,6 +171,7 @@ go_MarkView/
 │   ├── specs/                 本仕様書
 │   └── tests/                 手動テストの記録用 Excel と生成スクリプト（E2E-200）
 │       ├── gen_manual_test_xlsx.py
+│       ├── manual_cases.py    41 章のケース定義の読み取りと照合（生成スクリプトが使う）
 │       └── results/           実施済みの Excel（バージョンごとにコミット）
 └── .github/workflows/         CI/CD（BR-010 系）
 ```
@@ -372,6 +377,7 @@ WebView 内でのページ遷移（`location.href` の変更、リンクの既�
 - Markdown ファイルへのリンクは、**アプリケーションのウィンドウを増やさず**、本文ペインの内容を差し替えることで実現する。文書の切り替えは、ファイルツリーからの選択（FR-033）と同一の内部処理を通す。異なるのは履歴とツリー強調表示の扱い（FR-051, FR-052）のみとする。
 - 外部 URL は Go 側から OS の既定ブラウザへ渡す。WebView 内で開いてはならない。
 - 新しいウィンドウを開く要求（`target="_blank"` 等）も同様に捕捉して既定ブラウザへ委譲する。
+- **マウスの左ボタン以外（中ボタンなど）でリンクを押しても、既定の動作（新しいウィンドウ・ウィンドウの中の遷移）を起こさず、何もしない**（4.61.0。利用者の判断。[BUG-016](../bugs/2026-09-17-bug-016-link-middle-click.md)）。リンクを開くのは左クリックとキーボードだけとする。**v1.0.0 は中ボタンを捕捉しておらず、W1 では Markdown へのリンクが Go を通らずに既定のブラウザへ回って表示されず、L1 では MarkView のウィンドウがリンク先に置き換わって戻れなくなった。**
 - 画像およびその他のローカルファイルへのリンクは、Go 側から OS の既定アプリケーションへ渡す（FR-053）。**アプリケーションは終始 1 つのウィンドウのみを持つ。** Wails v2 が 2 つ目のネイティブウィンドウをサポートしないことは、この設計上の制約であると同時に、方針とも一致している。**拡大画面（FR-122）と右クリックメニュー（FR-063）も、メインウィンドウ内に描画する。**
 - **WebView の標準の右クリックメニューは、リリースビルドでも開発ビルドでも出さない（MUST）。** 右クリックには、代わりに MarkView 自身が描くメニューを出す（FR-063）。標準のメニューを有効にして項目を削る方式は採らない——標準のメニューの項目は WebView の版で変わり、こちらで制御しきれないためである。**FR-063 はこの無効化に依拠しているため、ここを SHOULD に留めない。**
 - 開発者ツールとページ内リロードは、リリースビルドでは無効化する（**SHOULD**）。

@@ -31,6 +31,10 @@ type plantUMLBlock struct {
 	// rejected は取り込み指令を含むため描画対象から外したことを表す
 	// （MD-084, NFR-032）。原文は残し、フロントエンドが理由とともに出す。
 	rejected bool
+
+	// ref は図のブロックの目印の値（`<鍵>:plantuml:<n>`。IMP-119, IMP-120）。
+	// **拒んだブロックにも付ける。** 鍵が空なら空で、属性を出さない。
+	ref string
 }
 
 func (n *plantUMLBlock) Kind() ast.NodeKind { return kindPlantUMLBlock }
@@ -69,6 +73,7 @@ type plantUMLTransformer struct{}
 
 func (plantUMLTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
+	key, _ := pc.Get(refKeyKey).(string)
 
 	// 走査しながら木を書き換えないよう、対象を集めてから差し替える。
 	var blocks []*ast.FencedCodeBlock
@@ -79,6 +84,11 @@ func (plantUMLTransformer) Transform(doc *ast.Document, reader text.Reader, pc p
 		return ast.WalkContinue, nil
 	})
 
+	// 番号は文書の中の PlantUML ブロックの出現順（0 起点）。**取り込み指令で拒んだ
+	// ブロックも数える。** 描画するものだけで数えると、拒んだブロックより後ろの図が
+	// すべて 1 つずれ、再描画で原寸表示や拡大画面を別の図へ引き継ぐ（FR-120,
+	// UT-217 ケース 21）。
+	index := 0
 	for _, b := range blocks {
 		if !isPlantUMLLanguage(b.Language(source)) {
 			continue
@@ -88,7 +98,9 @@ func (plantUMLTransformer) Transform(doc *ast.Document, reader text.Reader, pc p
 		p := &plantUMLBlock{
 			source:   src,
 			rejected: hasIncludeDirective(string(src)),
+			ref:      diagramRef(key, "plantuml", index),
 		}
+		index++
 		b.Parent().ReplaceChild(b.Parent(), b, p)
 
 		// **拒んだブロックでは立てない**（IMP-119, NFR-013）。
@@ -222,6 +234,7 @@ func renderPlantUML(w util.BufWriter, source []byte, n ast.Node, entering bool) 
 	} else {
 		_, _ = w.WriteString(`data-plantuml="1" `)
 	}
+	writeDiagramRef(w, block.ref)
 	_, _ = w.WriteString(`data-source="`)
 	_, _ = w.Write(escapeAttribute(block.source))
 	_, _ = w.WriteString("\">\n")

@@ -54,6 +54,8 @@ jobs:
       mermaid_after: ${{ steps.vendor.outputs.mermaid_after }}
       katex_before: ${{ steps.vendor.outputs.katex_before }}
       katex_after: ${{ steps.vendor.outputs.katex_after }}
+      plantuml_before: ${{ steps.vendor.outputs.plantuml_before }}
+      plantuml_after: ${{ steps.vendor.outputs.plantuml_after }}
 
     steps:
       # 付け替えのために履歴とタグを全部取る。
@@ -83,6 +85,30 @@ jobs:
         id: vendor
         if: steps.tag.outputs.prerelease == 'true'
         run: go run ./scripts/vendorupdate
+
+      # **ライセンスが許容されない版（license-rejected）と、告知が食い違う版（notice-mismatch）を
+      # 掴んだらリリースを中止する**（BR-043, NFR-051）。
+      #
+      # vendorupdate はどちらでも資産を更新せず、終了コード 0 で戻って reason で伝える。**取得の失敗
+      # （fetch-failed）とは扱いが違う**——取得の失敗は一時的な事情でありコミット済みの版で続けてよいが、
+      # 上流のライセンスや同梱の構成が変わったことは人が判断すべき事態であり、rc を作らずに止めて
+      # 気づかせる。ここで失敗すると後続のビルドとリリースは走らない。まだコミットもタグの付け替えも
+      # していないため、リポジトリの状態は変わらない。
+      #
+      # **vendorupdate には版を固定する手段が無い**（常に latest を取りに行く）。止まったら上のログで
+      # 対象の資産と理由を確かめ、人が判断してから rc を打ち直す。
+      - name: Stop on rejected assets
+        if: steps.vendor.outputs.reason == 'license-rejected' || steps.vendor.outputs.reason == 'notice-mismatch'
+        env:
+          REASON: ${{ steps.vendor.outputs.reason }}
+        run: |
+          {
+            echo "## Release stopped"
+            echo
+            echo "同梱資産の更新で \`${REASON}\` になったため、リリースを作らない（BR-043, NFR-051）。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::同梱資産の更新で ${REASON} になった。リリースを中止する（BR-043, NFR-051）。Update bundled assets のログで対象の資産を確かめる"
+          exit 1
 
       - name: Regenerate licenses
         if: steps.vendor.outputs.updated == 'true'
@@ -117,6 +143,7 @@ jobs:
             -m "chore: 同梱資産を更新する（${tag}）" \
             -m "Mermaid ${{ steps.vendor.outputs.mermaid_before }} -> ${{ steps.vendor.outputs.mermaid_after }}
           KaTeX ${{ steps.vendor.outputs.katex_before }} -> ${{ steps.vendor.outputs.katex_after }}
+          PlantUML ${{ steps.vendor.outputs.plantuml_before }} -> ${{ steps.vendor.outputs.plantuml_after }}
 
           [skip ci]"
 
@@ -451,17 +478,22 @@ jobs:
             jq -r '.[] | "| \(.name) | \(.version) |"' frontend/vendor/vendor.json
 
             echo
+            # **3 つとも更新前後の版を書く**（BR-051）。変わらなかった資産は同じ版が並ぶ。
             case "${{ needs.vendor-update.outputs.reason }}" in
               updated)
                 echo "このリリースで最新安定版へ更新しました（BR-043）。"
-                echo "Mermaid ${{ needs.vendor-update.outputs.mermaid_before }} → ${{ needs.vendor-update.outputs.mermaid_after }} /"
-                echo "KaTeX ${{ needs.vendor-update.outputs.katex_before }} → ${{ needs.vendor-update.outputs.katex_after }}"
+                echo
+                echo "| 資産 | 更新前 | 更新後 |"
+                echo "| --- | --- | --- |"
+                echo "| Mermaid | ${{ needs.vendor-update.outputs.mermaid_before }} | ${{ needs.vendor-update.outputs.mermaid_after }} |"
+                echo "| KaTeX | ${{ needs.vendor-update.outputs.katex_before }} | ${{ needs.vendor-update.outputs.katex_after }} |"
+                echo "| PlantUML | ${{ needs.vendor-update.outputs.plantuml_before }} | ${{ needs.vendor-update.outputs.plantuml_after }} |"
                 ;;
               fetch-failed)
                 echo "**最新版の取得に失敗したため、資産は更新していません。** 上の表が実際に同梱しているバージョンです。"
                 ;;
               already-latest)
-                echo "更新を試みましたが、どちらも既に最新安定版でした。"
+                echo "更新を試みましたが、3 つとも既に最新安定版でした。"
                 ;;
               *)
                 echo "本リリースでは資産を更新していません（BR-043）。プレリリースで検証した内容をそのまま配布しています。"

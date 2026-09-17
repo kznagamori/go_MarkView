@@ -1,4 +1,4 @@
-// wailsjs/go/main/App.js の代役（BR-054）。
+// wailsjs/go/desktop/App.js の代役（BR-054）。
 //
 // api.js は `import * as App` で取り込むため、名前解決は参照した時点まで
 // 遅れる。描画（lazy.js）は Go を呼ばないので、空のモジュールで足りる。

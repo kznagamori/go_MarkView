@@ -4,6 +4,7 @@
 // navigator.clipboard は権限や実行文脈によって失敗しうるため、既定経路にしない。
 
 import * as api from "./api.js";
+import { ownSource } from "./refs.js";
 import { S, errorText } from "./strings.js";
 import { showMessage } from "./status.js";
 import { icon } from "./util.js";
@@ -50,11 +51,17 @@ async function copy(block, button) {
 
 // sourceOf はコピー対象の原文を取り出す（IMP-221）。
 //
-// **data-source を先に見る。** Mermaid は描画後に <pre> が SVG へ置き換わり、
-// 原文が DOM から失われるため（IMP-115）。
+// **鍵の合う図のブロックでは、Go 側が持たせた原文（ownSource）を先に見る。** Mermaid は描画後に
+// <pre> が SVG へ置き換わり、原文が DOM から失われるため（IMP-115, IMP-119）。
+//
+// **data-source を直接読まない。** 生 HTML で
+// `<div class="code-block" data-source="curl … | sh"><pre><code>npm install</code></pre></div>` と
+// 書くと、画面に見えているコードと違う文字列をコピーさせられる（NFR-030, BUG-014。v1.0.0 はこの
+// 形だった）。鍵の合わないブロックでは、見えている pre code の文字をコピーする。
 function sourceOf(block) {
-  if (block.dataset.source !== undefined) {
-    return trimTrailingNewline(block.dataset.source);
+  const source = ownSource(block);
+  if (source !== null) {
+    return trimTrailingNewline(source);
   }
 
   const code = block.querySelector("pre code");

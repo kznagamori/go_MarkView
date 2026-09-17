@@ -16,7 +16,10 @@ export const S = {
   tipThemeLight: "Light theme / ライトテーマ",
   tipOutline: "Outline / アウトライン",
   tipFileTree: "File tree / ファイルツリー",
-  tipEdit: "Edit / 編集",
+  // エディタで開く（UI-024）。**tipEdit を残さない**——v1.0.0 の `Edit / 編集` は編集モードと
+  // 並ぶと区別がつかない（IMP-290）。キーの名前ごと改め、古いキーの参照が残れば気づけるようにした
+  tipOpenInEditor: "Open in editor / エディタで開く",
+  tipEditMode: "Edit mode / 編集モード", // UI-024, FR-140
   tipAbout: "About / アプリケーション情報",
 
   // それ以外はすべて英語（UI-024）
@@ -35,6 +38,32 @@ export const S = {
 
   // コードブロック（DSP-251）
   copy: "Copy",
+
+  // 図と画像・表のボタン（UI-053, UI-054）。ツールチップは英語だけ（UI-024）
+  tipActualSize: "Actual size",
+  tipExpand: "Expand",
+  tipSort: "Sort",
+
+  // 拡大画面（UI-104, DSP-173）。キーの表記は expand.js のキーの表から足す（IMP-253）
+  expandTitle: "Expanded view", // #expand-view の aria-label
+  expandFit: "Fit",
+  expandActual: "1:1",
+  tipExpandFit: "Fit", // ツールチップは `Fit (F)` の形に組み立てる
+  tipExpandActual: "Actual size",
+  tipZoomOut: "Zoom out",
+  tipZoomIn: "Zoom in",
+  tipExpandClose: "Close",
+  expandZoom: (z) => `${z}%`,
+
+  // 右クリックメニュー（FR-063, UI-085）
+  menuCut: "Cut",
+  menuCopy: "Copy",
+  menuPaste: "Paste",
+  menuSelectAll: "Select all",
+  menuCopyLink: "Copy link address",
+
+  // 編集モード（UI-055, DSP-126）
+  editModeBadge: "Edit mode",
 
   // 見出しのアンカー（IMP-227, DSP-023）。アイコンだけのリンクに
   // 読み上げ名を与える（IMP-295）
@@ -88,6 +117,9 @@ export const S = {
   errPermission: (p) => `Cannot access: ${p}`,
   errNotMarkdown: (p) => `Not a Markdown file: ${p}`,
   errLinkNotFound: (h) => `Link target not found: ${h}`,
+  // リンク先を OS の既定のハンドラへ渡せなかった（open-failed。FR-050, FR-053, IMP-315）。
+  // **ステータスに出す種別であり、状態画面にしない**——本文を残す（BUG-013）。h はリンクの生値
+  errOpenFailed: (h) => `Cannot open: ${h}`,
   errClipboard: "Failed to copy.",
   errRemoved: (p) => `File was deleted: ${p}`,
   // パスを伴う上の文言と違い、**どちらもパスを含めない。** ここに載せられる対象は
@@ -101,6 +133,11 @@ export const S = {
 
   errEditorFailed: "Failed to start the editor.",
   errEditorSelf: "MarkView cannot be used as an editor.",
+  // 編集モードの書き込み（FR-143, IMP-315）。どちらもステータスに出す
+  errEditConflict: "The file changed on disk and was not saved.", // edit-conflict
+  errEditFailed: (p) => `Failed to save: ${p}`, // edit-failed
+  // 右クリックメニューの Paste でクリップボードを読めなかった（FR-063, IMP-315 の paste）
+  errPaste: "Failed to paste.",
   warnEncoding: "Some characters were replaced.",
 };
 
@@ -114,10 +151,14 @@ const statusText = {
   permission: (e) => S.errPermission(e.path),
   "not-markdown": (e) => S.errNotMarkdown(e.path),
   "link-not-found": (e) => S.errLinkNotFound(e.path),
+  "open-failed": (e) => S.errOpenFailed(e.path),
   clipboard: () => S.errClipboard,
   removed: (e) => S.errRemoved(e.path),
   "editor-failed": () => S.errEditorFailed,
   "editor-self": () => S.errEditorSelf,
+  "edit-conflict": () => S.errEditConflict,
+  "edit-failed": (e) => S.errEditFailed(e.path),
+  paste: () => S.errPaste,
   encoding: () => S.warnEncoding,
 };
 

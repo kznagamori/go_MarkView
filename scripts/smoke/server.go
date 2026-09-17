@@ -18,7 +18,7 @@ import (
 
 // 検証用ページ一式。実行ファイルへ埋め込み、作業ディレクトリに依存させない。
 //
-//go:embed harness.html harness.js stub-app.js stub-runtime.js
+//go:embed harness.html harness.js collect.js stub-app.js stub-runtime.js
 var assets embed.FS
 
 // server は frontend/ をそのまま配りつつ、検証用のページと結果の受け口を
@@ -30,11 +30,12 @@ var assets embed.FS
 // index.html と揃う。
 type server struct {
 	page   []byte       // 変換済みの本文を埋めた harness.html
+	config []byte       // ページが最初に受け取る値（pageConfig の JSON）
 	files  http.Handler // frontend/ のファイル
 	result chan report  // ページから返ってきた結果
 }
 
-func newServer(frontendDir, body string) (*server, error) {
+func newServer(frontendDir, body string, config []byte) (*server, error) {
 	// **Windows ではレジストリの内容が拡張子の判定に混ざる。** .js が
 	// text/plain になっている環境があり、そうなるとブラウザが厳格な
 	// MIME 検査でモジュールを拒む。ここで上書きしておく。
@@ -64,8 +65,9 @@ func newServer(frontendDir, body string) (*server, error) {
 	}
 
 	return &server{
-		page:  []byte(page.String()),
-		files: http.FileServer(http.Dir(frontendDir)),
+		page:   []byte(page.String()),
+		config: config,
+		files:  http.FileServer(http.Dir(frontendDir)),
 		// 1 つ分の余裕を持たせ、受け取り側が待つ前に届いても取りこぼさない。
 		result: make(chan report, 1),
 	}, nil
@@ -96,6 +98,18 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "/_smoke.js":
 		s.serveAsset(w, "harness.js")
+
+		return
+
+	case "/_smoke_collect.js":
+		s.serveAsset(w, "collect.js")
+
+		return
+
+	case "/_config":
+		// 目印の鍵と、並べ替えの比較に渡す入力（BR-054）。**期待値は渡さない。**
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(s.config) //nolint:errcheck
 
 		return
 

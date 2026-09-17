@@ -9,7 +9,7 @@
 // ダイアログ・ドロップ・引数・ツリー・リンク・履歴の 6 つに限る（IMP-192）。
 // ドロップと引数は Go 側が受けるため、ここには現れない。
 
-import * as App from "../wailsjs/go/main/App.js";
+import * as App from "../wailsjs/go/desktop/App.js";
 import { EventsOn } from "../wailsjs/runtime/runtime.js";
 
 // Go から届くイベントの名前（IMP-320）。
@@ -160,6 +160,52 @@ export async function copyToClipboard(text) {
   } catch (e) {
     return toErrorDTO(e, "clipboard");
   }
+}
+
+// readClipboard はクリップボードのテキストを読む（FR-063, AR-062, IMP-310）。
+// `{ text, error }` を返す。**テキスト以外しか入っていなければ空文字で、失敗ではない**（Go 側が判定する）。
+// 失敗したら error は kind が paste の ErrorDTO（IMP-315）。
+export async function readClipboard() {
+  try {
+    return { text: await App.ReadClipboard(), error: null };
+  } catch (e) {
+    return { text: "", error: toErrorDTO(e, "paste") };
+  }
+}
+
+// --- 編集モード -------------------------------------------------------------
+//
+// 戻り値は EditModeDTO / EditResultDTO / CellSourceDTO（IMP-316）。**失敗も DTO で届く**（Go の error を
+// 返さない。IMP-310）。**表示の更新は戻り値ではなく document:changed で届く**（AR-061）。
+
+// setEditMode は編集モードを始める・終える（FR-140）。
+export function setEditMode(on) {
+  return App.SetEditMode(on);
+}
+
+// setTask はチェックボックスを書き換える（FR-141）。ref は data-ref の値そのもの（IMP-316）。
+export function setTask(ref, checked) {
+  return App.SetTask(ref, checked);
+}
+
+// getCellSource はセルの編集欄に入れるソースを取る（FR-142）。
+export function getCellSource(ref) {
+  return App.GetCellSource(ref);
+}
+
+// setCell はセルを書き換える（FR-142）。
+export function setCell(ref, text) {
+  return App.SetCell(ref, text);
+}
+
+// undoEdit は直前の書き換えを取り消す（FR-144）。
+export function undoEdit() {
+  return App.UndoEdit();
+}
+
+// redoEdit は取り消した書き換えをやり直す（FR-144）。
+export function redoEdit() {
+  return App.RedoEdit();
 }
 
 // --- イベント ---------------------------------------------------------------

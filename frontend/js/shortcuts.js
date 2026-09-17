@@ -6,6 +6,9 @@
 // window の keydown に 1 つだけリスナを置き、表を引いて処理する。
 // 個々の要素にキーハンドラを分散させない（IMP-244）。
 
+import { handleExpandKey, isExpandOpen } from "./expand.js";
+import { isContextMenuOpen } from "./contextmenu.js";
+
 // SHORTCUTS は UI-090 の一覧をそのまま写したもの。
 //
 // label は代表キー。keys が複数あってもツールチップには label だけを載せる。
@@ -35,6 +38,15 @@ export const SHORTCUTS = [
   { id: "copySelection", keys: ["Ctrl+c"], label: "" },
   { id: "about", keys: ["F1"], label: "F1" },
   { id: "quit", keys: ["Ctrl+q"], label: "Ctrl+Q" },
+
+  // v1.1.0（UI-090, IMP-244）。editMode はツールバーのボタンと同じ入口（IMP-260 の toggleEditMode）を通す。
+  // undo / redo は編集モードでなければ false を返し、既定の動作を止めない（IMP-263）。
+  //
+  // **Shift+F10 とアプリケーションキーは載せない。** WebView がこれらのキーで contextmenu イベントを
+  // 出すため、右クリックと同じ経路（IMP-249）で受ける。
+  { id: "editMode", keys: ["Ctrl+Shift+m"], label: "Ctrl+Shift+M" },
+  { id: "undo", keys: ["Ctrl+z"], label: "" },
+  { id: "redo", keys: ["Ctrl+y", "Ctrl+Shift+z"], label: "" },
 ];
 
 // 入力欄にフォーカスがある間、素通しさせる割り当て（UI-090）。
@@ -46,7 +58,25 @@ export const SHORTCUTS = [
 // なお Ctrl+C はもともとハンドラを持たない（WebView の既定に任せる。
 // FR-062）。ここに挙げるのは、後から誤って結び付けられないようにするため
 // である。
-const PASS_THROUGH_IN_INPUT = new Set(["copySelection"]);
+//
+// **undo / redo はテキスト編集に関わるキーとして扱う**（FR-144, IMP-244）。入力欄の中の取り消しに任せる。
+const PASS_THROUGH_IN_INPUT = new Set(["copySelection", "undo", "redo"]);
+
+// TEXT_INPUTS は「入力欄」として扱う要素（UI-090, IMP-244）。検索バーの入力欄とセルの編集欄だけとする。
+//
+// **チェックボックスとラジオボタンを入力欄に数えない。** v1.0.0 は input 要素をすべて入力欄とみなしていた。
+// v1.1.0 では再描画の後にフォーカスがチェックボックスへ戻る（IMP-220 の手順 11）ため、そのままでは
+// チェックボックスを切り替えた直後の Ctrl+Z / Ctrl+Y が素通しされ、既定の動作にも何も無いため黙って
+// 何も起きない（FR-144）。
+const TEXT_INPUTS = "input.search-input, input.cell-editor";
+
+// CELL_EDITOR はセルの編集欄（IMP-262）。**Enter / Shift+Enter を検索の移動へ回さない**（FR-142, UI-090）。
+// 編集欄自身の keydown が確定を受け持つ。
+const CELL_EDITOR = "input.cell-editor";
+const SEARCH_MOVES = new Set(["searchNext", "searchPrev"]);
+
+// 拡大画面を開いている間も既定の動作を残す割り当て（Enter はフォーカスしているボタンの実行。IMP-253）。
+const KEEP_DEFAULT_IN_EXPAND = SEARCH_MOVES;
 
 // keys から id を引く表。起動時に 1 度だけ組み立てる。
 const byKey = new Map();
@@ -81,9 +111,25 @@ function onKeyDown(event) {
   if (event.isComposing) return;
 
   const id = byKey.get(keyOf(event));
+
+  // **右クリックメニューを開いている間は、Esc 以外の割り当てを働かせず、既定の動作も止めない**（IMP-244）。
+  // メニューの中の ↑ / ↓ / Enter / Space / Tab は #contextmenu の keydown が受ける（IMP-249）。止めないと、
+  // 検索バーの入力欄でメニューを開いて Paste で Enter を押したとき、Enter が検索の移動へ回る。
+  if (isContextMenuOpen() && id !== "close") return;
+
+  // **拡大画面を開いている間は、Esc を下の振り分け（close）で先に扱い、UI-104 の表の残りのキーを
+  // expand.js へ渡し、それ以外の割り当てを止める**（Ctrl+Q を除く。IMP-244）。止めるときは既定の動作も
+  // 抑止する（Ctrl + `+` が WebView 自身の拡大になる）。ただし Enter / Shift+Enter はフォーカスしている
+  // 操作バーのボタンの実行に任せる（IMP-253。ダイアログの KEEP_DEFAULT_IN_DIALOG と同じ理由）。
+  if (isExpandOpen() && id !== "close" && id !== "quit") {
+    if (handleExpandKey(event) || (id && !KEEP_DEFAULT_IN_EXPAND.has(id))) event.preventDefault();
+    return;
+  }
+
   if (!id) return;
 
-  if (isEditing(event.target) && PASS_THROUGH_IN_INPUT.has(id)) return;
+  if (isTextInput(event.target) && PASS_THROUGH_IN_INPUT.has(id)) return;
+  if (SEARCH_MOVES.has(id) && matches(event.target, CELL_EDITOR)) return;
 
   const handler = handlers[id];
   if (!handler) return;
@@ -118,11 +164,12 @@ function keyOf(event) {
   return parts.join("+");
 }
 
-// isEditing はテキスト入力中かを返す（UI-090）。
-function isEditing(target) {
-  if (!target || !target.tagName) return false;
+// isTextInput はテキストの入力欄にフォーカスがあるかを返す（UI-090, IMP-244）。
+function isTextInput(target) {
+  return matches(target, TEXT_INPUTS);
+}
 
-  const tag = target.tagName.toLowerCase();
-
-  return tag === "input" || tag === "textarea" || target.isContentEditable;
+// matches は target が要素で、selector に合うかを返す。
+function matches(target, selector) {
+  return Boolean(target) && typeof target.matches === "function" && target.matches(selector);
 }

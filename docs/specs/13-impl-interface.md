@@ -210,7 +210,7 @@ type OpenResultDTO struct {
 > [!IMPORTANT]
 > Wails v2 は Go の `error` を**メッセージ文字列としてしか**フロントエンドへ渡せない（`dispatcher.NewErrorCallback(message string, ...)` を経て、JavaScript 側は `new Error(message)` を受け取る）。`(*DocumentDTO, error)` のまま返すと `ErrorDTO` の `Kind` / `Size` / `Limit` が失われ、**大きなファイルの確認画面（FR-016, IMP-314）を組み立てられない。** 失敗が値として渡る形にする必要がある。
 
-`Document` と `Error` がどちらも `null` の場合は「**何も起きなかった**」を表す。フロントエンドは表示を変えない。次の 4 つがこれにあたる。
+`Document` と `Error` がどちらも `null` の場合は「**何も起きなかった**」を表す。フロントエンドは表示を変えない。次の 5 つがこれにあたる。
 
 | 場面 | メソッド |
 | --- | --- |
@@ -218,6 +218,7 @@ type OpenResultDTO struct {
 | ダイアログを開けなかった | `OpenFileDialog` |
 | 履歴の端で戻る・進むを呼んだ | `HistoryBack` / `HistoryForward` |
 | 画面の対象が無い状態（文書未表示）で再読み込みした | `Reload` |
+| 確認待ちでないパスで `Open anyway` を押した（二度押し、確認待ちが消えた後。IMP-314） | `OpenConfirmed` |
 
 ダイアログを開けなかった場合を失敗として扱わないのは、表示中の文書を状態画面で置き換える理由がないためである（FR-110）。利用者から見れば「ファイルが選ばれなかった」ことに変わりはない。
 
@@ -260,7 +261,7 @@ type EditorResultDTO struct {
 
 ## 13.3 バインドメソッド（IMP-310 系）
 
-すべて `App` のメソッドとして定義する。Wails のバインディングにより、JavaScript からは `window.go.main.App.*` として呼べる。`js/api.js` がこれを薄くラップする（IMP-201）。
+すべて `App`（`desktop` パッケージ）のメソッドとして定義する。Wails のバインディングにより、JavaScript からは `window.go.desktop.App.*` として呼べる（`wails build` が `frontend/wailsjs/go/desktop/App.js` を生成する）。`js/api.js` がこれを薄くラップする（IMP-201）。**`App` の公開メソッドはこの一覧に限る**——公開メソッドはすべてフロントエンドから呼べる（11 章 11.11 の前書き）。
 
 ### IMP-310: 一覧 **MUST**
 
@@ -305,6 +306,7 @@ type EditorResultDTO struct {
 - **失敗は戻り値の DTO で伝える**（IMP-308, IMP-305）。Go の `error` を返すのは `ReadDir` と `CopyToClipboard` と `ReadClipboard` だけとする。
 - **`ReadClipboard` は Wails の `runtime.ClipboardGetText` を使う**（AR-062）。WebView の `navigator.clipboard.readText` は読み取りに権限を求めるため使わない。**テキスト以外（画像など）しか入っていなければ空文字を返し、失敗にしない。**
 - 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタの 3 つは `editor-failed`、編集モードの書き込みの 4 つ（`SetTask` / `SetCell` / `UndoEdit` / `RedoEdit`）は `edit-failed` とする。** これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
+- **文書を開くメソッド（`OpenFileDialog` / `OpenFromTree` / `OpenConfirmed` / `FollowLink` / `HistoryBack` / `HistoryForward` / `Reload`）で回復したパニックは、Go 側の状態も状態画面へ移す。** IMP-192 の「状態画面を出した」と同じ反映を行う——`showing` を偽にし、監視を外し、`edit.Left()` を呼び、確認待ちを消す。`ioMu` を取って行う。**画面の対象（`target`）は、そのメソッドが開こうとしていたパスが分かっていればそれ（ツリーの選択・確認待ちのパス・履歴のエントリ・再読み込みの対象・ダイアログで選ばれたパス）、分からなければ空とする**（`FollowLink` と、履歴を動かす前）。空のときは `ErrorDTO.DisplayPath` も空になり、ウィンドウタイトルはアプリケーション名だけになる。**フロントエンドは `render-error` の状態画面を出す**（IMP-250）ため、Go 側を「前の文書を表示中」のまま残すと、監視のイベントや `F5` で状態画面が前の文書の表示に置き換わる（BUG-012 と同じ形の食い違い）。**前の文書を `target` に残さない**——`F5` と「エディタで開く」が画面に無い文書を指す（IMP-190）。**回復が錠を取れるように、`ioMu` と `mu` は途中でパニックが起きても `defer` で解く形で取る。**
 - **`SetEditMode` と `GetCellSource` は、回復したパニックを通知しない。** `edit-failed` の文言は「Failed to save: <path>」であり、保存していない操作には合わない。`SetEditMode` はその時点の `edit.On()` を返し（ボタンの表示が Go 側と揃う）、`GetCellSource` は `Stale` を真で返す（編集欄が開かないだけで済む）。
 - `Quit` は `Ctrl+Q`（UI-090）の受け口である。`Alt+F4` と閉じるボタンは OS とウィンドウマネージャが処理するためこの経路を通らない。**終了処理そのものは Wails に任せ、ここで設定を保存しない。** `OnBeforeClose` / `OnShutdown`（IMP-194）を通ることで、閉じるボタンで終了した場合とまったく同じ後始末になる。
 - `UpdateConfig` を**立て続けに 2 つ呼ばない**。バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、到着順が入れ替わりうる。フロントエンドは `saveConfig`（IMP-210）を経由し、前の応答を待ってから次を送る。
@@ -378,6 +380,8 @@ FR-016 を実装する。
 4. `Open anyway` の押下で `OpenConfirmed(path)` を呼ぶ。Go 側は `LoadOptions{Confirmed: true}` で再試行する。
 
 `OpenConfirmed` は、直前に確認画面を出したパスに対してのみ有効とする。Go 側が「確認待ちのパス」を 1 つだけ保持し、それ以外のパスを渡された場合は拒否する。任意のサイズのファイルを無条件に開く経路を作らないため。
+
+**拒否は失敗として返さず、「何も起きなかった」（IMP-308）とする。** 拒否が起きるのは、`Open anyway` の二度押し（1 回目で本文が出た後に 2 回目が届く）と、確認画面の間に確認以外の失敗（ツリーで消えたファイルを選ぶなど）で確認待ちが消えた後の押下である（IMP-192）。**v1.0.0 は分類できないエラーとして `render-error` を返しており**、二度押しでは出たばかりの本文が状態画面に置き換わり、Go 側は文書を表示中のまま食い違った（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md) と同じ形）。確認待ちが消えた後は、`F5` で確認画面を出し直せる（`Reload` は画面の対象を読み直す。IMP-310）。
 
 **確認画面を出した時点で、ツリールートと表示履歴は対象へ移す**（FR-016）。FR-016 は「確認画面を表示した時点でタイトルとパス表示を対象のものに更新し、履歴に積む。`Alt+←` で直前の文書へ戻れること」を求めており、積まないと戻る先が 1 つずれる。適用する規則は成功時と同じ表（IMP-192）に従う。**監視は張らず、前の文書の監視も外し、表示中の文書（`current`）は差し替えない。** 描画を始めていないファイルは FR-014 の対象外であり（FR-016）、前の文書は表示対象ではなくなっている（FR-014）。ステータス領域のパスは確認画面の対象を指す（`ErrorDTO.DisplayPath`。IMP-307）。
 

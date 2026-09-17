@@ -1,16 +1,12 @@
-package main
+package desktop
 
 import (
-	"os"
 	"path/filepath"
 
-	"github.com/kznagamori/go_MarkView/internal/buildinfo"
 	"github.com/kznagamori/go_MarkView/internal/config"
 	"github.com/kznagamori/go_MarkView/internal/document"
 	"github.com/kznagamori/go_MarkView/internal/filetree"
-	"github.com/kznagamori/go_MarkView/internal/opener"
 	"github.com/kznagamori/go_MarkView/internal/renderer"
-	"github.com/kznagamori/go_MarkView/internal/session"
 )
 
 // 本ファイルは Go とフロントエンドの間でやり取りする型を定める（IMP-302〜307）。
@@ -19,18 +15,9 @@ import (
 // json タグで JavaScript 側のフィールド名を明示し、null を返しうるフィールドは
 // ポインタ型とする（IMP-301）。
 //
-// app.go から分けているのは、app.go が 13 種のバインドメソッドを持つ予定で
-// あり、型定義と合わせると 400 行を超えるためである（IMP-011）。
-
-// アプリケーション情報の固定値（FR-100, UI-100）。
-//
-// 利用者に見える文言であるため英語とする（UI-024）。ラベル（Author など）は
-// フロントエンドの strings.js が持ち、ここが持つのは値だけである（IMP-290）。
-const (
-	appAuthor     = "kznagamori"
-	appRepository = "https://github.com/kznagamori/go_MarkView"
-	appLicense    = "MIT License"
-)
+// app.go から分けているのは、型定義と合わせると 400 行を超えるためである（IMP-011）。
+// 同じ理由で、外部エディタは dto_editor.go、編集モードは dto_editmode.go（IMP-316）、
+// 情報ダイアログは dto_about.go に分けている。
 
 // documentEncoding は読み込んだ文書の文字コード（IMP-302）。
 //
@@ -40,6 +27,17 @@ const (
 const AppTitle = "MarkView"
 
 const documentEncoding = "UTF-8"
+
+// DocumentDTO.Trigger の値（IMP-302, IMP-192）。
+//
+// フロントエンドは triggerEdit のときだけ、並べ替えを並べ直さずに行の並びを保つ（FR-130,
+// IMP-229）。それ以外の用途に使わない。
+const (
+	triggerOpen   = "open"   // ダイアログ・ドロップ・引数・ツリー・リンク・履歴・確認画面の Open anyway
+	triggerReload = "reload" // 手動の再読み込み（FR-015）と、書き込み前の不一致による読み直し（IMP-195 の 4）
+	triggerWatch  = "watch"  // ファイル更新の自動検知（FR-014）
+	triggerEdit   = "edit"   // 編集モードの書き込み・取り消し・やり直しの直後の読み直し（IMP-195 の 8）
+)
 
 // ScrollDTO.Mode の値（IMP-302）。
 //
@@ -88,19 +86,21 @@ const (
 	errKindEditorFailed = "editor-failed"
 	errKindEditorSelf   = "editor-self"
 	errKindEncoding     = "encoding"
-)
 
-// editorCustom は「任意指定」を表す予約語（IMP-309, UI-103）。
-//
-// エディタ選択ウィンドウの末尾に置く `Other...` の行の ID である。
-// **プリセットの ID にこの値を使わない**（IMP-172。UT-705 が確かめている）。
-const editorCustom = "custom"
+	// v1.1.0。どれもステータスに出す種別であり、状態画面にしない（IMP-315）。
+	errKindOpenFailed   = "open-failed"   // リンク先を OS へ委譲できない（FR-053。BUG-013）
+	errKindEditConflict = "edit-conflict" // 書き込む前にファイルが変更されていた（FR-143）
+	errKindEditFailed   = "edit-failed"   // 書き込めない・表の形の確かめで拒んだ（FR-142, FR-143）
+)
 
 // ScrollDTO は描画後のスクロール指示（IMP-302）。
 type ScrollDTO struct {
-	Mode   string `json:"mode"`   // scrollTop | scrollAnchor | scrollRestore | scrollKeep
-	Anchor string `json:"anchor"` // Mode == scrollAnchor のときの見出し ID
-	Top    int    `json:"top"`    // Mode == scrollRestore のときの位置
+	Mode string `json:"mode"` // scrollTop | scrollAnchor | scrollRestore | scrollKeep
+	// Anchor は Mode == scrollAnchor のときの、リンクのフラグメント（# を除き復号した値）。
+	// **user-content- を Go 側で付けない**（IMP-302）。フロントエンドの findInDocument が
+	// 生のままの値と接頭辞を補った値の順に、本文の中だけを探す（IMP-223, AR-053）。
+	Anchor string `json:"anchor"`
+	Top    int    `json:"top"` // Mode == scrollRestore のときの位置
 }
 
 // DocumentDTO は 1 つの文書の表示に必要な情報をまとめる（IMP-302）。
@@ -129,6 +129,38 @@ type DocumentDTO struct {
 	// フロントエンドは Kind から strings.js の文言を選ぶ。文言の定義を
 	// 1 箇所に集約するためであり、ErrorDTO.Kind と同じ扱いである（IMP-290）。
 	Warnings []string `json:"warnings"`
+
+	// v1.1.0（FR-120〜FR-144）。再描画のたびに状態をどう引き継ぐかを伝える（DSP-352）。
+	// **判断はすべて Go 側で済ませて渡す**（IMP-300 の 2）。
+
+	// SameDocument は直前の表示と同じファイルか（1.7。IMP-192 が session.SameFile で決める）。
+	// **直前が状態画面なら同じファイルでも偽**。フロントエンドはパスを比べて自分で判断しない。
+	SameDocument bool `json:"sameDocument"`
+	// Trigger は開いた経路（triggerOpen など）。
+	Trigger string `json:"trigger"`
+	// RefKey は目印（data-ref / data-link。図のブロックを含む）の鍵（IMP-120, IMP-260）。
+	RefKey string `json:"refKey"`
+	// Editable は編集モードを開始できるか（FR-140 の表。EditSession.CanStart）。
+	Editable bool `json:"editable"`
+	// EditMode はいま編集モードか（Go 側が正。IMP-109）。
+	EditMode bool `json:"editMode"`
+	// EditSeq は編集モードの状態の版（EditSession.Seq）。フロントエンドは、それまでに受け取った
+	// 版より小さければ Editable / EditMode を写さない（到着順が決まっていないため。IMP-260）。
+	EditSeq uint64 `json:"editSeq"`
+}
+
+// documentView は DocumentDTO のうち、文書そのものではなく「どう表示するか」を決める値
+// （IMP-302, IMP-192）。開いた経路と編集モードの状態から、開く処理が決めて渡す。
+type documentView struct {
+	displayPath string    // session.DisplayPath（UI-060）
+	outsideTree bool      // 同上（FR-052）
+	scroll      ScrollDTO // 経路で決まる（IMP-192）
+
+	sameDocument bool   // session.SameFile かつ直前が文書の表示（IMP-192）
+	trigger      string // triggerOpen など
+	editable     bool   // EditSession.CanStart
+	editMode     bool   // EditSession.On
+	editSeq      uint64 // EditSession.Seq
 }
 
 // ConfigDTO はフロントエンドへ渡す設定（IMP-303）。
@@ -214,136 +246,6 @@ type LinkResultDTO struct {
 	Error    *ErrorDTO    `json:"error"`    // Kind == linkError のとき
 }
 
-// EditorListDTO はエディタ選択ウィンドウの中身（IMP-309, UI-103）。
-type EditorListDTO struct {
-	Editors []EditorDTO `json:"editors"`
-	Error   *ErrorDTO   `json:"error"`
-}
-
-// EditorDTO は一覧の 1 行（IMP-309）。
-//
-// **実行ファイルのパスを載せてはならない**（NFR-035 の 3）。画面に出す必要が
-// なく、載せた時点でフロントエンドをパスが通ることになる。これは IMP-300 の 3
-// が禁じている形そのものである。**フィールドを足すときは必ずここを読む。**
-//
-// Name はプリセットの表示名か、`custom` の場合は選ばれた**実行ファイル名**
-// （`filepath.Base`。パスではない）。`Other...` というラベル自体はフロント
-// エンドが持つ（IMP-290）。
-type EditorDTO struct {
-	ID        string `json:"id"`        // プリセットの ID、または editorCustom
-	Name      string `json:"name"`      // 画面に出す表示名
-	Available bool   `json:"available"` // 選択できるか（見つかったか）
-	Selected  bool   `json:"selected"`  // 初期選択（UI-116）
-}
-
-// EditorResultDTO は起動の結果（IMP-309）。
-type EditorResultDTO struct {
-	Name  string    `json:"name"`  // 起動したエディタの表示名。ステータス表示に使う
-	Error *ErrorDTO `json:"error"` // 失敗したとき。成功時は null
-}
-
-// newEditorList は選択ウィンドウの一覧を組み立てる（IMP-309, UI-103, UI-116）。
-//
-// saved は設定に保存されたエディタ（UI-116）、pending は BrowseEditor で
-// 選ばれた確定前の候補（IMP-310）。どちらも絶対パスまたは空文字である。
-//
-// **並べ替えない。** 順序は IMP-172 の定義順に `custom` を足したものとし、
-// 見つかったものを前へ出さない（UI-103）。見つからなかったものも
-// `Available` が false の行として残す。消すと「なぜ自分のエディタが出ない
-// のか」が分からない。
-//
-// **`Selected` が真の行は高々 1 つである。** 保存が無い場合と、保存された
-// エディタが見つからない場合（アンインストール、更新によるパスの変更）は
-// どの行も真にしない。UI-116 が「エラーとせず『初期選択が無い』状態として
-// 扱う」と定めている。
-func newEditorList(editors []opener.Editor, saved, pending string) EditorListDTO {
-	// Browse で選ばれた候補があればそちらが初期選択になる。まだ選んで
-	// いなければ、設定に保存されたエディタが初期選択となる（UI-103）。
-	want := pending
-	if want == "" {
-		want = saved
-	}
-
-	list := make([]EditorDTO, 0, len(editors)+1)
-	matched := false
-
-	for _, e := range editors {
-		// 見つからなかったものは選べない（UI-103）。Path が空であれば
-		// samePath も一致しないが、意図を明示するために両方を見る。
-		available := e.Path != ""
-		selected := available && session.SamePath(e.Path, want)
-		if selected {
-			matched = true
-		}
-
-		list = append(list, EditorDTO{
-			ID:        e.ID,
-			Name:      e.Name,
-			Available: available,
-			Selected:  selected,
-		})
-	}
-
-	// 末尾は常に custom の行とする（IMP-309, UI-103）。プリセットのどれとも
-	// 一致しない指定はここに出る。
-	custom := EditorDTO{ID: editorCustom}
-
-	// **存在を確かめてから出す。** 保存されたエディタが消えている場合に
-	// 選択済みとして出すと、押しても起動できない行が初期選択になる
-	// （UI-116 の「初期選択が無い状態として扱う」）。
-	if !matched && editorAvailable(want) {
-		custom.Name = filepath.Base(want)
-		custom.Available = true
-		custom.Selected = true
-	}
-
-	return EditorListDTO{Editors: append(list, custom)}
-}
-
-// editorAvailable は指定された実行ファイルが今も存在するかを返す（UI-116）。
-//
-// 保存されたエディタがアンインストールされていることがある。**エラーには
-// せず、「初期選択が無い」状態として扱う**（UI-116, UI-113）。
-//
-// **これは起動を許すかどうかの判断ではない。** 一覧の見え方を決めるだけで
-// あり、起動の直前に opener.OpenWith が同じ検査をあらためて行う（IMP-171
-// の 2）。食い違った場合も、起動時に弾かれて editor-failed になる。
-func editorAvailable(path string) bool {
-	if !filepath.IsAbs(path) {
-		return false
-	}
-
-	info, err := os.Stat(path)
-
-	return err == nil && info.Mode().IsRegular()
-}
-
-// newEditorResult は起動の結果を DTO へ写す（IMP-309, IMP-315）。
-//
-// name は起動したエディタの表示名。失敗したときは Error だけを載せる。
-func newEditorResult(name string, err error) EditorResultDTO {
-	if err != nil {
-		return EditorResultDTO{Error: newEditorErrorDTO(err)}
-	}
-
-	return EditorResultDTO{Name: name}
-}
-
-// AboutDTO はアプリケーション情報ウィンドウの内容（IMP-306, FR-100, FR-101）。
-type AboutDTO struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildTime string `json:"buildTime"`
-
-	Author      string `json:"author"`
-	Repository  string `json:"repository"`
-	License     string `json:"license"`
-	Environment string `json:"environment"`
-
-	Vendors  []buildinfo.VendorEntry `json:"vendors"`  // Bundled 行（UI-100）
-	Licenses string                  `json:"licenses"` // THIRD_PARTY.md の全文（FR-101）
-}
-
 // ErrorDTO は異常をフロントエンドへ伝える（IMP-307, IMP-315）。
 //
 // **文言の組み立てはフロントエンドで行う。** Go 側は Kind と要素（パス・
@@ -356,18 +258,28 @@ type ErrorDTO struct {
 	Path    string `json:"path"`  // 対象がある場合
 	Size    int64  `json:"size"`  // サイズ関連のときのみ
 	Limit   int64  `json:"limit"` // サイズ関連のときのみ
+
+	// DisplayPath / OutsideTree は、**状態画面を出す種別（needs-confirm / too-large /
+	// render-error）でだけ**設定する（IMP-307）。値は DocumentDTO の同名のフィールドと同じ規則
+	// （session.DisplayPath）で、画面の対象（target）について求める。
+	//
+	// 状態画面では DocumentDTO が届かないため、ステータス領域の左に出すパスをここから得る
+	// （FR-016, DSP-302, IMP-250）。**v1.0.0 はこの値を持たず、状態画面の間も前の文書の
+	// パスが残っていた**（BUG-012）。ステータスに出す種別では空のまま（表示を変えない失敗）。
+	DisplayPath string `json:"displayPath"`
+	OutsideTree bool   `json:"outsideTree"`
 }
 
 // newDocumentDTO は Document を DTO へ写す（IMP-302）。
 //
-// 表示用パスとスクロール指示は開いた経路によって決まるため、呼び出し側から
-// 受け取る（IMP-192）。
-func newDocumentDTO(doc *document.Document, display string, outside bool, scroll ScrollDTO) *DocumentDTO {
+// 表示用パス・スクロール指示・経路・編集モードの状態は、開いた経路と Go 側の状態で
+// 決まるため、呼び出し側から受け取る（IMP-192）。
+func newDocumentDTO(doc *document.Document, v documentView) *DocumentDTO {
 	return &DocumentDTO{
 		Path:        doc.Path,
-		DisplayPath: display,
+		DisplayPath: v.displayPath,
 		Name:        filepath.Base(doc.Path),
-		OutsideTree: outside,
+		OutsideTree: v.outsideTree,
 
 		HTML:      doc.HTML,
 		Headings:  headingsOrEmpty(doc.Headings),
@@ -378,8 +290,15 @@ func newDocumentDTO(doc *document.Document, display string, outside bool, scroll
 		NeedsKaTeX:    doc.NeedsKaTeX,
 		NeedsPlantUML: doc.NeedsPlantUML,
 
-		Scroll:   scroll,
+		Scroll:   v.scroll,
 		Warnings: warningKinds(doc.Warnings),
+
+		SameDocument: v.sameDocument,
+		Trigger:      v.trigger,
+		RefKey:       doc.RefKey,
+		Editable:     v.editable,
+		EditMode:     v.editMode,
+		EditSeq:      v.editSeq,
 	}
 }
 
@@ -442,28 +361,5 @@ func newConfigDTO(cfg config.Config, theme string) ConfigDTO {
 		FileTreeVisible: cfg.FileTreeVisible,
 		OutlineWidth:    cfg.OutlineWidth,
 		FileTreeWidth:   cfg.FileTreeWidth,
-	}
-}
-
-// newAboutDTO はアプリケーション情報を組み立てる（IMP-306）。
-//
-// licenses は go:embed した THIRD_PARTY.md の全文、webviewVersion は Wails
-// から得た WebView のバージョンである。どちらも取得できない場合は空文字でよい。
-func newAboutDTO(licenses, webviewVersion string) AboutDTO {
-	return AboutDTO{
-		Version:   buildinfo.Version,
-		Commit:    buildinfo.Commit,
-		BuildTime: buildinfo.BuildTime,
-
-		Author:      appAuthor,
-		Repository:  appRepository,
-		License:     appLicense,
-		Environment: buildinfo.Environment(webviewVersion),
-
-		// **Bundled() を入れる。Vendors() の全体ではない**（IMP-306, IMP-181）。
-		// 同梱物の中に含まれるもの（Viz.js / Graphviz / Expat）は Bundled 行に
-		// 出さず、Licenses の中に全文として現れる（UI-100, FR-101）。
-		Vendors:  buildinfo.Bundled(),
-		Licenses: licenses,
 	}
 }

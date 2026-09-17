@@ -15,7 +15,11 @@ MarkView は、**Markdown ドキュメントを受け取った側が、追加の
 
 MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown と一緒に配れば、受け取った側は
 ダブルクリックするだけで読める。** インストールも、ランタイムの導入も、ネットワーク接続も
-要りません。書く道具は既にあるので、MarkView は書きません。読むことと、**書く道具へ渡すこと**だけをします。
+要りません。書く道具は既にあるので、MarkView は文章を書きません。読むことと、
+**書く道具へ渡すこと**が役目です。
+
+**例外は 2 つだけです。** 編集モードに切り替えると、タスクリストのチェックボックスと
+表のセルの文字を、その場で直せます。
 
 > **MarkView** is a lightweight, single-executable Markdown viewer for Windows and Linux.
 > No installation, no runtime, no network access. It renders Markdown the way GitHub does.
@@ -27,6 +31,8 @@ MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown
 - GitHub Alerts 5 種（`> [!NOTE]` `> [!TIP]` `> [!IMPORTANT]` `> [!WARNING]` `> [!CAUTION]`）
 - Mermaid 図と PlantUML 図の描画。ライブラリを同梱しているため**オフラインでも図が出る**
 - 数式の描画（KaTeX 同梱、`$...$` / `$$...$$` / ` ```math ` の 3 記法）
+- 本文幅に縮めると読めない図と画像を、**原寸で、または画面いっぱいに拡大して**見られる
+- 表を列ごとに**並べ替えて表示**（表示だけで、ファイルは書き換えない）
 - 見出しからアウトラインを自動生成し、本文のスクロールに連動して現在位置を強調
 - Markdown ファイルとディレクトリだけを並べるファイルツリー（遅延展開、`.git` などは除外）
 - **ツリーからファイルを選んでも、ツリーの起点は動かない**
@@ -34,11 +40,13 @@ MarkView はこの隙間を埋めます。**実行ファイル 1 つを Markdown
 - 文書内のインクリメンタル検索（全ヒットをハイライト、現在位置 / 総数を表示）
 - 表示倍率 50 %〜300 %（`Ctrl` + ホイールにも対応）
 - Light / Dark テーマ。**初回は OS の設定に追従**し、一度切り替えるとその選択を記憶
-- コードブロックのコピーボタン
+- コードブロックのコピーボタンと、リンク先を**書かれたとおりの形で**コピーできる右クリックメニュー
 - 表示中のファイルが外部で保存されると、**スクロール位置を保ったまま自動で再描画**
-- 表示中のファイルを**使い慣れたエディタで開く**ボタン（編集は外部に委ね、MarkView 自身は書かない）
-- 外部 URL は既定のブラウザ、画像は OS の既定アプリへ委譲。ウィンドウ内で遷移しない
-- 開いたファイルのパス・表示履歴・検索語を**ディスクのどこにも書かない**
+- 表示中のファイルを**使い慣れたエディタで開く**ボタン（文章の編集は外部のエディタに委ねる）
+- **編集モード**: タスクリストのチェックボックスと表のセルだけを、その場で書き換える。
+  **書き換える箇所以外は 1 バイトも変えず**、外部で先に保存されていたら上書きしない
+- 外部 URL は既定のブラウザ、画像は OS の既定アプリへ委譲（図の中のリンクも同じ）。ウィンドウ内で遷移しない
+- 開いたファイルのパス・表示履歴・検索語・編集の取り消し履歴を**ディスクのどこにも書かない**
 
 ## インストール
 
@@ -94,7 +102,7 @@ MarkView --help            # 使い方を表示して終了する
 
 | ドキュメント | 内容 |
 | --- | --- |
-| [使い方](https://github.com/kznagamori/go_MarkView/blob/main/docs/usage.md) | 起動のしかた、文書の開き方、ペイン、検索、倍率、テーマ、ショートカット |
+| [使い方](https://github.com/kznagamori/go_MarkView/blob/main/docs/usage.md) | 起動のしかた、文書の開き方、ペイン、検索、倍率、テーマ、図と画像の拡大表示、表の並べ替え、右クリックメニュー、編集モード、ショートカット |
 | [対応する Markdown 記法](https://github.com/kznagamori/go_MarkView/blob/main/docs/markdown.md) | 見出しから Mermaid・PlantUML・数式まで、何がどう表示されるか |
 | [設定と保存されるもの](https://github.com/kznagamori/go_MarkView/blob/main/docs/settings.md) | 何が保存され、何が保存されないか。保存先と消し方 |
 | [困ったときは](https://github.com/kznagamori/go_MarkView/blob/main/docs/troubleshooting.md) | 起動しない、図が出ない、誤検知される、といった場合の対処 |
@@ -127,7 +135,8 @@ Get-FileHash MarkView-<version>-windows-amd64.zip -Algorithm SHA256
 
 ### 必要条件
 
-- [Go](https://go.dev/dl/) 1.25 以上
+- [Go](https://go.dev/dl/) 1.25 以上（ビルドに使う版は `go.mod` の `toolchain` が決めます。
+  手元の Go がそれより古ければ、`go` コマンドが自動で取得します）
 - [Wails CLI](https://wails.io/) v2 系
 - Linux では次のパッケージ
 

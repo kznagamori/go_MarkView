@@ -11,6 +11,8 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 **MarkView でこのファイルを開いて確かめてください。** GitHub 上でも同じように表示されます。
 違って見える箇所があれば、それは MarkView の不具合です。
 **ただし [PlantUML 図](#plantuml-図) だけは例外です。** GitHub は PlantUML を描画しません。
+また、表の見出しの並べ替えのボタンと、図と画像の右上の原寸表示・拡大画面のボタンは
+MarkView の機能であり、GitHub の表示とは違います（[使い方](./usage.md#図と画像を大きく見る)）。
 
 > [!NOTE]
 > この文書の 1 行目には Front Matter があります。MarkView では**本文に出ません**
@@ -70,6 +72,7 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 - [「生 HTML」の節へ](#生-html)
 
 日本語の見出しはそのままアンカーになり、英字は小文字化されて空白がハイフンになります。
+HTML の `id` は GitHub と同じく `user-content-` で始まりますが、リンクは上のように `#表` と書けば動きます。
 
 → [対応する Markdown 記法](./markdown.md#見出しとアンカー)
 
@@ -105,7 +108,8 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 - [x] 済んだこと
 - [ ] これからやること
 
-チェックボックスは**読み取り専用**です。押しても状態は変わりません。
+チェックボックスは、**編集モードでない間は**押しても状態が変わりません。
+編集モードで押すと、このファイルが書き換わります（[使い方](./usage.md#チェックボックスを切り替える)）。
 
 → [対応する Markdown 記法](./markdown.md#リストとタスクリスト)
 

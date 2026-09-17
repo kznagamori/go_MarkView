@@ -285,6 +285,7 @@ func Replace(path string, data []byte) error
 | 6 | Windows 以外では、一時ファイルの権限ビットを 2 で控えた値にする（`Chmod`） | 一時ファイルを消して返す |
 | 7 | `os.Rename(一時ファイル, 実体)` | 一時ファイルを消して返す |
 
+- **表の番兵は、その段階の既定である。** どの段階でも、失敗の原因が「存在しない」（`fs.ErrNotExist`）なら `ErrNotFound`、「権限が無い」（`fs.ErrPermission`）なら `ErrPermission` とし、それ以外は表の番兵で包む（4.67.0）。**1 で上位のディレクトリを辿れない場合も `ErrPermission` になる**——`ErrNotFound` にすると、利用者への通知（FR-143）が実態と違う。IMP-102 の `classifyError` と同じ分け方である。実体が通常のファイルでなければ `ErrNotFound` とする。
 - **3 を省かない。** ディレクトリに書き込めればリネームは成功するため、**読み取り専用のファイルを置き換えてしまう**（FR-143 の「元のファイルが書き込み可能でなければ置き換えない」）。Windows でも、読み取り専用属性とアクセス制御の両方をこの 1 回で確かめられる。
 - **一時ファイルの名前を `.` で始める。** ファイルツリーは `.` で始まる名前を出さない（FR-031）。書き込みの途中でツリーを読み直しても現れない。
 - **一時ファイルを実体と同じディレクトリに置く。** 別のボリュームへのリネームは置き換えにならない（コピーと削除になり、途中の状態が残りうる）。`%TEMP%` に置かない（NFR-033 の例外の範囲。FR-143）。
@@ -334,7 +335,7 @@ func (l *EditLog) CommitRedo(after [sha256.Size]byte)
 
 FR-140〜FR-144 / NFR-030 を実装する。配置は `internal/document/editsession.go`。
 
-**編集モードの状態と、書き込んでよいかの判断をすべてここに置く。** ファイルにも Wails にも触れず、錠も持たない。**バインドメソッドの側（IMP-195）は、錠を取り、ファイルを読み書きし、イベントを送るだけにする。** 判断を `package main` に置くと単体テストの対象外になり（UT-002, IMP-012）、**書き込みの安全性を担う部分が検証されない。**
+**編集モードの状態と、書き込んでよいかの判断をすべてここに置く。** ファイルにも Wails にも触れず、錠も持たない。**バインドメソッドの側（IMP-195）は、錠を取り、ファイルを読み書きし、イベントを送るだけにする。** 判断を `desktop` に置くと単体テストの対象外になり（UT-002, IMP-012）、**書き込みの安全性を担う部分が検証されない。**
 
 ```go
 // ErrStale は、指示を作った描画の後に再描画が起きていたことを表す（FR-143）。通知しない。
@@ -521,6 +522,7 @@ goldmark.New(
         parser.WithASTTransformers(
             util.Prioritized(headingTransformer{}, 100), // 見出し ID と一覧（IMP-117）
             util.Prioritized(imageTransformer{}, 95),    // 画像 URL の書き換え（IMP-118）
+            util.Prioritized(rawHTMLTransformer{}, 90),  // 生 HTML の有無。サニタイズの後処理を省いてよいかの判断（IMP-116）
         ),
     ),
     goldmark.WithRendererOptions(
@@ -798,7 +800,7 @@ FR-061 / FR-063 / FR-130 / FR-141 / FR-142 / MD-084 / NFR-030 を実装する。
 
 - **鍵（`refKey`）は変換のたびに作る乱数である**（IMP-102）。文書の書き手は変換より前に文書を書くため、**鍵を知りようがなく、生 HTML で目印を偽装できない**（FR-141, FR-063, NFR-030）。サニタイズ（IMP-116）が属性の形を通しても、鍵の合わない目印はフロントエンドが無視し（IMP-260）、Go 側も拒む（IMP-195）。
 - 番号は 0 起点で、**文書の中の出現順**とする。数え方は IMP-121 の `Locate` と**同じ関数で**決める（`walkRefs`）。**2 か所に書くと、描画で付けた番号と書き込みで探す番号が食い違い、別のセルを書き換える。**
-  - **図のブロックの番号は、描画器（IMP-115, IMP-119）が文書の順に振る。** 図は書き換えの対象ではなく `Locate` は位置を返さないため、`walkRefs` と共有しなくてよい。描画に失敗するブロック・拒んだブロックも数える（FR-120 の「同じ対象」）。
+  - **図のブロックの番号と目印の値は、変換器（`mermaidTransformer` / `plantUMLTransformer`）が文書の順に振ってノードに持たせ、描画器（IMP-115, IMP-119）はそれを書くだけとする**（4.67.0）。描画器は複数の変換で共有されゴルーチンをまたぐため、変換ごとの状態（番号と鍵）を持てない。変換器は `parser.Context` から鍵を受け取れ、集める順が文書の順である。図は書き換えの対象ではなく `Locate` は位置を返さないため、`walkRefs` と共有しなくてよい。描画に失敗するブロック・拒んだブロックも数える（FR-120 の「同じ対象」）。
 - **補われたセルには `data-ref` を付けない。** 行のセル数が見出し行より少ないとき、goldmark は空の `TableCell` を補う（ソース上の位置を持たない。`Lines().Len() == 0`）。付けないことで、フロントエンドは編集できないセルとして扱う（FR-142）。
 - **`TaskCheckBox` は描画器を差し替える。** goldmark 標準の描画器は属性を出力しない。**差し替えた描画器は、標準の描画器と同じ文字列（属性の順と、末尾の半角空白 `> ` を含む）に `data-ref` を足しただけにする。** 違えると、ゴールデンテスト（IMP-041）の差分が目印以外にも出る。`Table` / `TableCell` / `Link` / `AutoLink` は、AST 変換で属性を与えれば標準の描画器が `data-` 属性として出力する（`html.RenderAttributes` は `data-` で始まる属性をフィルタに関わらず出す。goldmark v1.8.5 で確認）。
 - **リンク先の「書かれたとおり」は `Link.Destination` の値とする**（FR-063）。goldmark は参照リンクを解決した後の宛先（定義に書かれた形）を `Destination` に持ち、`href` へ出すときにエスケープと実体参照を解いて百分率エンコードする。**`Destination` は原文そのものではない。** 山括弧で囲んだ宛先（`<./a b.md>`）は括弧が外れ（`./a b.md`）、バックスラッシュのエスケープと実体参照は解かれずに残る（`./a\_b.md` はそのまま）。**これを「書かれたとおり」とする。**
@@ -845,6 +847,7 @@ type Locations struct {
 - **セルの位置**は `TableCell.Lines().At(0)` の区間とする。goldmark は前後の空白を除いた区間を持つ。`Between` は、その区間を区切りの `|` の直後・直前まで広げたものとする。**引用やリストの中の表**でも、区間はソース上の実際の位置を指す（行頭の `> ` などは区間の外にある）。
   - **空のセル（`|  |`）の区間は `Start == Stop` で、位置は閉じる `|` の位置（空白の後ろ）にある。** `Between` は前の `|` の直後からその位置までとなる。
   - **行頭に `|` が無い行の最初のセル**の `Between` は、行の内容の先頭（引用の `> ` などの後ろ）から始まる。
+  - **`Between` へ広げるときに越えるのは、半角空白とタブだけ**とし、改行は越えない。**左は行の内容の先頭（行のノードの位置）、右は行末（改行の手前）で止まる**——行末に `|` が無い行の最後のセルは、行の終わりまでとなる（4.67.0。UT-218 のケース 8・9 の期待はこの規則による）。
   - **エスケープした `\|` を含むセルの区間は `\` を含む。** `CellSource` はそれをそのまま返す（編集欄には書かれたとおりに出る）。
   - **見出し行より多いセルは、goldmark が構文木から捨てる。** 描画されず、目印も位置も持たない。
 - 変換と同じく、パニックは `recover` してエラーとして返す（IMP-022）。
@@ -1340,12 +1343,12 @@ func Vendors() []VendorEntry
 func Bundled() []VendorEntry
 
 // Environment は "windows/amd64  Go 1.24.0  WebView2 120.x" 形式の文字列を返す。
-// WebView のバージョンは呼び出し側（package main）が渡す。**取得に失敗した
+// WebView のバージョンは呼び出し側（desktop）が渡す。**取得に失敗した
 // ときだけ空文字を渡し**、その場合は区画ごと省く。
 func Environment(webviewVersion string) string
 ```
 
-`webviewVersion` の取得は `package main` に置く。**OS ごとにビルドタグで分ける**（`console_windows.go` / `console_other.go` と同じ形）。
+`webviewVersion` の取得は `desktop` パッケージに置く（`desktop/webview_windows.go` / `webview_other.go`）。**OS ごとにビルドタグで分ける**（ルートの `console_windows.go` / `console_other.go` と同じ形）。
 
 ```go
 // webview_windows.go   //go:build windows
@@ -1373,19 +1376,22 @@ func webviewVersion() string   // WebKitGTK の版を取る
 
 ## 11.11 App と session（IMP-190 系）
 
-`App`（`app.go`）は Wails にバインドされる唯一の型であり、**ルート直下の `package main` のファイル（IMP-011）が Wails に依存する。** **判断を伴うロジックは `internal/session` / `internal/document` に置き、`package main` からは呼ぶだけにする**（IMP-012）。この分離により、履歴・起動解決・パス算出・同じファイルの判定を Wails なしでテストできる（UT-803〜UT-805, UT-809）。
+`App`（`desktop/app.go`）は Wails にバインドされる唯一の型であり、**`main.go` と `desktop` パッケージ（IMP-011）が Wails に依存する。** **判断を伴うロジックは `internal/session` / `internal/document` に置き、`desktop` からは呼ぶだけにする**（IMP-012）。
+
+**`App` の公開メソッドはすべてフロントエンドから呼べる**（Wails の `Bind`）。**公開メソッドは IMP-310 の一覧に限る。** ライフサイクルの関数（`onStartup` / `onBeforeClose` / `onShutdown`）は非公開のまま `desktop.LifecycleOf` で取り出し、`main.go` が起動オプションへ渡す。Wails は起動オプションに渡された関数だけを関数名で照合してバインドから外すため、**公開メソッドにすると、`main.go` で包んで渡しただけで JavaScript から呼べるメソッドになる**（IMP-300。4.60.0 で `wails generate module` により確かめた）。この分離により、履歴・起動解決・パス算出・同じファイルの判定を Wails なしでテストできる（UT-803〜UT-805, UT-809）。
 
 | 責務 | 置き場所 |
 | --- | --- |
-| Wails のバインドメソッド | `bind.go` / `editor.go` / `link.go` / `editmode.go`（IMP-011） |
-| イベント送出、ウィンドウ操作、ライフサイクル | `app.go` |
-| アプリケーション状態の保持と排他制御 | `app.go` |
-| 文書を開く共通処理（IMP-192） | `open.go` |
+| Wails のバインドメソッド | `desktop/` の `bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go`（IMP-011） |
+| イベント送出、ウィンドウ操作、ライフサイクル | `desktop/app.go`（ライフサイクルの関数の取り出しは `desktop.go`） |
+| アプリケーション状態の保持と排他制御 | `desktop/app.go` |
+| 文書を開く共通処理（IMP-192） | `desktop/open.go` / `open_route.go` |
+| 監視のイベントの受け取り（IMP-192）、ドロップ（IMP-313）、パニックの回復（IMP-022） | `desktop/watch.go` / `drop.go` / `recover.go` |
 | 表示履歴の操作（IMP-191） | `internal/session` |
 | 起動時の対象解決（IMP-193） | `internal/session` |
 | 表示用パスの算出、パスの比較、**同じファイルの判定**（IMP-025, IMP-191） | `internal/session` |
 | 書き換え位置の対応・書き込み・取り消し履歴・**編集モードの状態と判断**（IMP-106〜IMP-109） | `internal/document` |
-| 編集モードのバインドメソッド・錠・ファイルの読み書きの呼び出し・イベント送出（IMP-195） | `editmode.go`（`package main`） |
+| 編集モードのバインドメソッド・錠・ファイルの読み書きの呼び出し・イベント送出（IMP-195） | `desktop/editmode.go` |
 
 ### IMP-190: 保持する状態 **MUST**
 
@@ -1506,7 +1512,7 @@ func SamePath(a, b string) bool
 func SameFile(a, b string) bool
 ```
 
-- **`DocumentDTO.SameDocument` の値を決める判断そのもの**であり、編集モードを終えるか（FR-140 の MUST）の入力になる（IMP-192 → IMP-109 の `Loaded`）。**`package main` に置くと単体テストの対象外になる**（UT-002）。4.44.0 で `package main` の `sameFile` から移した。
+- **`DocumentDTO.SameDocument` の値を決める判断そのもの**であり、編集モードを終えるか（FR-140 の MUST）の入力になる（IMP-192 → IMP-109 の `Loaded`）。**`desktop` に置くと単体テストの対象外になる**（UT-002）。4.44.0 で `package main`（4.60.0 から `desktop`）の `sameFile` から移した。
 - 標準ライブラリだけで書ける（`path/filepath`）。`session` の依存（IMP-012）は増えない。
 - ファイルシステムに触れる（`EvalSymlinks`）。`DisplayPath` と違い、存在しないパスでも失敗にせず、解決前のパスで比べる。
 
@@ -1730,7 +1736,7 @@ Windows: &windows.Options{
 
 ### IMP-194: 終了処理 **MUST**
 
-- **書き込みの途中なら、終わるまで上限つきで待つ。** `OnShutdown` は `ioMu` を最大 2 秒待ってから（`TryLock` を短い間隔で試す）後の処理へ進む。待たずに終わると、`document.Replace`（IMP-107）の途中でプロセスが終わり、**一時ファイルが残りうる**（FR-143, NFR-031）。上限を設けるのは、読み込みと変換（大きな文書では秒単位）で終了を止めないためである。
+- **書き込みの途中なら、終わるまで上限つきで待つ。** `OnShutdown` は `ioMu` を最大 2 秒待ってから（`TryLock` を短い間隔で試す）後の処理へ進む。待たずに終わると、`document.Replace`（IMP-107）の途中でプロセスが終わり、**一時ファイルが残りうる**（FR-143, NFR-031）。上限を設けるのは、読み込みと変換（大きな文書では秒単位）で終了を止めないためである。**取れた `ioMu` は解かずに持ったまま後の処理へ進む**（4.67.0）——解くと、その直後に遅れて届いた書き込み（`SetTask` など）が始まり、その途中でプロセスが終わって一時ファイルが残りうる。`OnShutdown` の後にプロセスは終わるため、持ち続けて困る呼び出し元は無い。
 - `watcher` を停止し、ゴルーチンを終了させる。
 - `config.Save` を呼ぶ（UI-114）。失敗しても終了を妨げない。
 - 履歴・表示中パスは保存しない（NFR-042）。
@@ -1773,7 +1779,7 @@ func (a *App) captureWindowState() {
 
 ### IMP-195: 編集モードの処理 **MUST**
 
-FR-140〜FR-144 を実装する。**バインドメソッドの入口は `editmode.go`（`package main`）に置く。ここに書くのは、錠を取ること、ファイルを読み書きする関数を呼ぶこと、イベントを送ることだけとする。** 状態と判断は `document.EditSession`（IMP-109）が持つ（IMP-012）。`editor.go`（外部エディタ。IMP-331）と混ぜない。
+FR-140〜FR-144 を実装する。**バインドメソッドの入口は `desktop/editmode.go` に置く。ここに書くのは、錠を取ること、ファイルを読み書きする関数を呼ぶこと、イベントを送ることだけとする。** 状態と判断は `document.EditSession`（IMP-109）が持つ（IMP-012）。`editor.go`（外部エディタ。IMP-331）と混ぜない。
 
 **編集モードの開始と終了**（`SetEditMode`。IMP-316）
 

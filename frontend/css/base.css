@@ -173,6 +173,19 @@ body {
 
 /* --- 本文ペイン（DSP-120） --- */
 
+/*
+ * #viewer-frame は #viewer を包むスクロールしない器（IMP-202, UI-055, DSP-126）。
+ * **これまで .viewer が .content の中で持っていた伸縮（flex: 1; min-width: 0）を引き受ける。**
+ * 中の .viewer は同じ伸縮で器いっぱいに広がり（横は flex、縦は stretch）、本文ペインの寸法と
+ * スクロールの振る舞いは v1.0.0 から変わらない。position: relative は枠とラベルの位置の基準。
+ */
+.viewer-frame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
 .viewer {
   position: relative;
   flex: 1;

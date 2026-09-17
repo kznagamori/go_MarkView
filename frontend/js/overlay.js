@@ -6,10 +6,12 @@
 // UI-100, UI-103, FR-053）。アプリケーションは終始 1 つのウィンドウしか持たない。
 //
 // **ダイアログは #overlay を共有し、開閉・フォーカス・Tab の規則も共有する**
-// （IMP-252）。2 つを同時に開かない。
+// （IMP-252）。2 つを同時に開かない。**ダイアログの中身は about.js（情報）と editors.js（エディタ
+// 選択）が組み立てる**（IMP-011）。どちらもこのモジュールを import しない。
 
 import { S } from "./strings.js";
 import { closeSearch } from "./search.js";
+import { buildAboutDialog } from "./about.js";
 import {
   buildEditorDialog,
   checkedEditorId,
@@ -18,7 +20,7 @@ import {
   syncOpenButton,
 } from "./editors.js";
 import { syncEditButton } from "./toolbar.js";
-import { $, clear, icon, span, formatSize, formatBuildTime, baseName } from "./util.js";
+import { $, clear, icon, formatSize, baseName } from "./util.js";
 
 // 情報ダイアログのリンクを踏んだときの処理（UI-102）。
 //
@@ -169,12 +171,25 @@ function line(className, text) {
 
 // --- 情報ダイアログ（UI-100, UI-101, UI-102, IMP-251, DSP-170, DSP-171） ---
 
+// **中身の組み立ては about.js が持つ**（IMP-011。エディタ選択ダイアログの editors.js と同じ形）。
+// ここに残すのは IMP-251 の API と、#overlay の開閉への橋渡しだけである。
+
+// ABOUT_HANDLERS はダイアログ内の閉じるボタンとリンクの処理（IMP-251, UI-102）。
+//
+// リンクは initOverlay で受け取った onLink へ渡す。**押した時点の onLink を読む**（関数で包む）。
+const ABOUT_HANDLERS = {
+  onClose: () => hideAbout(),
+  onLink: (url) => {
+    if (onLink) onLink(url);
+  },
+};
+
 // showAbout は情報ダイアログを表示する（FR-100, IMP-251）。
 //
 // about は AboutDTO（IMP-306）。**Go を呼ぶのは main.js の役目**とし、
 // ここは受け取った値を描くだけにする（IMP-201）。
 export function showAbout(about) {
-  openOverlay("about", buildDialog(about || {}));
+  openOverlay("about", buildAboutDialog(about || {}, ABOUT_HANDLERS));
 
   // 開いた直後は閉じるボタンにフォーカスを置く（IMP-295）。
   $("about-close").focus();
@@ -238,158 +253,6 @@ function isControl(element) {
 // isAboutOpen は情報ダイアログが開いているかを返す（IMP-251）。
 export function isAboutOpen() {
   return openKind === "about";
-}
-
-function buildDialog(about) {
-  const dialog = document.createElement("div");
-  dialog.className = "dialog";
-  dialog.setAttribute("role", "dialog");
-  dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-labelledby", "about-title");
-
-  dialog.appendChild(closeButton("about-x", "dialog-x", S.close));
-  dialog.appendChild(buildHead(about));
-  dialog.appendChild(buildTable(about));
-  dialog.appendChild(buildLicenses(about));
-  dialog.appendChild(buildActions());
-
-  return dialog;
-}
-
-// buildHead はアイコン・名称・バージョン行を組み立てる（DSP-171）。
-function buildHead(about) {
-  const head = document.createElement("header");
-  head.className = "about-head";
-
-  // アイコンは assetsrv が配信する（IMP-160）。**外部 URL を参照しない**。
-  // 装飾目的のため alt は空とし、読み上げの対象にしない（IMP-251）。
-  const image = document.createElement("img");
-  image.className = "about-icon";
-  image.src = "/appicon.png";
-  image.alt = "";
-  head.appendChild(image);
-
-  const box = document.createElement("div");
-
-  const title = document.createElement("h2");
-  title.id = "about-title";
-  title.className = "about-title";
-  title.textContent = S.appName;
-  box.appendChild(title);
-
-  const version = document.createElement("p");
-  version.className = "about-version";
-  version.appendChild(span("", S.aboutVersion(about.version, about.commit)));
-  version.appendChild(span("about-buildtime", formatBuildTime(about.buildTime)));
-  box.appendChild(version);
-
-  head.appendChild(box);
-
-  return head;
-}
-
-// buildTable は情報テーブルを組み立てる（DSP-171）。
-//
-// ラベルと値の対であるため <dl> を使う。表示は CSS グリッドで 2 列にする。
-function buildTable(about) {
-  const list = document.createElement("dl");
-  list.className = "about-table";
-
-  addRow(list, S.aboutAuthor, span("", about.author));
-  addRow(list, S.aboutRepository, repositoryLink(about.repository));
-  addRow(list, S.aboutLicense, span("", about.license));
-  addRow(list, S.aboutEnvironment, span("", about.environment));
-  addRow(list, S.aboutBundled, bundled(about.vendors));
-
-  return list;
-}
-
-// repositoryLink は既定ブラウザで開くリンクを作る（UI-102, FR-050）。
-//
-// **href を持たせない。** WebView 内でのページ遷移を一切起こさないという
-// 規約（AR-060）に対し、遷移し得ない形にしておくほうが確実である。
-function repositoryLink(url) {
-  const link = document.createElement("a");
-  link.className = "about-link";
-  link.textContent = url || "";
-  link.setAttribute("role", "link");
-  link.tabIndex = 0;
-
-  const open = () => {
-    if (url && onLink) onLink(url);
-  };
-
-  link.addEventListener("click", open);
-  link.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    open();
-  });
-
-  return link;
-}
-
-// bundled は同梱資産のバージョンを並べる（UI-100 の Bundled 行, BR-042）。
-function bundled(vendors) {
-  const box = document.createElement("span");
-  box.className = "about-vendors";
-
-  for (const vendor of vendors || []) {
-    box.appendChild(span("about-vendor", S.aboutVendor(vendor.name, vendor.version)));
-  }
-
-  return box;
-}
-
-// buildLicenses は OSS ライセンス表示欄を組み立てる（UI-101, FR-101）。
-//
-// **<textarea readonly> ではなく <pre> を使う**（IMP-251）。整形を崩さず、
-// 選択とコピーができる。内容はビルド時に埋め込まれたものであり、実行時に
-// 外部から取得しない（FR-101）。
-function buildLicenses(about) {
-  const box = document.createElement("div");
-  box.className = "about-licenses-box";
-
-  const heading = document.createElement("h3");
-  heading.className = "about-licenses-title";
-  heading.textContent = S.aboutLicenses;
-  box.appendChild(heading);
-
-  const body = document.createElement("pre");
-  body.className = "about-licenses";
-  body.tabIndex = 0; // キーボードでもスクロールできるようにする（IMP-295）
-  body.textContent = about.licenses || "";
-  box.appendChild(body);
-
-  return box;
-}
-
-function buildActions() {
-  const actions = document.createElement("div");
-  actions.className = "dialog-actions";
-
-  const button = document.createElement("button");
-  button.id = "about-close";
-  button.type = "button";
-  button.className = "dialog-button";
-  button.textContent = S.close;
-  button.addEventListener("click", hideAbout);
-  actions.appendChild(button);
-
-  return actions;
-}
-
-function closeButton(id, className, label) {
-  const button = document.createElement("button");
-  button.id = id;
-  button.type = "button";
-  button.className = className;
-  button.title = label;
-  button.setAttribute("aria-label", label);
-  button.appendChild(icon("icon-close"));
-  button.addEventListener("click", hideAbout);
-
-  return button;
 }
 
 // --- エディタ選択ダイアログ（UI-103, IMP-252, DSP-172） ---
@@ -496,14 +359,4 @@ function focusable() {
   return [...$("overlay").querySelectorAll("button, a, input, [tabindex]")].filter(
     (element) => element.tabIndex >= 0 && !element.disabled,
   );
-}
-
-function addRow(list, label, value) {
-  const term = document.createElement("dt");
-  term.textContent = label;
-  list.appendChild(term);
-
-  const detail = document.createElement("dd");
-  detail.appendChild(value);
-  list.appendChild(detail);
 }

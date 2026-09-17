@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -29,16 +29,15 @@ const (
 	eventError           = "error" // 非同期処理で発生したエラー（FR-110）
 )
 
-// App は Wails にバインドする唯一の型である（IMP-190）。
-//
-// Wails の API を呼べるのは main.go と本ファイル群（app.go / open.go）だけとし、
-// internal/ の各パッケージは Wails に依存させない（IMP-012）。また、判断を伴う
-// ロジックはここに置かず internal/session などへ委ねる。ここに書いたロジックは
-// package main のテストとなり、テストバイナリに Wails（Linux では cgo と
-// WebKitGTK）がリンクされてしまうためである（UT-002）。
+// App は Wails にバインドする唯一の型である（IMP-190）。判断を伴うロジックを置かない（desktop.go）。
 //
 // **状態の変更はすべて mu で保護する**（IMP-024）。バインドメソッドは複数の
-// ゴルーチンから同時に呼ばれうる。
+// ゴルーチンから同時に呼ばれうる。**edit だけは例外で、ioMu で保護する**（IMP-190）。
+//
+// **錠を取る順序は常に ioMu → mu とする。** 逆にするとデッドロックする（IMP-024）。
+// ioMu は文書を開く処理（IMP-192）・編集モードの切り替えと書き込み（IMP-195）・削除の
+// 受け取り（IMP-195）の全体を包む。**sync.Mutex は再入できない**——ioMu を持ったまま
+// 文書を開くときは、錠を取らない openLocked を呼ぶ（IMP-192）。
 type App struct {
 	ctx context.Context
 	mu  sync.Mutex
@@ -46,6 +45,7 @@ type App struct {
 	renderer *renderer.Renderer
 	watcher  *watcher.Watcher
 	cfg      config.Config
+	licenses string // OSS ライセンス一覧（FR-101）。main.go が埋め込んだものを受け取る
 
 	treeRoot string             // ツリールートの絶対パス（FR-030）
 	current  *document.Document // 表示中の文書。未表示なら nil
@@ -54,7 +54,9 @@ type App struct {
 	// target は画面がいま対象にしているファイルの絶対パス（IMP-190）。
 	//
 	// 本文を表示していればその文書、状態画面を出していればその対象。文書
-	// 未表示（welcome）なら空。「エディタで開く」が使う（FR-090）。
+	// 未表示（welcome）なら空。「エディタで開く」（FR-090）と**再読み込み**（FR-015,
+	// IMP-310）が使う。**状態画面の間の `F5` は、current ではなくこの対象を読み直す**
+	// （v1.0.0 は current を読み直していた。BUG-012）。
 	//
 	// **current と取り違えない。** current は「読み込みと変換に成功した文書」
 	// であり、状態画面（confirm-large / too-large / render-error）を出して
@@ -65,9 +67,28 @@ type App struct {
 	// 押したのに前の文書がエディタで開く。**エラーも出ないため気づけない**
 	// （NFR-035 の 2）。
 	//
-	// **更新するのは open だけである**（IMP-192）。判定は screenTarget に
-	// 1 つだけ置き、ウィンドウタイトルも同じ値から決める。
+	// **更新するのは開く処理（openLocked の commit）だけである**（IMP-192）。判定は
+	// classifyOpen に 1 つだけ置き、ウィンドウタイトルも同じ値から決める。
 	target string
+
+	// showing は、画面が current を表示しているか（IMP-190, IMP-192）。
+	//
+	// 状態画面（confirm-large / too-large / render-error）と文書未表示では偽。
+	// **target と current.Path を比べて代わりにしない。** 表示中の文書を読み直したら
+	// 50 MB を超えていた場合、状態画面の対象は current と同じファイルになる。
+	//
+	// 使う場面は 3 つある。DocumentDTO.SameDocument（直前が状態画面なら同じファイルでも
+	// 偽）、監視のイベントの照合（状態画面の間のイベントは読み直さずに捨てる。BUG-012）、
+	// 編集モードの判断（EditSession.CanStart / Check。IMP-109）。
+	showing bool
+
+	// currentConfirmed は、current を確認画面の Open anyway で開いたか、その同意を
+	// 引き継いで読み直したか（FR-016, IMP-192）。
+	//
+	// 同じファイルの読み直し（監視・再読み込み・書き込みの後）で LoadOptions.Confirmed を
+	// 渡すために持つ。**持たないと、確認して開いた 10 MB 超の文書が保存や F5 のたびに
+	// 確認画面へ戻り、書き込みの直後の読み直しで編集モードが黙って終わる**（FR-140, FR-143）。
+	currentConfirmed bool
 
 	// pendingConfirm は確認画面を表示中のファイル（FR-016）。
 	//
@@ -107,22 +128,37 @@ type App struct {
 	//
 	// 変更のたびに書くと、ペイン幅のドラッグ中に何十回も書き込むことになる。
 	saveTimer *time.Timer
+
+	// ioMu は表示中ファイルの読み直しと書き込みを 1 つずつ順に行うための錠（FR-143, IMP-190）。
+	//
+	// **mu だけでは、読み直しの途中に書き込みが割り込み、自分の書き込みを外部の変更と
+	// 取り違える**（FR-143, FR-144）。読み込みと変換は mu の外で行う（IMP-192）が、ioMu の
+	// 内側で行う。
+	ioMu sync.Mutex
+
+	// edit は編集モードの状態と判断（IMP-109）。Go 側が正（IMP-300 の 4）。
+	//
+	// **ioMu の内側でだけ触る。** 触る経路（開く処理・編集モードのバインド・削除の受け取り）は
+	// すべて ioMu を取るため、mu で包まない（Plan の構文解析の間 mu を持ち続けない）。
+	edit document.EditSession
 }
 
 // NewApp は App を生成する（IMP-193）。
 //
 // startup と cfg は main.go が解決した結果を渡す。cfg をここで読まないのは、
 // ウィンドウの初期サイズ（UI-011）が Wails の起動オプションとして必要であり、
-// main.go が先に持っていなければならないためである。
+// main.go が先に持っていなければならないためである。licenses も main.go が渡す——
+// go:embed はパッケージのディレクトリより上を参照できない（IMP-030）。
 //
 // **ファイルパス・履歴・ツリールートをディスクへ書き出す経路を持たない**
 // （NFR-042）。config.Config にそれらのフィールドが存在しないことで構造的に
 // 保証している（IMP-150）。
-func NewApp(startup session.Startup, startupErr error, cfg config.Config) *App {
+func NewApp(startup session.Startup, startupErr error, cfg config.Config, licenses string) *App {
 	return &App{
 		startup:    startup,
 		startupErr: startupErr,
 		cfg:        cfg,
+		licenses:   licenses,
 		renderer:   renderer.New(),
 		history:    session.NewHistory(),
 		treeRoot:   startup.TreeRoot,
@@ -161,6 +197,9 @@ func (a *App) onBeforeClose(_ context.Context) bool {
 
 // onShutdown は Wails が終了時に呼ぶ（IMP-194）。
 //
+// 順序は IMP-194 の表のとおり: 保存の予約を止める → **書き込みの途中なら上限つきで待つ** →
+// 監視を閉じる → 設定を保存する。
+//
 // **ここで Wails のランタイムを呼ばない。** ウィンドウは既に破棄されている。
 //
 // **失敗しても終了を妨げない。** 設定が書けなくても、次回は既定値で起動する
@@ -174,12 +213,51 @@ func (a *App) onShutdown(_ context.Context) {
 	w := a.watcher
 	a.mu.Unlock()
 
+	a.waitForWrites(shutdownWriteWait)
+
 	if w != nil {
 		_ = w.Close()
 	}
 
 	// 大きさは onBeforeClose で取り込み済みである。
 	a.persistConfig()
+}
+
+// 終了時に書き込みの途中を待つ上限と、錠を試す間隔（IMP-194）。
+const (
+	shutdownWriteWait = 2 * time.Second
+	shutdownWritePoll = 20 * time.Millisecond
+)
+
+// waitForWrites は、ioMu を取れるまで最大 limit だけ待つ（IMP-194, FR-143, NFR-031）。
+//
+// **待たずに終わると、document.Replace（IMP-107）の途中でプロセスが終わり、一時ファイルが
+// 残りうる。** 上限を設けるのは、読み込みと変換（大きな文書では秒単位）で終了を止めないため
+// である。Lock で待つと上限を付けられないため、TryLock を短い間隔で試す。
+//
+// **取れた錠は解かない。** 待った後に新しい書き込みが始まり、その途中で終わるのを防ぐ。
+// この後に ioMu を取る呼び出し（監視のイベント・バインドメソッド）は、プロセスの終了まで待つ。
+// 上限まで取れなかった場合は、そのまま後の処理へ進む。
+func (a *App) waitForWrites(limit time.Duration) bool {
+	if a.ioMu.TryLock() {
+		return true
+	}
+
+	deadline := time.NewTimer(limit)
+	defer deadline.Stop()
+	poll := time.NewTicker(shutdownWritePoll)
+	defer poll.Stop()
+
+	for {
+		select {
+		case <-deadline.C:
+			return false
+		case <-poll.C:
+			if a.ioMu.TryLock() {
+				return true
+			}
+		}
+	}
 }
 
 // saveConfig はウィンドウの状態を取り込んでから設定を保存する（IMP-194）。
@@ -253,110 +331,6 @@ func (a *App) scheduleSave() {
 	a.saveTimer = time.AfterFunc(saveDebounce, a.saveConfig)
 }
 
-// startWatcher はファイル監視を開始する（FR-014, IMP-140, IMP-024）。
-//
-// 監視は ctx の Done で終わる。ゴルーチンをアプリのライフサイクルへ紐付け、
-// 終了時に必ず止める（NFR-020）。
-//
-// 監視を作れなくても起動は続ける。自動更新が効かなくなるだけで、利用者は
-// 再読み込みできる（FR-015, FR-111）。
-func (a *App) startWatcher(ctx context.Context) {
-	w, err := watcher.New(ctx)
-	if err != nil {
-		return
-	}
-
-	a.mu.Lock()
-	a.watcher = w
-	current := a.current
-	a.mu.Unlock()
-
-	// onStartup より前に文書を開いていた場合、その時点では watcher が
-	// なく監視を張れていない。ここで追いつかせる。
-	if current != nil {
-		_ = w.Watch(current.Path)
-	}
-
-	go a.consumeWatchEvents(w)
-}
-
-// consumeWatchEvents は監視イベントをフロントエンドへ流す（FR-014, IMP-320）。
-//
-// チャネルは監視の終了時に閉じるため、range で待てる（IMP-140）。
-func (a *App) consumeWatchEvents(w *watcher.Watcher) {
-	for ev := range w.Events() {
-		switch ev.Kind {
-		case watcher.Modified:
-			a.onCurrentModified(ev.Path)
-		case watcher.Removed:
-			a.onCurrentRemoved(ev.Path)
-		}
-	}
-}
-
-// onCurrentModified は表示中ファイルの更新を反映する（FR-014, IMP-321）。
-//
-// **スクロール位置はフロントエンドが持つ現在値を使う**（keep）。再描画に
-// 失敗した場合はエラーだけを送り、直前の描画結果は残す（FR-110）。
-func (a *App) onCurrentModified(path string) {
-	dto, err := a.open(openRequest{path: path, src: openFromReload})
-	if err != nil {
-		a.emit(eventError, newErrorDTO(path, err))
-		return
-	}
-
-	a.emit(eventDocumentChanged, dto)
-}
-
-// onCurrentRemoved は表示中ファイルの削除を伝える（FR-014, FR-110）。
-//
-// **直前の描画結果は保持する。** 本文を消すと、編集の途中でファイルが一瞬
-// 消えるような保存方式のたびに画面が空になる。
-func (a *App) onCurrentRemoved(path string) {
-	a.emit(eventDocumentRemoved, removedErrorDTO(path))
-}
-
-// onFileDrop はドロップされたパスを処理する（IMP-313, FR-011）。
-//
-// 結果は document:opened で送る。フロントエンドの呼び出しではなく OS の
-// 操作で表示対象が変わるためである（IMP-320）。
-func (a *App) onFileDrop(paths []string) {
-	if root := dropRoot(paths); root != "" {
-		a.mu.Lock()
-		changed := a.setTreeRoot(root)
-		newRoot := a.treeRoot
-		a.mu.Unlock()
-
-		if changed {
-			a.emit(eventTreeRootChanged, newRoot)
-		}
-	}
-
-	target := dropTarget(paths)
-	if target == "" {
-		// Markdown でもディレクトリでもない。ツリーも本文も変えず、
-		// 対応していない旨をステータスへ出す（FR-011 の表の 4 行目）。
-		a.emit(eventError, newErrorDTO(firstPath(paths), document.ErrNotMarkdown))
-		return
-	}
-
-	dto, err := a.open(openRequest{path: target, src: openFromDrop})
-	if err != nil {
-		a.emit(eventError, newErrorDTO(target, err))
-		return
-	}
-
-	a.emit(eventDocumentOpened, dto)
-}
-
-// firstPath は一覧の先頭を返す。空なら空文字。
-func firstPath(paths []string) string {
-	if len(paths) == 0 {
-		return ""
-	}
-	return paths[0]
-}
-
 // emit はフロントエンドへイベントを送る（IMP-320）。
 //
 // ウィンドウが生成される前（ctx が nil）は何もしない。購読側がいない時点で
@@ -415,19 +389,4 @@ func (a *App) setTreeRoot(root string) bool {
 
 	a.treeRoot = root
 	return true
-}
-
-// watchCurrent は監視対象を表示中の文書へ切り替える（FR-014, IMP-140）。
-//
-// **呼び出し側は mu を保持していること。**
-//
-// 監視は常に 1 つ以下とする。Watch が切り替えまで面倒を見るため、ここで
-// Unwatch を挟まない。失敗しても開く操作は成功とする。自動更新が効かなく
-// なるだけで、利用者は再読み込みできる（FR-015, FR-111）。
-func (a *App) watchCurrent(path string) {
-	// TODO(T3-11): onStartup で watcher を生成したら常に非 nil になる。
-	if a.watcher == nil {
-		return
-	}
-	_ = a.watcher.Watch(path)
 }

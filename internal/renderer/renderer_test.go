@@ -13,7 +13,7 @@ import (
 func render(t *testing.T, source string) string {
 	t.Helper()
 
-	res, err := New().Render([]byte(source), "")
+	res, err := New().Render([]byte(source), "", "")
 	if err != nil {
 		t.Fatalf("Render(%q) がエラーを返した: %v", source, err)
 	}
@@ -59,7 +59,7 @@ func TestRender_GFMExtensions(t *testing.T) {
 		{
 			name:     "脚注の参照と定義がリンクされる",
 			in:       "text[^1]\n\n[^1]: note",
-			contains: []string{`id="fnref:1"`, `href="#fn:1"`, `id="fn:1"`, `href="#fnref:1"`},
+			contains: []string{`id="user-content-fnref:1"`, `href="#user-content-fn:1"`, `id="user-content-fn:1"`, `href="#user-content-fnref:1"`},
 		},
 
 		// UT-201 ケース 6: 絵文字（MD-051）
@@ -103,8 +103,8 @@ func TestRender_GFMExtensions(t *testing.T) {
 // TestRender_FrontMatter は Front Matter の除去を検証する
 // （UT-211。根拠: MD-073, MD-002 / IMP-111）。
 //
-// UT-211 ケース 5（閉じのない区切り）の扱いは仕様が実装に委ねている。
-// **開きと閉じが揃う場合のみ Front Matter とみなす**規則に固定した。
+// UT-211 ケース 5（閉じのない区切り）は**本文として描画する**（IMP-111, IMP-121）。**開きと閉じが揃う場合のみ Front Matter とみなす。**
+// UT-218 のケース 7（閉じの無い YAML の位置）はこの振る舞いに依存する。
 func TestRender_FrontMatter(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -213,7 +213,7 @@ func TestRender_DoesNotModifyInput(t *testing.T) {
 	const source = "---\ntitle: T\n\n# H"
 	raw := []byte(source)
 
-	if _, err := New().Render(raw, ""); err != nil {
+	if _, err := New().Render(raw, "", ""); err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
 	if string(raw) != source {
@@ -336,7 +336,7 @@ func TestRender_ImageAndLink(t *testing.T) {
 // エスケープが二重に掛かったり、相対 URL が落とされたりすると画像が出ない。
 func TestRender_ImageURLSurvivesSanitize(t *testing.T) {
 	// 宛先に空白を含める場合、Markdown では <> で囲む必要がある。
-	res, err := New().Render([]byte("![alt](<a b.png>)"), "/docs")
+	res, err := New().Render([]byte("![alt](<a b.png>)"), "/docs", "")
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}

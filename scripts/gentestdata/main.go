@@ -2,7 +2,8 @@
 // （E2E-012）。
 //
 //	go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
-//	go run ./scripts/gentestdata -clean   # 消す
+//	go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18 の各ケースの前）
+//	go run ./scripts/gentestdata -clean   # 消す（generated/edit/ を含む）
 //
 // 巨大ファイルをコミットしないのは、クローンと CI のたびに数十 MB を運ぶ
 // ことになるためである。中身は決まった規則で作れるので、必要なときに
@@ -18,6 +19,9 @@
 // 後ろの 2 つは「異常終了しないこと」を確かめるためのもので、**描画が
 // 完了しなくてもよい**。時間がかかったうえで表示されるか、エラー表示に
 // なるか、どちらでも合格である（E2E-323）。
+//
+// **-edit は編集モードの検証用の generated/edit/ だけを作り直す**（edit.go。E2E-381〜E2E-388）。
+// ケースがファイルを書き換えるため、ケースごとに作り直す。大きなファイルは作り直さない。
 package main
 
 import (
@@ -38,6 +42,13 @@ const (
 	nestDepth          = 1000     // 入れ子リストの段数
 	tableColumns       = 30
 	tableRows          = 3000
+
+	// slow-plantuml.md（E2E-271。BUG-017 の確認）。**枚数と線の数が待ち時間である。**
+	// 手元の実測（Chromium）で 1 枚あたり 0.7 秒ほど、最後の図の順番まで 12 秒ほど。
+	slowDiagrams    = 16 // 埋めの図の枚数
+	slowClasses     = 60 // 埋めの図 1 枚のクラスの数
+	slowEdges       = 300
+	tooLargeClasses = 40 // 4096 px を超えるのに必要な数（BUG-010）
 )
 
 func main() {
@@ -50,10 +61,15 @@ func main() {
 func run() error {
 	dir := flag.String("dir", filepath.Join("testdata", "e2e", "generated"), "生成先")
 	clean := flag.Bool("clean", false, "生成先を削除する")
+	edit := flag.Bool("edit", false, "編集モードの検証用の edit/ の中身だけを作り直す")
 	flag.Parse()
 
 	if *clean {
 		return remove(*dir)
+	}
+
+	if *edit {
+		return generateEdit(filepath.Join(*dir, "edit"))
 	}
 
 	if err := os.MkdirAll(*dir, 0o755); err != nil {
@@ -73,6 +89,7 @@ func run() error {
 		{"large-60mb.md", func(w *bufio.Writer) error { return writeLarge(w, overMaxSize, "60 MiB") }},
 		{"deep-nest.md", writeDeepNest},
 		{"huge-table.md", writeHugeTable},
+		{"slow-plantuml.md", writeSlowPlantUML},
 	}
 
 	fmt.Printf("%-16s %14s\n", "ファイル", "バイト")
@@ -96,9 +113,11 @@ func run() error {
 	return nil
 }
 
+// remove は生成先を消す。**edit/ の読み取り専用のファイルと、権限を落としたディレクトリも戻してから消す**
+// （edit.go の removeAll）。
 func remove(dir string) error {
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("削除できない: %w", err)
+	if err := removeAll(dir); err != nil {
+		return err
 	}
 
 	fmt.Printf("削除した: %s\n", dir)
@@ -144,6 +163,8 @@ E2E-012 により、巨大ファイルはリポジトリに含めず検証のた
 | ` + "`large-60mb.md`" + ` | 50 MiB 超。上限超過の表示になる（FR-016, E2E-322） |
 | ` + "`deep-nest.md`" + ` | 1000 段の入れ子リスト（FR-111, E2E-323） |
 | ` + "`huge-table.md`" + ` | 巨大な表（FR-111, E2E-323） |
+| ` + "`slow-plantuml.md`" + ` | 描き終えるまで十数秒かかる PlantUML（FR-080, E2E-271。検索の語は ` + "`zzqpending`" + `） |
+| ` + "`edit/`" + ` | 編集モードの検証用（E2E-381〜E2E-388）。` + "`go run ./scripts/gentestdata -edit`" + ` が中身だけを作り直す |
 
 消すときは ` + "`go run ./scripts/gentestdata -clean`" + ` を実行する。
 `)
@@ -192,7 +213,7 @@ func largeSection(section int) string {
 		fmt.Fprintf(&b,
 			"第 %d 節の第 %d 段落です。marker という語をここに含めています。"+
 				"MarkView は Markdown の閲覧に特化した軽量デスクトップアプリケーションであり、"+
-				"編集機能を持ちません。変換とシンタックスハイライトは Go 側で行います。\n\n",
+				"書き換えるのは編集モードのチェックボックスと表のセルだけです。変換とシンタックスハイライトは Go 側で行います。\n\n",
 			section, paragraph)
 	}
 
@@ -272,4 +293,80 @@ func writeHugeTable(w *bufio.Writer) error {
 	}
 
 	return nil
+}
+
+// writeSlowPlantUML は、描き終えるまで十数秒かかる PlantUML の文書を書く（E2E-012, E2E-271）。
+//
+// **時間そのものが検証用データである。** 図は上から 1 枚ずつ描かれ（IMP-233）、**最後の図の順番が
+// 来るまで原文（`<pre>`）が残る。** その間に `Ctrl+F` で原文の中の語を探せることが、
+// [BUG-017](../../docs/bugs/2026-09-18-bug-017-search-hits-before-rendering.md) の確認に要る。
+// 手元の実測では、1 枚あたり 0.7 秒ほどで、最後の図の順番は 12 秒ほど後になる。
+//
+// **最後の図は 4096 px を超える**（MD-083）。描かれずに理由とともに原文が戻るため、
+// 「原文の文字は見えているのに、ハイライトだけが消えている」ことを目で確かめられる。
+// **探す語 `zzqpending` は、冒頭の段落と最後の図の `class` の行にだけある。**
+func writeSlowPlantUML(w *bufio.Writer) error {
+	_, err := fmt.Fprintf(w, `# 描画に時間のかかる PlantUML（検索の確認用）
+
+このファイルは `+"`scripts/gentestdata`"+` が生成したものです（E2E-012）。
+**重い図を %d 枚並べ、最後の図の順番が来るまでに十数秒かかる**ようにしてあります。その間に検索できます。
+
+探す語は zzqpending です。**この文書の中に 2 つだけ**あります——**この段落に 1 つ**と、
+**最後の図のソースに 1 つ**（`+"`class`"+` の行）です。最後の図は 4096 px を超えるため描かれず、
+理由とともにソースが戻ります。**そのとき、ソースの中の語にハイライトが付いているか**を見てください（E2E-271）。
+
+`, slowDiagrams)
+	if err != nil {
+		return err
+	}
+
+	for diagram := range slowDiagrams {
+		if _, err := fmt.Fprintf(w, "## 埋めの図 %d\n\n```plantuml\n@startuml H%d\n", diagram+1, diagram); err != nil {
+			return err
+		}
+
+		for class := range slowClasses {
+			if _, err := fmt.Fprintf(w, "class H%dC%d\n", diagram, class); err != nil {
+				return err
+			}
+		}
+
+		// **線を多く引く。** Graphviz の配置はクラスの数より線の数で重くなる。
+		for edge := range slowEdges {
+			from, to := edge%slowClasses, (edge*7+3)%slowClasses
+			if _, err := fmt.Fprintf(w, "H%dC%d --> H%dC%d\n", diagram, from, diagram, to); err != nil {
+				return err
+			}
+		}
+
+		if _, err := w.WriteString("@enduml\n```\n\n"); err != nil {
+			return err
+		}
+	}
+
+	if _, err := w.WriteString("## 最後の図（4096 px を超えるため描かれない）\n\n```plantuml\n@startuml toolarge\n"); err != nil {
+		return err
+	}
+
+	for class := range tooLargeClasses {
+		if _, err := fmt.Fprintf(w, "class A%d\n", class); err != nil {
+			return err
+		}
+	}
+
+	if _, err := w.WriteString("class zzqpending\n"); err != nil {
+		return err
+	}
+
+	// **1 行に 1 本だけ書く**（BUG-010）。連鎖は class 図の文法違反であり、エラー図になって
+	// 大きさの制限に到達しない。
+	for edge := range tooLargeClasses - 1 {
+		if _, err := fmt.Fprintf(w, "A%d --> A%d\n", edge, edge+1); err != nil {
+			return err
+		}
+	}
+
+	_, err = w.WriteString("@enduml\n```\n")
+
+	return err
 }

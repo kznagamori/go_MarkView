@@ -20,14 +20,17 @@ frontend/
 │   ├── markdown.css        本文の描画（github-markdown-css 由来）
 │   └── chroma.css          シンタックスハイライト配色（IMP-114）
 ├── js/
-│   ├── main.js             起動処理とイベント配線
+│   ├── main.js             起動処理・イベントの購読・ショートカットとダイアログの配線
+│   ├── navigate.js         文書を開く経路と結果の反映（状態画面を出すのはここだけ。IMP-250）
 │   ├── state.js            フロントエンド側の状態
 │   ├── api.js              Go バインディングの薄いラッパ（13 章）
 │   ├── strings.js          UI 文言の一元定義（IMP-290）
 │   ├── toolbar.js          ツールバー
-│   ├── filetree.js         ファイルツリーペイン
+│   ├── filetree.js         ファイルツリーペイン（読み込み・展開と折りたたみ・強調・クリックとキー操作）
+│   ├── treenodes.js        ファイルツリーの項目の組み立てと、項目の中を読む関数（DOM だけを扱う）
 │   ├── outline.js          アウトラインペイン
-│   ├── viewer.js           本文の挿入と後処理
+│   ├── viewer.js           本文の挿入と後処理の順序・リンク・スクロール・フォーカス・再描画で引き継ぐ状態
+│   ├── decorate.js         本文の飾り付け（Alerts のアイコン・読み込みに失敗した画像・見出しのアンカー。IMP-225〜IMP-227）
 │   ├── copy.js             コードブロックのコピー
 │   ├── search.js           文書内検索
 │   ├── zoom.js             表示倍率
@@ -36,9 +39,12 @@ frontend/
 │   ├── shortcuts.js        キーボードショートカット
 │   ├── tooltip.js          ツールチップ（ツールバー・本文中のボタン・拡大画面。IMP-247）
 │   ├── dnd.js              ドラッグ＆ドロップ
-│   ├── lazy.js             Mermaid / KaTeX / PlantUML の遅延ロード
+│   ├── lazy.js             Mermaid / KaTeX / PlantUML の遅延ロード（呼び出し側が import する唯一の入口）
+│   ├── puml.js             PlantUML の読み込みと描画（lazy.js が再 export する。IMP-233）
+│   ├── drawing.js          図の器の連番・描画の世代・描き直しの間の高さ・資産の読み込み（lazy.js と puml.js が共有する。IMP-230, DSP-370）
 │   ├── status.js           ステータス領域
-│   ├── overlay.js          情報ダイアログ・エディタ選択ダイアログ・状態画面
+│   ├── overlay.js          情報ダイアログ・エディタ選択ダイアログ・状態画面（#overlay の開閉と Tab、各 API）
+│   ├── about.js            情報ダイアログの中身（IMP-251）
 │   ├── editors.js          エディタ選択ダイアログの中身（IMP-252）
 │   ├── media.js            図と画像のボタン・原寸表示（IMP-228）
 │   ├── tablesort.js        表の表示上の並べ替え（IMP-229）
@@ -52,7 +58,12 @@ frontend/
 └── vendor/                 BR-042 が管理する資産
 ```
 
+- **`about.js` と `editors.js` は `overlay.js` を import しない。** `overlay.js` が 400 行の目安を超えていた（v1.0.0 で 509 行）ため、エディタ選択ダイアログ（v1.0.0）に続いて情報ダイアログの中身も分けた。閉じる処理とリンクの処理は引数（`handlers`）で受け取る（IMP-251, IMP-252）。
+- **`treenodes.js` は `filetree.js` を import せず、Go を呼ばず、`state` も読まない。** `filetree.js` が 400 行の目安を超えた（v1.1.0 の BUG-012 の対策で 412 行）ため、項目の要素の組み立て（`fill`）と、項目の中を読む関数（`childByName` / `childGroup` / `depthOf` / `setDirIcons`）を分けた。
 - **`editmode.js` が 400 行の目安（IMP-011）を超えたら、セルの編集欄（IMP-262）を `celledit.js` へ分けてよい。** 分けても、鍵を読むのは `refs.js` だけとする（IMP-260）。
+- **`navigate.js` は `main.js` を import しない**（`main.js` が配線のために `navigate.js` を import する）。`main.js` が 400 行の目安を超えたため、文書を開く経路（ダイアログ・ツリー・リンク・履歴・再読み込み・確認画面の `Open anyway`）と、その結果（`OpenResultDTO` / `LinkResultDTO` / イベントの `DocumentDTO` / `ErrorDTO`）の反映を分けた。
+- **`decorate.js` は `viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` を import しない**（`viewer.js` が `renderDocument` の手順 4〜6 で呼ぶ）。`viewer.js` が 400 行の目安を超えたため、手順の順序を持たない飾り付け（IMP-225 / IMP-226 / IMP-227）を分けた。**`viewer.js` は `markBrokenImages` を再 export する**——描画スモーク（BR-054）は `viewer.js` を動的に読んでこの関数を呼び、`viewer.js` の連結の失敗を 1 件の失敗として捉える（UT-811 のケース 8）。`decorate.js` を直接読むと、その失敗が見えなくなる。
+- **`lazy.js` は `puml.js` の `ensurePlantUML` / `drawPlantUML` / `redrawPlantUML` と `drawing.js` の `startDrawing` を再 export する。** 呼び出し側（`viewer.js` / `theme.js` は `drawDiagrams` / `redrawDiagrams`、描画スモークの `harness.js` は `drawMermaid` / `drawPlantUML`）は `lazy.js` だけを import する（IMP-230 の export の置き場所は変えない）。**`drawing.js` は自前の他のモジュールを import しない**——図の器の連番（IMP-233 の 2 で Mermaid と PlantUML が共有する）と描画の世代を片方に置くと循環する。
 
 ### IMP-201: モジュール方式 **MUST**
 
@@ -299,8 +310,8 @@ export function renderDocument(doc) // doc: DocumentDTO
 処理順序を固定する。**手順の番号は他の文書からも参照される**（「IMP-220 の手順 11」など）。**番号を振り直さない。** 後から足した手順は `5a` のように枝番で書く。枝番は Markdown の番号付きリストにならないため、箇条書きの先頭に太字で番号を置く。
 
 - **0a.** **引き継ぐ状態を控える、または解除する**（DSP-352）。
-  - **セルの編集欄は、どちらの場合も取り消す**（IMP-262, FR-142）。**右クリックメニューもどちらの場合も閉じる**（IMP-249。本文を差し替えると、メニューが指していたリンクや選択範囲が無くなる。DSP-352）。
-  - `doc.sameDocument` が**真**（同じ文書の再描画。1.7）なら、差し替える前の DOM から次を控える。**開いている `<details>` の順番**（`#markdown` の中の出現順）、**フォーカスのあるチェックボックスの順番**（鍵の合う `data-ref` の `task:<n>`。FR-014）、並べ替え（IMP-229 の `captureSort`）、原寸表示（IMP-228 の `captureMedia`）。拡大画面は閉じない（IMP-253）。
+  - **セルの編集欄は、どちらの場合も取り消す**（IMP-262, FR-142）。**右クリックメニューもどちらの場合も閉じる**（IMP-249。本文を差し替えると、メニューが指していたリンクや選択範囲が無くなる。DSP-352）。**控えるより前に閉じる**——閉じるとフォーカスが開く前の要素（チェックボックスなど）へ戻り、その順番を控えられる。偽の場合は `leaveDocument()` も閉じるが、開いていなければ何もしない。
+  - `doc.sameDocument` が**真**（同じ文書の再描画。1.7）なら、差し替える前の DOM から次を控える。**開いている `<details>` の順番**（`#markdown` の中の出現順）、**フォーカスのあるチェックボックスの順番**（**鍵の合うチェックボックス（`isOwnRef(input, "task")` が真のもの）を文書の順に並べたときの位置**。目印の値の番号 `<n>` を読まない——値を解くのは `refs.js` だけである（IMP-260）。Go 側は番号を文書の順に振る（IMP-120）ため、位置と番号は一致する。4.67.0。FR-014）、並べ替え（IMP-229 の `captureSort`）、原寸表示（IMP-228 の `captureMedia`）。拡大画面は閉じない（IMP-253）。
   - **偽**（文書の切り替え）なら何も控えず、`docswitch.js` の `leaveDocument()`（IMP-250）で後始末する。拡大画面を閉じ（IMP-253 の `onDocumentSwitched`）、並べ替えと原寸表示の状態を空にする。**状態画面へ移るときと同じ関数を通す。**
 - **0b.** **`state.doc = doc` とし、`state.target` を `null` にする**（状態画面の対象を消す。IMP-250）。0a は差し替える前の DOM を**前の描画の鍵**で照合し、6b〜6d と 11 は新しい DOM を**新しい鍵**で照合する（`isOwnRef` は `state.doc.refKey` を読む。IMP-260）。**この位置から動かさない**——`F5` や更新検知では鍵が変わる（IMP-102）ため、前にずらすとチェックボックスの順番を控えられず、後ろにずらすと並べ替えと編集の印が付かない。
 - **0.** 検索を閉じる（IMP-241）。包んだ `<mark>` を解いてから差し替える。ここを飛ばすと、検索状態が前の文書の `<mark>` を指したまま残る（FR-080 の「検索対象文書の切り替え・再描画時は検索状態をリセットする」）。
@@ -312,11 +323,11 @@ export function renderDocument(doc) // doc: DocumentDTO
 - **5a.** 画像に番号（`data-media-index`）を振る（IMP-228 の `numberImages`）。**6 より前に行う**——6 で読み込みに失敗した画像が置き換わると、順番が数えられなくなる（FR-120）。
 - **6.** 画像の読み込み失敗を捉える配線を行う（IMP-226）。
 - **6a.** 0a で控えた `<details>` を、同じ順番のものについて開き直す（FR-014）。**9 より前に行う**——開くと高さが変わり、先にスクロール位置を合わせると位置がずれる。
-- **6b.** 画像に原寸表示・拡大画面のボタンを配線し、控えた原寸表示を当て直す（IMP-228）。
+- **6b.** 画像に原寸表示・拡大画面のボタンを配線し、控えた原寸表示を当て直す（IMP-228）。**`restoreMedia` を `attachImageButtons` より前に呼ぶ**——読み込みの済んだ画像は `attachImageButtons` の中で包まれ、その時点で当て直すためである。
 - **6c.** GFM の表に並べ替えのボタンを付け、控えた並べ替えを当て直す（IMP-229。`doc.trigger` を渡す）。
 - **6d.** 編集モードの状態を画面へ写す（IMP-260 の `applyEditMode(doc)`）。
 - **7.** スクロール連動の監視対象を作り直す（IMP-222）。
-- **8.** `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` に応じて遅延ロードを起動する（IMP-230）。**図の描画が 1 つ終わるたびに（成功・失敗のどちらでも）、`media.js` の `onDiagramSettled` を呼ぶ**（IMP-228）。図のボタンの配線、原寸表示の当て直し、拡大画面の差し替え（IMP-253）はそこで行う。**描画の世代を 1 つ進める**——前の描画の図の知らせは、ここから先は届かない（IMP-230）。
+- **8.** `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` に応じて遅延ロードを起動する（IMP-230。図は `lazy.js` の `drawDiagrams`）。**図の描画が 1 つ終わるたびに（成功・失敗のどちらでも）、`media.js` の `onDiagramSettled` を呼ぶ**（IMP-228）。図のボタンの配線、原寸表示の当て直し、拡大画面の差し替え（IMP-253）はそこで行う。**描画の世代を 1 つ進める**——前の描画の図の知らせは、ここから先は届かない（IMP-230）。
 - **9.** スクロール位置を設定する（13 章 `ScrollDTO` の `mode` に従う）。
 - **10.** アウトライン（IMP-224）とステータス（DSP-150）を更新する。
 - **11.** **本文ペインへフォーカスを移す**（UI-051。`focusViewer()`）。**ただし 0a でチェックボックスの順番を控えていて、同じ順番のチェックボックスがあれば、そこへ移す**（FR-014, UI-051 の例外）。
@@ -405,10 +416,23 @@ FR-050 / AR-060 を実装する。
 ```js
 // js/viewer.js
 document.getElementById('markdown').addEventListener('click', onLinkClick);
+document.getElementById('expand-view').addEventListener('click', preventLinkDefault);     // 図の中のリンク（何もしない）
+document.getElementById('markdown').addEventListener('auxclick', preventLinkDefault);     // 左ボタン以外（何もしない）
+document.getElementById('expand-view').addEventListener('auxclick', preventLinkDefault);  // 同上
+
+// js/util.js
+export function linkHref(anchor)  // 書かれたリンク先。HTML の <a> は href、SVG の <a> は xlink:href。無ければ null
 ```
 
 - `#markdown` に 1 つだけリスナを置き、イベント委譲で処理する。リンクごとにリスナを付けない。
-- `event.target.closest('a')` で対象を求め、`href` が存在すれば **常に `preventDefault()` を呼ぶ**。WebView 内でのページ遷移を一切発生させないため（AR-060）。
+- `event.target.closest('a')` で対象を求め、**リンク先が書かれていれば（`linkHref(anchor)`）常に `preventDefault()` を呼ぶ**。WebView 内でのページ遷移を一切発生させないため（AR-060）。
+  - **`href` 属性だけを見ない。** SVG の `<a>` はリンク先を `xlink:href` に持つ（SVG 2 の `href` があればそちらを先に読む）。同梱の Mermaid は `click` で URL を指定したノードを `<a xlink:href>` で包むため、`href` だけを見ると既定の動作が残り、**WebView の中で遷移して戻れなくなった**（[BUG-015](../bugs/2026-09-17-bug-015-mermaid-click-link-navigation.md)）。
+  - **図の中のリンク（MD-081）も同じ経路を通す**——`click` の URL のノードも、ラベルに書いた HTML の `<a href>` も、書かれたリンク先を Go へ渡す（FR-050）。
+  - **拡大画面（`#expand-view`）にもリスナを置き、図の中のリンクの既定の動作だけを止めて何もしない**（UI-104）。図を本文の外へ移すため、`#markdown` のリスナは届かない（IMP-253）。**`expand.js` ではなく `viewer.js` に置く**——止める規則を 1 か所にまとめる。
+- **左ボタン以外のクリックでは、リンクの既定の動作を止めるだけで何もしない**（AR-060, FR-050。[BUG-016](../bugs/2026-09-17-bug-016-link-middle-click.md)）。
+  - **`auxclick` を `#markdown` と `#expand-view` の両方で受ける。** 中ボタンなど左ボタン以外のクリックは `click` ではなく `auxclick` で届き、**リンクをたどる処理はその既定の動作である**——Chromium（WebView2）も WebKit も、`click` と `auxclick` のうち右ボタン以外でリンクをたどる（WebKit は `MouseEvent::canTriggerActivationBehavior`）。`click` だけを受けていた v1.0.0 は、W1 では Go を通らずに既定のブラウザへ回り、L1 ではウィンドウの中が遷移して戻れなくなった。
+  - **`click` でも `event.button` を見て、`0` でなければ `preventDefault()` の後に戻る。** **WebKit が `auxclick` を実装したのは 2024 年 7 月**（WebKitGTK 2.46）であり、それより前の版（Ubuntu 24.04 の初版の 2.44 など）は中ボタンでも `click` を出す。見ないと、そうした環境では中ボタンが左クリックと同じくリンクを開く。
+  - リンクでない所の `auxclick` は止めない。キーボードで押したリンク（`Enter`）と `click()` は `button` が `0` であり、今までどおり開く。
 - **次の場合は `preventDefault()` だけを行い、遷移の処理へ進まない。**
   - クリックが `.media-actions`（IMP-228）の中で起きた。画像をリンクで囲んだ記法でも、ボタンの操作ではリンク先へ移らない（UI-053）
   - **編集モードの間に、鍵の合う `data-ref` を持つセル（`th` / `td`）の中で起きた**（FR-050 の例外、FR-142）。ダブルクリックの 1 回目で文書が切り替わるのを防ぐ。判定は IMP-260 の `isEditableCell(element)` を使い、ここで鍵を読まない
@@ -459,7 +483,7 @@ export function renderOutline(headings)
 MD-040 / DSP-260 を実装する。
 
 ```js
-// js/viewer.js
+// js/decorate.js
 export function decorateAlerts(root)
 ```
 
@@ -473,8 +497,8 @@ export function decorateAlerts(root)
 FR-022 / DSP-123 を実装する。
 
 ```js
-// js/viewer.js
-export function markBrokenImages(root)
+// js/decorate.js
+export function markBrokenImages(root)   // viewer.js が再 export する（描画スモーク。IMP-200）
 ```
 
 - `root.querySelectorAll('img')` を走査し、各要素に `error` を配線する。`error` で、**その `<img>` を `<span class="img-broken">` へ置き換える**（DSP-123）。
@@ -516,7 +540,7 @@ export function markBrokenImages(root)
 MD-020 / MD-021 / DSP-023 を実装する。
 
 ```js
-// js/viewer.js
+// js/decorate.js
 export function decorateHeadings(root)
 ```
 
@@ -550,21 +574,25 @@ export function onDiagramSettled(block)      // 図の描画が 1 つ終わる�
 export function onAllDiagramsSettled()       // その文書の図の知らせを出し終えたときに lazy.js が呼ぶ
 export function captureMedia()               // 手順 0a。{ key → 原寸表示か } を返す
 export function restoreMedia(snapshot)       // 手順 6b と onDiagramSettled で当て直す
+export function clearMedia()                 // 状態を空にする。IMP-250 の leaveDocument が呼ぶ
+export function naturalSize(target)          // 本来の大きさ { width, height }（下記）。IMP-253 も使う
 ```
 
 **対象と、状態の鍵**（FR-120 の「同じ対象」）
 
 | 種類 | 対象の要素 | 鍵 | 数え方 |
 | --- | --- | --- | --- |
-| Mermaid 図 | **鍵の合う**（IMP-260 の `isOwnRef(block, 'mermaid')`）`.code-block` の `.mermaid-rendered svg` | `mermaid:<n>` | **`data-ref` の番号**（Go 側が文書の中の出現順で振る。**描画に失敗したブロックも数える**。IMP-120） |
-| PlantUML 図 | **鍵の合う**（`isOwnRef(block, 'plantuml')`）`.code-block` の `.plantuml-rendered svg` | `plantuml:<n>` | **`data-ref` の番号**（**描画しなかった `data-puml-error` のブロックも数える**。IMP-120） |
+| Mermaid 図 | **鍵の合う**（IMP-260 の `isOwnRef(block, 'mermaid')`）`.code-block` の `.mermaid-rendered svg` | `mermaid:<n>` | **鍵の合う Mermaid のブロックを文書の順に数えた位置**（Go 側が `data-ref` に文書の中の出現順で振る番号と一致する。**描画に失敗したブロックも数える**。IMP-120） |
+| PlantUML 図 | **鍵の合う**（`isOwnRef(block, 'plantuml')`）`.code-block` の `.plantuml-rendered svg` | `plantuml:<n>` | **鍵の合う PlantUML のブロックを文書の順に数えた位置**（**描画しなかった `data-puml-error` のブロックも数える**。IMP-120） |
 | 画像 | `#markdown img`（`span.img-broken` へ置き換わる前の順） | `image:<n>` | `innerHTML` の直後に `img` を走査した順。**読み込みに失敗したものも数える** |
 
-- **番号は描画の成否を見る前に振る**（FR-120）。画像は `numberImages`（IMP-220 の手順 5a）が、手順 6（IMP-226）で置き換わる前に `data-media-index` 属性として振る。図は Go 側が `data-ref` に振った番号を使う（IMP-120）。**1 つ壊れただけで後ろがすべて「別の対象」にならないようにする。**
+- **番号は描画の成否を見る前に振る**（FR-120）。画像は `numberImages`（IMP-220 の手順 5a）が、手順 6（IMP-226）で置き換わる前に `data-media-index` 属性として振る。図は鍵の合う同じ種類のブロックを文書の順に数える。**目印の番号を読まない**——鍵を読むのは `refs.js` だけであり（IMP-260）、Go 側は図のブロックに文書の順で番号を振る（IMP-120）ため、両者は一致する（IMP-229 の表の番号、IMP-220 の手順 0a のチェックボックスと同じ求め方）。**1 つ壊れただけで後ろがすべて「別の対象」にならないようにする。**
 - **鍵の合わない図のブロック（生 HTML で書いたもの）は対象にしない。** ボタンを付けず、拡大画面の対象にも数えない（NFR-030。[BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。そもそも描画されない（IMP-230）。
 - **対象の準備が済んだら、成否とともに拡大画面へ知らせる**（`deps.onTargetSettled(key, target)`。IMP-253）。図は `onDiagramSettled` の中で、画像は包んだ時点（成功）と `onImageBroken(span)` が呼ばれた時点（失敗。`target` は `null`）で知らせる。
 - **対象の数も拡大画面へ知らせる。** 画像は `numberImages` の中で `deps.onImagesNumbered(数)` を、図は `onAllDiagramsSettled` を受けたときに `deps.onAllDiagramsSettled()` を呼ぶ（同じ鍵の対象が文書に無いと分かる時点。IMP-253）。
 - **`onDiagramSettled(block)` は、`block.isConnected` が偽なら何もしない**（前の描画の遅れた知らせ。IMP-230 の描画の世代と二重の防御）。
+- **`media.js` は `lazy.js` / `puml.js` / `decorate.js` / `viewer.js` / `docswitch.js` / `main.js` を import しない**（いずれもこのモジュールを呼ぶ。IMP-250）。拡大画面へは `main.js` が渡す `deps` で知らせる。**描画スモーク（BR-054）は `initMedia` を呼ばない**——`lazy.js` から `onDiagramSettled` が呼ばれても、何もしない既定の `deps` で動く。
+- **描き直し（テーマの切り替え）ではブロックが残るため、図のボタンを作り直さない**（フォーカスを失わない）。ボタンの器（`.media-actions`）に鍵を `data-media-key` で持ち、同じ鍵なら使い回す。
 
 **ボタンの組み立て**
 
@@ -586,15 +614,16 @@ export function restoreMedia(snapshot)       // 手順 6b と onDiagramSettled �
 **「縮小表示中」の判定**（FR-120）
 
 ```js
-function naturalWidth(target)   // img は naturalWidth。svg は下記
-function isReduced(target)      // naturalWidth(target) > target.getBoundingClientRect().width + 0.5
+export function naturalSize(target)  // img は naturalWidth / naturalHeight。svg は下記
+function isReduced(target)           // naturalSize(target).width > target.getBoundingClientRect().width + 0.5
 ```
 
-- **SVG の本来の幅**は、`width` 属性が px の数値ならその値、そうでなければ `viewBox` の幅とする。Mermaid は `width="100%"` と `style="max-width: <幅>px"` を出し、PlantUML は `width` を px で出す。**`getBBox` を使わない**——描画の内容の外接矩形であり、図の大きさではない。
+- **SVG の本来の幅と高さ**は、`width` / `height` 属性が px の数値（単位の無い数値を含む）ならその値、そうでなければ `viewBox` の幅と高さとする。Mermaid は `width="100%"` と `style="max-width: <幅>px"` を出し、PlantUML は `width` を px で出す。**`getBBox` を使わない**——描画の内容の外接矩形であり、図の大きさではない。
 - 判定は次の契機でやり直す（`requestAnimationFrame` で 1 フレームにまとめる。NFR-012）。
   - `#markdown` の幅の変化（`ResizeObserver`。ウィンドウとペインの幅。FR-120）
   - 画像の `load`、図の描画の完了（`onDiagramSettled`）
   - `<details>` の `toggle`（閉じた中の要素は幅を持たないことがある）
+- **拡大画面へ移している対象（`.media-frame` の中に無い対象）は判定し直さない**（IMP-253）。拡大画面での大きさで決めると、閉じたときにフォーカスを戻すボタンが隠れうる。
 - ボタンの表示は `hidden` 属性で切り替える（IMP-202）。**原寸表示のボタン**は「縮小表示中 **または** 原寸表示中」に出し、**拡大画面のボタン**は図なら常に、画像なら原寸表示のボタンと同じ条件で出す（FR-120 の表）。
 
 **原寸表示**（FR-121）
@@ -608,9 +637,9 @@ function isReduced(target)      // naturalWidth(target) > target.getBoundingClie
 **状態の引き継ぎ**（FR-121, DSP-352）
 
 - 状態は `Map<鍵, true>`（原寸表示中の鍵の集合）としてモジュール変数に持つ（IMP-210）。
-- `captureMedia` はその集合の写しを返す。`restoreMedia(snapshot)` は、写しを**当て直しを待つ鍵の集合**としてモジュール変数に置き、原寸表示中の集合を空にする。以後、対象が準備できた時点（画像は包んだ時点、図は `onDiagramSettled`）で、鍵が待つ集合にあれば原寸表示にして、待つ集合から原寸表示中の集合へ移す。**`onDiagramSettled(block)` は控えを引数に取らない**ため、控えはこのモジュールの中に持つ。
-- **待つ集合に残った鍵は捨てる。** 図の鍵は `onAllDiagramsSettled` を受けた時点で、画像の鍵は `numberImages` の数以上の番号のものをその時点で、読み込みに失敗した画像の鍵は `onImageBroken` の時点で捨てる。**残したままにすると、次の再描画で数が戻ったときに、利用者が戻していない原寸表示が当たる。**
-- **文書の切り替え（`doc.sameDocument` が偽）と状態画面への移行では集合を空にする**（IMP-250 の `leaveDocument`。IMP-220 の手順 0a からも呼ぶ）。
+- `captureMedia` はその集合と**当て直しを待つ鍵の集合（下記）を合わせた**写しを返す。図の描画を待つ間に次の再描画が来た（外部エディタで保存を繰り返した。UC-03）とき、まだ当て直していない原寸表示を落とさないためである。`restoreMedia(snapshot)` は、写しを**当て直しを待つ鍵の集合**としてモジュール変数に置き、原寸表示中の集合を空にする。以後、対象が準備できた時点（画像は包んだ時点、図は `onDiagramSettled`）で、鍵が待つ集合にあれば原寸表示にして、待つ集合から原寸表示中の集合へ移す。**`onDiagramSettled(block)` は控えを引数に取らない**ため、控えはこのモジュールの中に持つ。
+- **待つ集合に残った鍵は捨てる。** 図の鍵は `onAllDiagramsSettled` を受けた時点で、画像の鍵は `numberImages` の数以上の番号のものを、読み込みに失敗した画像の鍵は `onImageBroken` の時点で捨てる。**手順 5a（`numberImages`）と 6（`onImageBroken`）は 6b（`restoreMedia`）より前に来る**ため、`restoreMedia` は置いた写しから、その時点の画像の数以上の番号と、既に読み込みに失敗した番号の鍵を捨てる。**残したままにすると、次の再描画で数が戻ったときに、利用者が戻していない原寸表示が当たる。**
+- **文書の切り替え（`doc.sameDocument` が偽）と状態画面への移行では集合を空にする**（IMP-250 の `leaveDocument` が `clearMedia()` を呼ぶ。IMP-220 の手順 0a からも `leaveDocument` を通る）。
 - **テーマの切り替え（IMP-243）で図が描き直されたときも `onDiagramSettled` を通り、原寸表示を当て直す**（FR-121, DSP-370）。
 
 ### IMP-229: 表の表示上の並べ替え **SHOULD**
@@ -623,6 +652,7 @@ export function initTableSort(deps)             // { closeSearch }
 export function attachSortButtons(root)        // renderDocument の手順 6c
 export function captureSort()                   // 手順 0a
 export function restoreSort(snapshot, trigger)  // 手順 6c。trigger は DocumentDTO.trigger
+export function clearSort()                     // 状態を空にする。IMP-250 の leaveDocument が呼ぶ
 export function compareCells(a, b)              // 比較。純粋な関数（下記）
 export function parseNumber(text)               // 数値として解釈できれば数、できなければ null
 ```
@@ -656,6 +686,7 @@ export function parseNumber(text)               // 数値として解釈でき�
 **状態の引き継ぎ**（FR-130, DSP-352）
 
 - 状態は表の番号（`table:<t>` の `t`）ごとに `{ col, dir, cols, order }` をモジュール変数に持つ。`cols` は列数、`order` は現在の行の並び（元の行番号の配列）。
+- **表の番号は目印の番号を読まずに求める。** 鍵の合う表（`isOwnRef(table, 'table')`）を文書の順に並べたときの位置（0 起点）とする。Go 側は GFM の表に文書の順で番号を振る（IMP-120）ため、両者は一致する。**鍵を読むのは `refs.js` だけである**（IMP-260）。行が 2 行未満の表も番号には数える。
 - `restoreSort(snapshot, trigger)` は、同じ番号の表があり、**列数が同じで、行が 2 行以上ある**ときだけ当て直す。そうでなければその表の状態を捨てる。
 
 | `trigger` | 当て直し方 |
@@ -663,7 +694,7 @@ export function parseNumber(text)               // 数値として解釈でき�
 | `edit`（編集モードの書き込みの直後。IMP-195） | **`order` のとおりに行を並べる。並べ直さない。** `col` / `dir` とボタンの表示は保つ。**行の数が変わっていないことを確かめ、変わっていれば並べ直す** |
 | それ以外（`watch` / `reload` / `open`） | `col` / `dir` で並べ直す |
 
-- **文書の切り替え（`doc.sameDocument` が偽）と状態画面への移行では状態を空にする**（IMP-250 の `leaveDocument`。IMP-220 の手順 0a からも呼ぶ）。
+- **文書の切り替え（`doc.sameDocument` が偽）と状態画面への移行では状態を空にする**（IMP-250 の `leaveDocument` が `clearSort()` を呼ぶ。IMP-220 の手順 0a からも `leaveDocument` を通る）。
 - **`edit` で並べ直さないため、基準の列を直した行は並べ替えの順から外れうる**（FR-130）。次にボタンを押したときに巡回の次の段へ進み、その段の順で並べ直す。
 
 ## 12.4 遅延ロード（IMP-230 系）
@@ -677,18 +708,22 @@ AR-021 / MD-061 / MD-082 / MD-085 / NFR-013 を実装する。
 export async function ensureMermaid()  // 未読込なら <script> を挿入して初期化
 export async function ensureKaTeX()    // 未読込なら <script> と <link> を挿入
 export async function ensurePlantUML() // 未読込なら viz-global.js → plantuml.js の順で読む
+export async function drawDiagrams(root, needsMermaid, gen)  // IMP-220 の手順 8。Mermaid（needsMermaid のとき）と PlantUML を描き、両方を出し終えたら onAllDiagramsSettled
+export async function redrawDiagrams(root, gen)              // IMP-243 のテーマの切り替え。知らせは drawDiagrams と同じ
 ```
 
 - 読み込みは `frontend/vendor/` 配下への相対パスで行う。外部 URL を参照しない（AR-020）。
 - 一度読み込んだら `state.lazy` に記録し、以降は再読み込みしない（AR-021）。
+- **読み込み中の資産は、その読み込みを待つ。** `drawing.js` の `loadScript` / `loadStyle` は同じ `src` / `href` の約束を共有し、要素を 1 度だけ挿す。文書の描画とテーマの切り替えによる描き直し（IMP-231, IMP-233）が読み込みの途中で重なっても、**同じ資産を 2 度実行しない**（`viz-global.js` の Graphviz を含む。IMP-233）。**読み込めなかった（`error` になった）約束は忘れ、次の文書の描画（`F5` を含む）で読み直す**——`error` になった `<script>` は実行されていない（テーマの切り替えは、描けなかった図を描き直さない。IMP-231）。
 - `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` が false の文書では**呼び出さない**。この条件分岐が NFR-013 の実体である。
 - **`ensurePlantUML()` は読み込む順序を守る**。`viz-global.js` を先に、`plantuml.js` を後にする（AR-020, IMP-233）。**前者の読み込みに失敗したら、後者を読まないで false を返す。** Graphviz 不在のまま描こうとすると処理系ごと止まる（IMP-233 の 4）。
 - 読み込みと描画は本文の表示をブロックしない。`renderDocument` の完了後に非同期で実行する（NFR-012）。
 - **図の描画が 1 つ終わるたびに、成功・失敗・描画しなかったのいずれでも `media.js` の `onDiagramSettled(block)` を呼ぶ**（IMP-228）。テーマの切り替えによる描き直し（IMP-231, IMP-233）でも呼ぶ。**失敗のときにも呼ぶ**のは、拡大画面の差し替え（IMP-253）が「その図はもう来ない」ことを知って閉じる判断をするためである（FR-120 の「描画が終わってから判断する」）。
 - **資産の読み込みに失敗して図を 1 つも描かない場合も、対象のブロックそれぞれについて呼ぶ。**
-- **その文書の Mermaid と PlantUML の知らせをすべて出し終えたら、`media.js` の `onAllDiagramsSettled()` を 1 度だけ呼ぶ。** 図を含まない文書でも、描画を起動しない代わりに呼ぶ（拡大画面が画像を開いていた場合の判断に要る。IMP-253）。
+- **図を 1 つ描き終えたら、`search.js` の `syncHits(block)` も呼ぶ**（IMP-241。4.69.0）。PlantUML は**描き始めに原文を器へ置き換える**ため、そこでも呼ぶ（描き終えるまで 1 秒近くあり、その間も件数を画面に合わせる）。数式は `drawMath` が描き終えた要素ごとに呼ぶ（IMP-232）。
+- **その文書の Mermaid と PlantUML の知らせをすべて出し終えたら、`media.js` の `onAllDiagramsSettled()` を 1 度だけ呼ぶ**（`drawDiagrams` / `redrawDiagrams` が両方の描画を待ってから、世代が今のときだけ呼ぶ。Mermaid と PlantUML は並行して描くため、片方の関数の中では「両方を出し終えた」が分からない）。 図を含まない文書でも、描画を起動しない代わりに呼ぶ（拡大画面が画像を開いていた場合の判断に要る。IMP-253）。
 - **描画するのは鍵の合う図のブロックだけとする**（IMP-260 の `isOwnRef(block, 'mermaid')` / `isOwnRef(block, 'plantuml')`）。描く原文は `ownSource(block)` から取り、**`data-source` を直接読まない。** 生 HTML で書いた `<div class="code-block" data-plantuml data-source="…">` は、Go 側の取り込み指令の検査（IMP-119, MD-084）を通っていない。鍵を見ないと、**検査を通らない PlantUML が処理系へ渡り、PlantUML を含まない文書でも資産を読む**（NFR-013, NFR-030。[BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。**鍵の合わないブロックは HTML のまま残し、知らせも出さない。**
-- **描画には世代の番号を付ける。** `lazy.js` は描画を始めるとき（IMP-220 の手順 8 と、テーマの切り替えによる描き直し）に番号を 1 増やして控え、図を 1 つ描き終えるたびに、控えた番号が今の番号と同じかを確かめる。**違えば（その間に再描画か描き直しが始まった）、残りの図を描かず、`onDiagramSettled` も `onAllDiagramsSettled` も呼ばない。** PlantUML は 1 枚に数秒かかりうるため、外部エディタで保存を繰り返すと、前の描画の知らせが新しい描画の後に届く。区別しないと、**新しい描画の拡大画面を誤って閉じたり、DOM から外れた古い要素へ差し替えたりする**（FR-122, UC-03）。
+- **描画には世代の番号を付ける。** **世代は `drawing.js` が持ち、描画を始める側が `startDrawing()` を 1 回だけ呼んで番号を 1 増やす**——文書の描画（IMP-220 の手順 8。`viewer.js`）と、テーマの切り替えによる描き直し（`theme.js`）である。**返った番号を Mermaid と PlantUML の描く関数の両方に渡し、描く関数ごとに世代を進めない。** 手順 8 は両方を待たずに並べて起動するため、描く関数ごとに進めると、後から始めた側が先に始めた側の描画を止めてしまう（4.67.0。描く関数は、番号を省くと自分で世代を進める——描画スモークが単独で呼ぶため）。描く関数は、図を 1 つ描き終えるたびに、渡された番号が今の番号と同じかを確かめる。**違えば（その間に再描画か描き直しが始まった）、残りの図を描かず、`onDiagramSettled` も `onAllDiagramsSettled` も呼ばない。** PlantUML は 1 枚に数秒かかりうるため、外部エディタで保存を繰り返すと、前の描画の知らせが新しい描画の後に届く。区別しないと、**新しい描画の拡大画面を誤って閉じたり、DOM から外れた古い要素へ差し替えたりする**（FR-122, UC-03）。
 
 > [!IMPORTANT]
 > **同梱資産は、こちらが渡した要素の外にも書くことがある。** 描画対象の id を渡す形（IMP-233 の 2）は
@@ -724,6 +759,10 @@ mermaid.initialize({
 - 描画対象は `.code-block[data-mermaid] pre.mermaid-source` のうち、**ブロックが鍵の合う目印を持つもの**（IMP-230）。`mermaid.render` に渡す id は `mermaid-svg-<n>` とする（IMP-233 の 2 と同じ連番。`user-content-` で始めない。AR-053）。
 - 描画に失敗したブロックは、元のソースをコードブロックとして残し、エラー内容を併記する（FR-023）。1 つの失敗が他のブロックの描画を止めないよう、ブロック単位で例外を捕捉する。
 - テーマ切り替え時は、`mermaid.initialize` をやり直したうえで、`ownSource(block)`（保存しておいた `data-source`）から再描画する（FR-070）。
+- **`securityLevel: 'strict'` は、URL を指定した `click` のリンクを止めない**（11.17.2 で実測。ノードが SVG の `<a xlink:href>` で包まれる）。止まるのはコールバックだけである。図の中のリンクは、IMP-223 が本文のリンクと同じ経路で扱う（MD-081, [BUG-015](../bugs/2026-09-17-bug-015-mermaid-click-link-navigation.md)）。
+  - **資産の読み込みが済んでいるかを条件にしない。** 初めての図の資産を読み込んでいる間に切り替えると、読み込みを待っていた文書の描画は世代が変わって描かずに戻る（IMP-230）。条件にすると、**図が原文のまま残る**（v1.0.0 には世代が無く、読み込みの後にそのまま描いていたため起きなかった）。読み込み中なら同じ読み込みを待ち（IMP-230）、鍵の合うブロックが無ければ資産を読まずに戻る（NFR-013）。
+  - **描き直す図のブロックは、描き終えるまで描き直す前の高さに固定する**（DSP-370。`drawing.js` の `holdHeight` / `releaseHeight`）。描画済みの SVG を原文の `<pre>` へ戻した時点で高さが変わり、図より下の本文が動くためである。**固定は `onDiagramSettled` を呼ぶ直前に解く**（成功・失敗のどちらでも）——原寸表示の判定と当て直しは図の本来の配置で測る（IMP-228）。世代が変わって描かずに戻ったブロックは解かない（次の描画が解くか、本文ごと差し替わる）。
+  - **描けなかった図（理由を添えたブロック。`.mermaid-error` / `.plantuml-error`）は描き直さない**（DSP-370）。原文のコードブロックは CSS だけで新しい配色に追随する。描き直すと、PlantUML は描けないまま原文の `<pre>` を器に置き換えるため、理由が出るまで本文が動き、**原文の中の検索のハイライトが外れる**（v1.0.0 から。IMP-241）。読み込めなかった資産の読み直しは、次の文書の描画（`F5` を含む）で行う。
 
 ### IMP-232: KaTeX の初期化 **MUST**
 
@@ -758,7 +797,7 @@ FR-024 / MD-083 / MD-084 を実装する。**Mermaid とは API の形が違う�
 await load("vendor/plantuml/viz-global.js");   // 1
 const puml = await import("vendor/plantuml/plantuml.js");  // 2
 
-puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark" });
+puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark", maxSvgSize: 4096 });
 ```
 
 **実装で押さえる点は 5 つある。**
@@ -772,12 +811,13 @@ puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark
 | 5 | **描画のたびに `document.getElementById('status')` を決め打ちで探し、見つけた要素の `textContent` を自分のログで上書きする。** 渡した要素とは無関係に、ページ全体を対象にする | **ページ側で `status` という id を使わない**（IMP-202 は `statusbar` とする）。**こちらから止める手立ては無い**——`plantuml.js` は改変できない（BR-042） |
 
 - 描画対象は `.code-block[data-plantuml] pre.plantuml-source` のうち、**ブロックが鍵の合う目印を持つもの**（IMP-230）。**`data-puml-error` を持つブロックは描画しない**（IMP-119 が拒んだもの）。
-- **描画結果は `.plantuml-rendered` の中へ入れ、描かなかった理由は `.plantuml-error` へ出す。** Mermaid の `.mermaid-rendered` / `.mermaid-error`（IMP-231）と同じ形にそろえる。**この 2 つの名前は描画スモークテストが見る**（BR-054, E2E-109）ため、変えるときは `scripts/smoke/harness.js` も同じ変更で直す。
+- **描画結果は `.plantuml-rendered` の中へ入れ、描かなかった理由は `.plantuml-error` へ出す。** Mermaid の `.mermaid-rendered` / `.mermaid-error`（IMP-231）と同じ形にそろえる。**この 2 つの名前は描画スモークテストが見る**（BR-054, E2E-109）ため、変えるときは `scripts/smoke/collect.js`（ページ側で結果を集める関数。4.66.0 で `harness.js` から分けた）も同じ変更で直す。
 - 描画に失敗したブロックは、元のソースをコードブロックとして残し、理由を併記する。**1 つの失敗が他のブロックの描画を止めない**（IMP-231 と同じ）。
 - **取り込み指令で拒まれたブロックの理由は、資産を読まずに表示する**（IMP-119, DSP-272）。それらは `needsPlantUML` を立てないため、**`needsPlantUML` を条件に描画関数を呼ぶと理由が出ない。** 描画関数を「描くものが無ければ資産を読まずに戻る」形にし、**条件を付けずに呼ぶ**。NFR-013 は早期の戻りで保たれる。**「描くもの」は鍵の合うブロックで数える**——生 HTML の偽のブロックで資産を読まない（IMP-230, BUG-014）。
 - **構文エラーは失敗ではない。** PlantUML はエラーを描いた SVG を返すので、**そのまま出す**（FR-024）。行番号と該当行を含むため、こちらで書き直すより情報量が多い。
-- **4096 px を超える図は SVG ではなく例外のテキストが返る**（`Diagram too large for browser rendering: <幅>x<高さ> (max 4096)`）。これを検知して FR-110 の表示に回す。テキストをそのまま本文へ出さない（UI 文言は `strings.js`。IMP-290）。**`render()` は例外を投げない。** 正常に戻ったうえで、**出力先の要素へ例外のテキストが書き込まれる。** したがってこれは `try` / `catch` ではなく、**上の 1 の完了検知が「SVG 以外が入った」と判定する経路**で拾う（実測。[BUG-010](../bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)）。**表示はどちらの経路でも `pumlUnsupported` であり、利用者から見た違いは無い**（DSP-272）。
-- テーマ切り替え時は、`ownSource(block)`（保存しておいた `data-source`）から `{ dark: ... }` を変えて**描き直す**（FR-070, IMP-243）。
+- **図の大きさの上限は `maxSvgSize: 4096` で必ず明示する（省かない）**（MD-083。4.64.0）。1.2026.8 から処理系の既定が 8192 px になり、省くと同梱資産の更新だけで描ける大きさが変わる。**1.2026.7 以前はこの指定を無視する**（4096 px の固定）ため、どちらの版でも同じ振る舞いになる。値は `puml.js` の定数に置く（UI 文言ではない）。
+- **4096 px を超える図は SVG ではなく例外のテキストが返る**（`Diagram too large for browser rendering: <幅>x<高さ> (max 4096)`。1.2026.8 では `(max 4096; override via the maxSvgSize option, or set it to 0 to disable this check)`。**文言で判定しない**）。これを検知して FR-110 の表示に回す。テキストをそのまま本文へ出さない（UI 文言は `strings.js`。IMP-290）。**`render()` は例外を投げない。** 正常に戻ったうえで、**出力先の要素へ例外のテキストが書き込まれる。** したがってこれは `try` / `catch` ではなく、**上の 1 の完了検知が「SVG 以外が入った」と判定する経路**で拾う（実測。[BUG-010](../bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)）。**表示はどちらの経路でも `pumlUnsupported` であり、利用者から見た違いは無い**（DSP-272）。
+- テーマ切り替え時は、`ownSource(block)`（保存しておいた `data-source`）から `{ dark: ... }` を変えて**描き直す**（FR-070, IMP-243）。**資産の読み込みが済んでいるかを条件にせず、描き直す図のブロックの高さを描き終えるまで固定し、描けなかった図は描き直さない**（IMP-231 と同じ）。
 - **フロントエンドが図のソースから独自に HTML を組み立てて挿入しない**（IMP-220, MD-084）。DOM へ書くのは処理系であり、こちらは対象要素を用意して id を渡すだけにする。
 
 > [!IMPORTANT]
@@ -842,6 +882,7 @@ export function closeSearch()
 export function find(query)      // インクリメンタル
 export function jump(delta)      // +1 / -1
 export function isSearchOpen()   // 開いているか（Esc の振り分けに使う）
+export function syncHits(root)   // 図・数式を描き終えたときに件数とハイライトを合わせる（FR-080）
 ```
 
 - **本文を表示している状態でのみ開く。** 状態画面を表示中（`welcome` / `confirm-large` / `too-large` / `render-error`）は `Ctrl+F` を無視する（DSP-300）。
@@ -856,6 +897,11 @@ export function isSearchOpen()   // 開いているか（Esc の振り分けに�
 - **自前で足したボタン（`.copy-btn` / `.media-actions` / `.sort-btn`）は `svg` しか持たず、上の `svg` の除外で走査から外れる。** セルの編集欄（`input.cell-editor`。IMP-262）の値はテキストノードではなく、走査に入らない。
 - 大文字小文字を区別しない比較には `toLowerCase()` を用いる。正規表現でユーザ入力を直接使わない（メタ文字の混入を避けるため）。
 - 200 件を超えるヒットがある場合もハイライトは全件に付ける。件数表示は実数を出す。
+- **`syncHits(root)` は、図か数式を 1 つ描き終えたときに呼ぶ**（IMP-230, IMP-232。4.69.0。[BUG-017](../bugs/2026-09-18-bug-017-search-hits-before-rendering.md)）。検索を開いていなければ何もしない。
+  - **DOM から外れた `<mark>` を件数から落とす。** 描画は原文の `<pre>`（Mermaid / PlantUML）と数式の要素の中身を置き換えるため、そこに包んだ `<mark>` は外れる。**外れたものは `state.search.hits` にも残る**——長さをそのまま件数に出すため、落とさないと画面に無いものを数える
+  - **`root`（描き終えたブロック）の中にヒットが 1 つも残っていなければ、その中を探し直して包み直す。** 描けなかった PlantUML は**新しい `<pre>`** に原文が戻るためである（IMP-233 の `restorePlantUML`）。**残っていれば触らない**——描けなかった Mermaid の原文はそのまま残っており、二重に包むことになる
+  - **包み直したものは文書の順（`compareDocumentPosition`）で並べ直す。** 件数と移動の順序を本文の順序に保つ
+  - **スクロールしない**（`select` を呼ばない）。**現在位置が外れていたら、元の並びでその後ろに残っている最初のヒットへ移す**（末尾なら先頭）。現在位置のクラス（`search-hit-current`）は付け替える
 - `find` の直後は、**本文ペインの上端以降にある最初のヒット**を現在位置とする。常に先頭へ戻すと、入力を 1 文字足すたびに文書の冒頭へ引き戻される。
 - `jump` は端で反対側へ回り込む。ヒットが 1 件でも操作が空振りしない。
 - **検索を開いていないときの `jump` は何もせず、`false` を返す**（IMP-244）。`Enter` は検索が閉じていてもこの経路へ来るため、`preventDefault` してしまうとフォーカス中のボタンを `Enter` で実行できなくなる（UI-021）。
@@ -972,7 +1018,7 @@ export function initShortcuts(handlers)  // id をキーとする処理の表
   - IME の変換中の `Esc` は変換の取り消しであり、ここへ来ない（上記の `isComposing`）。
 - **右クリックメニューを開いている間（`isContextMenuOpen()`）は、`Esc` 以外の割り当てを働かせず、既定の動作も止めない。** メニューの中の `↑` / `↓` / `Enter` / `Space` / `Tab` は `#contextmenu` の `keydown` が受ける（IMP-249。IMP-248 のツリー、IMP-262 の編集欄と同じく、特定の要素で受ける例外）。**止めないと、検索バーを開いたまま入力欄でメニューを開き、`Paste` へ移って `Enter` を押したとき、`Enter` が検索の移動（`searchNext`）へ回って貼り付けが起きない。**
 - **セルの編集欄にフォーカスがある間は、`Enter` / `Shift+Enter` を検索の移動へ回さない**（FR-142, UI-090）。編集欄自身の `keydown` が確定を受け持つ（IMP-262）。
-- **拡大画面を開いている間は、`Esc` を先に上の振り分けで扱い、UI-104 の表の残りのキーを `expand.js` の `handleExpandKey(event)` へ渡し、それ以外のショートカットを止める**（`Ctrl+Q` を除く）。止めるときは既定の動作も抑止する（IMP-251 と同じ理由。`Ctrl` + `+` が WebView 自身の拡大になるため）。
+- **拡大画面を開いている間は、`Esc` を先に上の振り分けで扱い、UI-104 の表の残りのキーを `expand.js` の `handleExpandKey(event)` へ渡し、それ以外のショートカットを止める**（`Ctrl+Q` を除く）。止めるときは既定の動作も抑止する（IMP-251 と同じ理由。`Ctrl` + `+` が WebView 自身の拡大になるため）。**ただし `Enter` / `Shift+Enter`（`searchNext` / `searchPrev`）は既定の動作を残す**——フォーカスしている操作バーのボタンの実行であり（IMP-253）、ダイアログの表示中と同じ扱いである（IMP-251）。**割り当てを持たないキー（`Tab` / `Space` など）には何もしない**（`Tab` は `#expand-view` の `keydown` が操作バーの中で巡らせる）。
 - **ツールチップのキー表記**（IMP-290）は、`editMode` の代表キーを `Ctrl+Shift+M` とする。
 
 ### IMP-245: ドラッグ＆ドロップ **MUST**
@@ -1064,6 +1110,8 @@ UI-031 を実装する。
 // initFileTree が #tree へ keydown を配線する（クリックと同じ 1 か所）
 ```
 
+- **キー操作は `filetree.js` に置く**（展開・折りたたみ・開く処理と同じモジュール）。項目の要素の組み立てと、項目の中を読む関数は `treenodes.js` にある（IMP-200）。
+
 - **キーは `#tree` の 1 か所で受ける。** ノードごとに購読すると、展開のたびに登録と解除が要る（クリックと同じ考え方）。
 - **roving tabindex とする。** 各 `li.tree-item` が `tabindex` を持ち、**同時に `0` を持つのは 1 つだけ**。残りは `-1`。
 - `0` を持つのは、**直前までフォーカスしていた項目**。無ければ**選択中の項目**（表示中の文書）、それも無ければ**先頭の項目**。ツリーを組み直したとき（`loadTreeRoot` / `expand` / `collapse`）に付け直す。
@@ -1110,11 +1158,13 @@ FR-063 / UI-085 / AR-060 / AR-062 / DSP-140 を実装する。
 // js/contextmenu.js
 export function initContextMenu(deps)  // { copyText(text), readClipboard(), notify(error), cancelCellEdit() }
 export function isContextMenuOpen()
-export function closeContextMenu()     // フォーカスを戻す。開いていなければ何もしない
+export function closeContextMenu()     // フォーカスを戻して閉じ、true を返す。開いていなければ何もせず false
 ```
 
 - `deps.notify(error)` の `error` は `ErrorDTO`（IMP-307）の形とする。Go を経由しない失敗は `{ kind: 'clipboard' }` のように `kind` だけを持つ値で渡す。文言は `strings.js` の `errorText` が `kind` から選ぶ（IMP-290, IMP-315）。**IMP-261 / IMP-262 / IMP-263 の `notify` も同じ形とする。**
 - `deps.cancelCellEdit` は IMP-262 の `cancelCellEdit`（`main.js` が配線する。`contextmenu.js` は `editmode.js` を import しない）。
+- `deps.copyText` は `api.js` の `copyToClipboard`（成功なら `null`、失敗なら `ErrorDTO`）、`deps.readClipboard` は `api.js` の `readClipboard`（`{ text, error }`。失敗の `error` は `kind` が `paste` の `ErrorDTO`）とする（IMP-310）。
+- **`contextmenu.js` は `viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` / `editmode.js` を import しない**（IMP-250）。拡大画面の表示中かどうかは `expand.js` の `isExpandOpen` を、書かれたとおりのリンク先は `refs.js` の `ownLinkTarget` を直接 import して聞く。`viewer.js`（IMP-220 の手順 0a）・`docswitch.js`（IMP-250）・`shortcuts.js`（IMP-244）・`main.js` がこのモジュールを import する。
 
 **`contextmenu` を常に止める**（AR-060）
 
@@ -1136,16 +1186,16 @@ export function closeContextMenu()     // フォーカスを戻す。開いて�
 
 | 項目 | 使える条件 |
 | --- | --- |
-| `Copy`（本文・ライセンス欄） | `getSelection()` が空でなく、選択範囲がその場所の中にある |
+| `Copy`（本文・ライセンス欄） | `getSelection().toString()` が空でなく、選択範囲（`getRangeAt(0).commonAncestorContainer`）がその場所の中にある。**その場所の外にかかる選択範囲では使えない** |
 | `Copy` / `Cut`（入力欄） | `selectionStart !== selectionEnd` |
 | `Paste` | **クリップボードにテキストがあるとき**（FR-063）。判定は下記の「`Paste` の可否」 |
 | `Select all` | 常に選べる |
-| `Copy link address` | 行ごと出すかどうかの判定。`closest('a')` があるとき |
+| `Copy link address` | 行ごと出すかどうかの判定。`closest('a')` があり、下の「リンク先の求め方」で文字列が求まるとき。**鍵の合う `data-link` も `href` も持たない `<a>`（`<a name>` など）はリンクではないため出さない** |
 
 **`Paste` の可否**（FR-063）
 
 - **入力欄で開くときだけ**、`Paste` を使えない状態で出してから `await deps.readClipboard()`（Go 側の `ReadClipboard`。IMP-310）を呼ぶ。本文ペインとライセンス欄では呼ばない（`Paste` が無い）。
-- 空でない文字列が返れば、`Paste` を使える状態にし、**その文字列を控える。** 空文字なら使えないままとする。読み取りに失敗したら使えないままとし、`deps.notify({ kind: 'paste' })` を呼ぶ（IMP-315）。
+- `text` が空でない文字列なら、`Paste` を使える状態にし、**その文字列を控える。** 空文字なら使えないままとする（テキスト以外しか入っていないことは失敗ではない）。読み取りに失敗したら（`error` がある）使えないままとし、`deps.notify(error)` を呼ぶ（`kind` は `paste`。IMP-315）。
 - **応答が届く前にメニューが閉じていたら何もしない。**
 - **`Paste` を選んだら、控えた文字列を入れる。もう一度読まない。** メニューはウィンドウがフォーカスを失うと閉じる（FR-063）ため、開いている間に他のアプリケーションでクリップボードが変わることはない。
 - 使える状態へ変えるときにフォーカスを動かさない（利用者が既に `↓` で移っている場合がある）。
@@ -1153,12 +1203,12 @@ export function closeContextMenu()     // フォーカスを戻す。開いて�
 **リンク先の求め方**（FR-063）
 
 - IMP-260 の `ownLinkTarget(a)` が文字列を返せば、それを使う（`data-link` の鍵が合うとき、鍵の後ろの文字列。IMP-120）。**鍵をこのモジュールで読まない。**
-- `null` なら（生 HTML の `<a>`、鍵の合わない目印）`getAttribute('href')` の値を使う。**`a.href`（解決済みの URL）を使わない。**
+- `null` なら（生 HTML の `<a>`、鍵の合わない目印、図の中のリンク）`util.js` の `linkHref(anchor)` の値（HTML の `<a>` は `href`、SVG の `<a>` は `xlink:href`。IMP-223）を使う。**`a.href`（解決済みの URL）を使わない。**
 - 格納は `deps.copyText(text)`（Go 側の `CopyToClipboard`。IMP-310）で行う。
 
 **選択範囲を保つ**（FR-063, UI-085）
 
-- **メニューの項目は `pointerdown` で `preventDefault()` する。** 項目を押した瞬間に本文の選択範囲が外れるのを防ぐ。
+- **メニューの項目は `pointerdown` で `preventDefault()` する。** 項目を押した瞬間に本文の選択範囲が外れるのを防ぐ。**`mousedown` でも止める**——`pointerdown` を止めたときに `mousedown` の既定の動作（フォーカスの移動と選択の開始）まで止まるかをエンジンに委ねない（NFR-061）。`click` はどちらを止めても届く。
 - 開くときに、開く前のフォーカス要素と、入力欄なら `selectionStart` / `selectionEnd` を控える。
 - 開いたらメニューの最初の使える項目へ `focus({ preventScroll: true })` する。本文の選択範囲はフォーカスの移動では消えない。
 
@@ -1174,7 +1224,8 @@ export function closeContextMenu()     // フォーカスを戻す。開いて�
 | `Select all`（入力欄） | 控えた入力欄へフォーカスを戻して `select()` |
 | `Copy link address` | 上で求めた文字列を `deps.copyText` |
 
-- **`execCommand('copy')` が `false` を返した場合は、選択範囲の `toString()` を `deps.copyText` で格納する。** 書式は失われるが、コピーそのものが失敗するよりよい。**これは本来の経路ではない**——WebView2 と WebKitGTK の両方で `true` が返ることを実機で確かめる（AR-062, NFR-061）。
+- **項目を実行するときは、先に `closeContextMenu()` でメニューを閉じてフォーカスを開く前の位置へ戻し、それから上の表の処理を行う。** 本文の `Copy` は、戻したフォーカスのまま（選択範囲は保たれている）コピーする。
+- **`execCommand('copy')` が `false` を返した場合は、選択範囲の `toString()`（入力欄では控えた範囲の文字列）を `deps.copyText` で格納する。** 書式は失われるが、コピーそのものが失敗するよりよい。**入力欄の `Cut` で `execCommand('cut')` が `false` を返した場合も、同じく格納し、格納できたら控えた範囲を取り除いて `input` イベントを発火する**（`Paste` と同じ置き換え）。**これは本来の経路ではない**——WebView2 と WebKitGTK の両方で `true` が返ることを実機で確かめる（AR-062, NFR-061）。
 - **格納に失敗したら `deps.notify({ kind: 'clipboard' })` を、読み取りに失敗したら `deps.notify({ kind: 'paste' })` を呼ぶ**（IMP-315）。`deps.copyText` が `ErrorDTO` を返したときは、それをそのまま渡す。
 - **`Copy` を Go 側の `CopyToClipboard` で実装しない。** Go 側のクリップボード機能はプレーンテキストしか扱わず、`Ctrl+C`（書式付き）と結果が変わる（FR-063, AR-062）。
 
@@ -1182,9 +1233,13 @@ export function closeContextMenu()     // フォーカスを戻す。開いて�
 
 - `#contextmenu` の中に `<button class="contextmenu-item" role="menuitem">` を並べ、区切りは `<div class="contextmenu-separator" role="separator">` とする。使えない項目は `disabled` と `aria-disabled="true"` を与える。文言は `strings.js`（IMP-290）。
 - 位置は `event.clientX` / `clientY`。**キーボードから開いた場合**（`Shift+F10` とアプリケーションキー。WebView は座標を 0 にすることがある）は、選択範囲の矩形、無ければフォーカス要素の矩形の左下に置く。**ウィンドウの内側に収まるよう、右端と下端で折り返す**（DSP-140）。
-- `↑` / `↓` は使える項目の間を巡回し、`Enter` / `Space` で実行する。`Tab` / `Shift+Tab` は `preventDefault()` して何もしない（メニューの外へ出さない）。**これらは閉じる契機ではない**（UI-085）。**これらのキーは `#contextmenu` の `keydown` で受ける**（IMP-244 はメニューの表示中、`Esc` 以外を扱わない）。
+  - **キーボードから開いたかは、座標ではなく、直前の右ボタンの `pointerdown` の有無で見分ける。** `window` の `pointerdown`（キャプチャ）で `button === 2` なら印を付け、`contextmenu` と `keydown` で外す。印が無いまま届いた `contextmenu` をキーボードからとみなす。座標は 0 になるとは限らない（エンジンが選択範囲の近くの座標を入れることがある）。
+  - 入力欄では文書の選択範囲を見ず、入力欄の矩形を使う（入力欄の外に残る選択範囲の近くへ出てしまう）。選択範囲がその場所の中に無いときも、フォーカス要素（`body` なら場所の要素）の矩形を使う。
+  - **幅は前の位置のまま測ってよい。** 項目は折り返さない（DSP-140 の `white-space: nowrap`）ため、最小の内容幅が文言の幅になり、ウィンドウの右端の近くに置いてあっても幅は縮まない。
+- `↑` / `↓` は使える項目の間を巡回し、`Enter` / `Space` で実行する。`Tab` / `Shift+Tab` は `preventDefault()` して何もしない（メニューの外へ出さない）。**これらは閉じる契機ではない**（UI-085）。**これらのキーは `#contextmenu` の `keydown` で受ける**（IMP-244 はメニューの表示中、`Esc` 以外を扱わない）。**扱ったキーは `preventDefault()` に加えて `stopPropagation()` する**——`Enter` で項目を実行するとメニューが閉じるため、`window` の `keydown`（IMP-244）から見ると「メニューは開いていない」になり、`Enter` が検索の移動（`searchNext`）へ回る。
 - 閉じる契機は、項目の実行、`Esc`（IMP-244 の振り分け）、メニューの外での `pointerdown`、`#viewer` と `.about-licenses` の `scroll`（キャプチャで拾う）、`window` の `blur` と `resize` とする（FR-063）。
-- **メニューの外の `pointerdown` 以外の契機（項目の実行・`Esc`・`scroll`・`blur`・`resize`）で閉じたときは、控えたフォーカス要素へ `focus({ preventScroll: true })` で戻す。** `blur` で閉じた場合もその場で戻しておく（ウィンドウへ戻ったとき、そこにフォーカスがある）。
+- **メニューの外の `pointerdown` 以外の契機（項目の実行・`Esc`・`scroll`・`blur`・`resize`）で閉じたときは、控えたフォーカス要素へ `focus({ preventScroll: true })` で戻す。** **戻してから項目を取り除く**（フォーカスのある項目を先に取り除くと、フォーカスが一度 `body` へ落ちる）。開く前のフォーカスが `body` だったときは戻さない。
+- **メニューの上の `contextmenu`**（メニューにフォーカスがあるときの `Shift+F10` など）は `preventDefault()` だけを行い、閉じも開き直しもしない。**メニューを開いたまま別の場所で右クリックした場合**は、先に届く `pointerdown` で閉じ（戻さない）、続く `contextmenu` で開き直す。 `blur` で閉じた場合もその場で戻しておく（ウィンドウへ戻ったとき、そこにフォーカスがある）。
 - **メニューの外の `pointerdown` で閉じたときは戻さない**（フォーカスは押した先へ移る。UI-085）。**ただし控えたフォーカス要素がセルの編集欄（`input.cell-editor`）なら、フォーカスが外れたものとして `deps.cancelCellEdit()` を呼ぶ**（FR-142, UI-085）。押した先がその編集欄の中なら取り消さない（編集欄へフォーカスが移る）。**取り消さないと、編集欄は `blur` の取り消しを見送ったまま（下記）、フォーカスを持たずに残る。**
 - **情報ダイアログのフォーカストラップ（IMP-251）は、`#contextmenu` へのフォーカスを外に出たとみなさない。** ライセンス欄でメニューを開くと、ダイアログの外の要素へフォーカスが移るためである。
 - **セルの編集欄で開いた場合、編集欄の `blur` はメニューへのフォーカス移動を「外れた」に数えない**（FR-142, IMP-262）。判定は `blur` の `relatedTarget` が `#contextmenu` の中にあるかで行う。
@@ -1208,14 +1263,14 @@ export function leaveDocument()   // 文書の切り替えと状態画面への�
 ```
 
 - `#state-screen` に描画し、`#markdown` は空にする。
-- **状態画面へ移ることは文書の切り替えである**（1.7, DSP-352）。`#markdown` を空にする**前に**、`renderDocument` の手順 0a の「偽」の場合と同じ後始末を行う。**2 か所に書かず、`docswitch.js` の 1 つの関数（`leaveDocument()`）にまとめ、`viewer.js`（手順 0a）と `main.js`（状態画面を出す前）から呼ぶ。** `leaveDocument()` は次を行う。
+- **状態画面へ移ることは文書の切り替えである**（1.7, DSP-352）。`#markdown` を空にする**前に**、`renderDocument` の手順 0a の「偽」の場合と同じ後始末を行う。**2 か所に書かず、`docswitch.js` の 1 つの関数（`leaveDocument()`）にまとめ、`viewer.js`（手順 0a）と `navigate.js`（状態画面を出す前）から呼ぶ。** `leaveDocument()` は次を行う。
   - セルの編集欄を取り消す（`cancelCellEdit`。IMP-262）。右クリックメニューを閉じる（`closeContextMenu`。IMP-249）。検索を閉じる（IMP-241）。
   - 拡大画面を閉じる（`onDocumentSwitched`。IMP-253）。
-  - 並べ替えと原寸表示の状態を空にする（IMP-229, IMP-228）。
-  - `state.editable` と `state.editMode` を偽にして写す（IMP-260。`state.editSeq` は変えない）。
-- **`leaveDocument()` を `viewer.js` にも `overlay.js` にも置かない。** `viewer.js` は `overlay.js` を import しており（`hideStateScreen` ほか）、`overlay.js` から `viewer.js` の関数を呼ぶと循環参照になる（IMP-201）。**`docswitch.js` が import するモジュール（`editmode.js` / `contextmenu.js` / `search.js` / `expand.js` / `tablesort.js` / `media.js`）は、`viewer.js` / `overlay.js` / `main.js` / `docswitch.js` を import しない。**
-- **`main.js` の既存の `leaveDocument`（文書を離れる直前にスクロール位置を記録する。IMP-311）は `recordScroll` と呼び分ける。** 同じ名前の関数が 2 つあると、呼ぶべきほうを取り違える。
-- **状態画面を出すのは `main.js` だけとする**（`OpenResultDTO` / `LinkResultDTO` / イベントの `ErrorDTO` と、起動時）。順序は、`leaveDocument()` → `state.doc = null` と `state.target` の設定 → `showStateScreen(kind, params)` → `updateStatus()` とする。
+  - 並べ替えの状態を空にする（`tablesort.js` の `clearSort`。IMP-229）。原寸表示の状態を空にする（IMP-228）。
+  - `state.editable` と `state.editMode` を偽にして画面へ写す（IMP-260 の `leaveEditMode()`。`state.editSeq` は変えない）。
+- **`leaveDocument()` を `viewer.js` にも `overlay.js` にも置かない。** `viewer.js` は `overlay.js` を import しており（`hideStateScreen` ほか）、`overlay.js` から `viewer.js` の関数を呼ぶと循環参照になる（IMP-201）。**`docswitch.js` が import するモジュール（`editmode.js` / `contextmenu.js` / `search.js` / `expand.js` / `tablesort.js` / `media.js`）は、`viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` を import しない。**
+- **v1.0.0 の `main.js` の `leaveDocument`（文書を離れる直前にスクロール位置を記録する。IMP-311）は `recordScroll` と呼び分ける**（`navigate.js` に置く）。同じ名前の関数が 2 つあると、呼ぶべきほうを取り違える。
+- **状態画面を出すのは `navigate.js` の `enterStateScreen` だけとする**（`OpenResultDTO` / `LinkResultDTO` / イベントの `ErrorDTO` と、起動時。起動時は `main.js` がこれを呼ぶ）。順序は、`leaveDocument()` → `state.doc = null` と `state.target` の設定 → `showStateScreen(kind, params)` → `updateStatus()` とする。
 - **状態画面の間も、ステータス領域の左に対象のファイルのパスを出す**（FR-016, UI-060, DSP-302）。`state.target` に `ErrorDTO` の `path` / `displayPath` / `outsideTree`（IMP-307）を入れ、`status.js` の `updateStatus()` は **`state.doc ?? state.target`** のパスを出す（ツリー外なら絶対パスと `(outside tree)`。DSP-150）。**右の文字コード・行数は出さない**（描画していない）。`welcome` では `state.target` を `null` にする。**ツリーの強調（`filetree.js` の選択状態と、対象までの経路を開く処理。DSP-330）も同じく `state.doc ?? state.target` から決める**（DSP-302 の「対象ファイル」。ツリー外なら強調しない）。**v1.0.0 の `updateStatus()` とツリーの `markSelected` は `state.doc` しか見ておらず、状態画面の間も前の文書のパスと強調が残っていた**（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)）。
 - `confirm-large` の `Open anyway` の押下で `api.openConfirmed(path)` を呼ぶ（IMP-310, IMP-314）。
 - 文言は `strings.js` から取得する。
@@ -1234,7 +1289,7 @@ export function isAboutOpen()
 
 - `#overlay` に描画する。**独立したウィンドウを開かない**（AR-060, UI-100）。
 - **`main.js` は `api.getAbout()` の応答を受け取って `showAbout` を呼ぶ直前に、拡大画面が開いていれば（`isExpandOpen()`）出さない。** 応答を待つ間に拡大画面を開けるためである。両者は同じ層（DSP-015 の 50）にあり、DOM では `#expand-view` が `#overlay` より後ろにあるため、後から出したダイアログが拡大画面の下に隠れる。
-- **Go を呼ぶのは `main.js` の役目とし、`overlay.js` は受け取った `AboutDTO` を描くだけにする**（IMP-201）。リンクの処理も `onLink` として受け取り、本文中のリンクとまったく同じ経路（IMP-312）へ渡す。
+- **Go を呼ぶのは `main.js` の役目とし、`overlay.js` は受け取った `AboutDTO` を描くだけにする**（IMP-201）。リンクの処理も `onLink` として受け取り、本文中のリンクとまったく同じ経路（IMP-312）へ渡す。**ダイアログの中身は `about.js` の `buildAboutDialog(about, handlers)` が組み立てる**（IMP-011。IMP-252 の `editors.js` と同じ形）。API はこの 4 つだけとし、`overlay.js` に置く。
 - 表示中は背後をフォーカストラップし、`Tab` がダイアログ外へ出ないようにする。端に来たときだけ折り返し、途中では既定の移動に任せる。**ただし右クリックメニュー（`#contextmenu`。IMP-249）へのフォーカスは外に出たとみなさない。**
 - **キーボードのショートカットも止める**（UI-100 の「背後のメインウィンドウの操作を受け付けない」）。暗幕はマウスしか塞がない。`Esc` だけは通す。止めるときも既定の動作は抑止する（`false` を返さない。IMP-244）。そうしないと `Ctrl` + `+` が WebView 自身のページ拡大として処理される。
 - **ただし `Enter` / `Shift+Enter` は既定の動作を残す**（`false` を返す。IMP-244）。`Enter` の既定の動作は「フォーカスしている操作要素を実行する」であり、これは背後ではなく**ダイアログ自身の操作**である。抑止すると、`Open`（UI-103）や `Close` にフォーカスがあっても `Enter` で実行できない。**割り当て自体（検索の次候補へ移動）は止まる**ので、背後を受け付けないことと両立する。
@@ -1291,7 +1346,9 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 **器**
 
 - `#expand-view` に描画する（IMP-202）。**`#overlay` を使わない**——`#overlay` は全面を覆い、拡大画面はステータス領域を覆わない（UI-104）。表示・非表示は `hidden` 属性で切り替える。
+- **図の中のリンク（MD-081）は押しても何もしない**（UI-104）。既定の動作（WebView の中での遷移）は `viewer.js` が `#expand-view` に置くリスナが止める（IMP-223）。**`expand.js` にリンクの処理を置かない。** ドラッグの `setPointerCapture` により、押して離したクリックは舞台へ届くことが多いが、エンジンの振る舞いに頼らない（NFR-061）。
 - 中身は、操作バー（`.expand-bar`）と、図を置く舞台（`.expand-stage`）と、その中の移動する器（`.expand-content`）とする。操作バーのボタンは `.expand-fit` / `.expand-actual` / `.expand-zoom-out` / `.expand-zoom-in` / `.expand-close`、倍率の表示は `.expand-zoom-value` とする。
+- **`expand.js` は `viewer.js` / `main.js` / `docswitch.js` / `shortcuts.js` / `zoom.js` を import しない**（いずれもこのモジュールを呼ぶ。`shortcuts.js` は `isExpandOpen` / `handleExpandKey` を、`zoom.js` は `isExpandOpen` を直接 import する）。本来の大きさのために `media.js` の `naturalSize` を import する（`media.js` は `expand.js` を import しない。拡大画面へは `main.js` が渡す `deps` で知らせる）。
 - 操作バーのボタンは `data-tip` と同じ文字列の `aria-label` を持つ（IMP-247, IMP-295）。**キーの表記はこのモジュールのキーの表から組み立て、`strings.js` に書かない**（IMP-290 の考え方）。**キーの表には閉じるボタンの表記のために `Esc` も載せるが、`handleExpandKey` は `Esc` を処理しない**（下記）。
 
 **対象を移す**
@@ -1305,13 +1362,13 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 
 - 状態は `{ scale, x, y, fit }` をモジュール変数に持つ。`scale` は 0.1〜10（FR-122 の 10 %〜1000 %）。
 - **倍率は CSS の `transform: scale()` で掛けない。`.expand-content` の幅と高さを「本来の大きさ × 倍率」にする**（CSS カスタムプロパティ `--expand-width` / `--expand-height`）。中の `svg` / `img` はその器いっぱいに描く（DSP-173）。**`transform` による拡大は、エンジンが描画済みのビットマップを引き伸ばすことがあり、SVG の輪郭がぼやけうる**（FR-122 の MUST）。**位置の移動にだけ `transform: translate()` を使う**（CSS カスタムプロパティ `--expand-x` / `--expand-y`。px）。 `will-change` を付けない（ビットマップとして固定されうる）。**両エンジンで輪郭がぼやけないことを実機で確かめる**（NFR-061）。
-- 本来の大きさは IMP-228 の `naturalWidth` と、同じ規則の高さ（`height` 属性か `viewBox` の高さ、`naturalHeight`）とする。
+- 本来の大きさは IMP-228 の `naturalSize`（幅と、同じ規則の高さ。`height` 属性か `viewBox` の高さ、`naturalHeight`）とする。
 - **開いた時点の倍率（`Fit`）**は `min(舞台の幅 / 本来の幅, 舞台の高さ / 本来の高さ)` を 0.1〜10 に丸めたものとし、中央に置く（FR-122）。
 - `+` / `-` とボタンは 1.25 倍ずつ、**画面の中心を基準に**変える。範囲の端では丸める（UI-104）。
 - **範囲の端では、`-`（10 %）または `+`（1000 %）のボタンに `aria-disabled="true"` を与え、`disabled` 属性は付けない。** `disabled` にするとフォーカス中のボタンからフォーカスが外れ、操作バーの中を巡るフォーカス（下記）が壊れる。`aria-disabled` のボタンを押しても何もしない。見た目は DSP-173。
 - **ホイールは、カーソルの下の点が動かないように倍率と位置を同時に変える**（FR-122）。1 回の `wheel` を 1 段とし、`deltaY` の符号で向きを決める。**タッチパッドの細かいイベントは、50 ms の間に届いたものを 1 段にまとめる。** `Ctrl` の有無を問わない。`preventDefault()` する（IMP-242 の本文の倍率を動かさない）。
 - ドラッグは `pointerdown`（主ボタン）で `setPointerCapture` し、`pointermove` を `requestAnimationFrame` でまとめて位置を変える（NFR-012 の 60 fps）。**選択を始めない**（`user-select: none`。DSP-173）。
-- 方向キーは 1 回 40px 移動する。
+- 方向キーは 1 回 40px 移動する。**向きはスクロールと同じ**とする（`→` で右側が見える。中身は左へ動く）。ドラッグ（中身がポインタと一緒に動く）とは逆向きになる。
 - **位置は、対象の少なくとも 48px が舞台の中に残る範囲に丸める**（UI-104 の「画面の外へ完全に出ない」）。
 - `0` は倍率 1、`F` は開いた時点の規則で決め直す。`fit` は `F` と `Fit` で真、それ以外の倍率の操作で偽にする。
 - `resize` のとき、`fit` が真なら決め直し、偽なら舞台の中心に見えている点を保つ（UI-104）。
@@ -1332,6 +1389,7 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 
 - **同じ文書の再描画**（IMP-220 の手順 0a で `sameDocument` が真）では閉じない。本文が差し替わると、移していた要素の元の位置（代わりの要素）が消える。**移していた要素は拡大画面に残したまま、同じ鍵の対象を待つ。**
 - `onTargetSettled(key, target)` で**開いている鍵と同じ鍵**が届いたら、`target` が図か読み込めた画像なら新しい要素と差し替え（古い要素は捨てる）、`scale` / `x` / `y` を保つ。**描画に失敗した・読み込めなかった知らせなら閉じる**（FR-120 の「描画が終わってから判断する」）。
+- **「開いている鍵の知らせがまだ届いていない」は、`onImagesNumbered` を受けた時点から数える。** 同じ文書の再描画は必ず手順 5a（`numberImages`）を通るため、これを再描画が始まった合図とし、以後に同じ鍵の `onTargetSettled` が来たかを控える。開く前の描画の遅れた `onAllDiagramsSettled`（開いた時点で他の図がまだ描画中だった）では閉じない。
 - **同じ鍵の対象が文書に無い**（再描画後の図や画像の数が減った）ことは、図なら `onAllDiagramsSettled`（IMP-228, IMP-230）を受けた時点で、開いている鍵の知らせがまだ届いていないことから分かる。画像なら `onImagesNumbered(count)`（IMP-228 の `numberImages`。IMP-220 の手順 5a）で、開いている番号が `count` 以上であることから分かる。そこで閉じる。**画像はあっても読み込みを待つ**（成否は `onTargetSettled` で届く）。
 - 差し替えた後に閉じた場合、新しい要素を新しい代わりの要素の位置へ戻す。**差し替えの前に閉じた場合は、古い要素を戻さず捨てる**（元の位置はもう無い）。
 - **文書の切り替え**（`onDocumentSwitched`）では閉じる。移していた要素は捨てる。
@@ -1347,25 +1405,28 @@ FR-140〜FR-144 / UI-055 のフロントエンド側。**判断と書き込み�
 export function initEditMode(deps)       // { api, notify, focusViewer }
 export function toggleEditMode()         // ボタンと Ctrl+Shift+M の共通の入口。何もしなければ false
 export function applyEditMode(doc)       // renderDocument の手順 6d
+export function leaveEditMode()          // editable と editMode を偽にして画面へ写す（leaveDocument と document:removed）
 export function isEditableCell(element)  // 編集モード中で、element が鍵の合うセルの中にあるか（IMP-223）
 
 // js/refs.js — 目印の照合（IMP-120）。state.js 以外を import しない
 export function isOwnRef(element, kind)  // data-ref の鍵が state.doc.refKey と合い、種類が kind か（task / table / cell / mermaid / plantuml）
 export function ownLinkTarget(anchor)    // data-link の鍵が合えば書かれたとおりのリンク先、合わなければ null（IMP-249）
 export function ownSource(block)         // 鍵の合う図のブロック（mermaid / plantuml）なら data-source、それ以外は null（IMP-221, IMP-230）
+export function ownRef(element, kind)    // isOwnRef が真なら data-ref の値そのもの、偽なら null（IMP-261, IMP-262 が Go へ渡す。IMP-316）
 ```
 
-- **目印の照合は `refs.js` の `isOwnRef` / `ownLinkTarget` / `ownSource` の 3 関数に閉じ込め、鍵を読むのはこのモジュールだけとする。** 並べ替え（IMP-229）、右クリックメニュー（IMP-249）、リンク捕捉（IMP-223 の `isEditableCell` 経由）、チェックボックスとセル（IMP-261, IMP-262）、図の描画（IMP-230）、コピー（IMP-221）、図と画像のボタン（IMP-228）もこれを使う。**鍵を読む箇所を増やさない**——1 か所でも照合を忘れると、生 HTML の要素が編集・並べ替え・描画・コピーの対象になる（FR-141, FR-130, NFR-030, [BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。
+- **目印の照合は `refs.js` の `isOwnRef` / `ownLinkTarget` / `ownSource` / `ownRef` の 4 関数に閉じ込め、鍵を読むのはこのモジュールだけとする。** **`data-ref` の値を Go へ渡す箇所（チェックボックスとセル）も、`getAttribute('data-ref')` を自分で読まずに `ownRef` を通す**——照合を通ったものだけが渡り、`data-ref` を読む箇所が `refs.js` だけに保たれる（`grep` で確かめられる）。 並べ替え（IMP-229）、右クリックメニュー（IMP-249）、リンク捕捉（IMP-223 の `isEditableCell` 経由）、チェックボックスとセル（IMP-261, IMP-262）、図の描画（IMP-230）、コピー（IMP-221）、図と画像のボタン（IMP-228）もこれを使う。**鍵を読む箇所を増やさない**——1 か所でも照合を忘れると、生 HTML の要素が編集・並べ替え・描画・コピーの対象になる（FR-141, FR-130, NFR-030, [BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。
 - **照合を `editmode.js` ではなく葉のモジュール（`refs.js`）に置くのは、`lazy.js` / `copy.js` / `media.js` からも使うためである。** これらが `editmode.js` を import すると、`editmode.js` の依存を通じて循環しうる（`viewer.js` → `lazy.js` → `editmode.js` → …）。**`refs.js` は `state.js` 以外を import しない。**
 - `data-ref` の値は `<鍵>:<種類>:<番号…>` とし、種類と番号の形は IMP-120 の表のとおりとする。**鍵と種類の両方が合うときだけ真とする。** `ownSource` は `data-mermaid` / `data-plantuml` の有無ではなく、鍵の合う `mermaid` / `plantuml` の目印で判断する。
-- `toggleEditMode()` は、`state.editable` が偽なら何もせず `false` を返す（UI-021 のボタンは淡色）。真なら `api.setEditMode(!state.editMode)` を呼び、返った `EditModeDTO.on` を `state.editMode` へ入れて画面へ写す。**呼ぶ前に見た目を変えない**——開始できなかった場合に戻す処理が要り、得るものが無い。
-- `applyEditMode(doc)` は `doc.editable` / `doc.editMode` を `state` へ写し、次を行う。**Go 側の値を正とし、フロントエンドが持っていた値で上書きしない**（IMP-302）。**ただし `doc.editSeq` が `state.editSeq` より小さければ写さない**（到着順が入れ替わった古い値。IMP-302）。写すときは `state.editSeq` も更新する。`toggleEditMode` の結果（`EditModeDTO.seq`）も同じ規則で写す。**さらに、`state.editable` が偽のときは、`on` が真の `EditModeDTO` を写さない。** 状態画面への移行と `document:removed` は版番号を運ばない（`EditSeq` は `DocumentDTO` と `EditModeDTO` にしか無い。IMP-302, IMP-316）ため、その後に遅れて届いた `SetEditMode(true)` の結果（版は手元より大きい）を写すと、**状態画面や削除の後に枠とラベルとボタンの ON が出る**（FR-140, DSP-320）。次に編集できる文書が届けば、`DocumentDTO` の版で揃う。
+- `toggleEditMode()` は、`state.editable` が偽なら何もせず `false` を返す（UI-021 のボタンは淡色）。真なら `api.setEditMode(!state.editMode)` を呼び、返った `EditModeDTO.on` を `state.editMode` へ入れて画面へ写す。**呼んだら応答を待たずに `true` を返す**（IMP-244 は戻り値が `false` でなければ既定の動作を止める。`Promise` を返すと、開始できない状態の `false` と区別できない）。**呼ぶ前に見た目を変えない**——開始できなかった場合に戻す処理が要り、得るものが無い。
+- `applyEditMode(doc)` は `doc.editable` / `doc.editMode` を `state` へ写し、次を行う。**Go 側の値を正とし、フロントエンドが持っていた値で上書きしない**（IMP-302）。**ただし `doc.editSeq` が `state.editSeq` より小さければ写さない**（到着順が入れ替わった古い値。IMP-302）。写すときは `state.editSeq` も更新する。**版が古くて値を写さなかったときも、画面への反映（下の箇条）は行う**——本文は差し替わっており、チェックボックスの有効化とセルの印を新しい本文に付け直す必要がある。`toggleEditMode` の結果（`EditModeDTO.seq`）も同じ規則で写す。**さらに、`state.editable` が偽のときは、`on` が真の `EditModeDTO` を写さない。** 状態画面への移行と `document:removed` は版番号を運ばない（`EditSeq` は `DocumentDTO` と `EditModeDTO` にしか無い。IMP-302, IMP-316）ため、その後に遅れて届いた `SetEditMode(true)` の結果（版は手元より大きい）を写すと、**状態画面や削除の後に枠とラベルとボタンの ON が出る**（FR-140, DSP-320）。次に編集できる文書が届けば、`DocumentDTO` の版で揃う。
   - `#btn-editmode` の `aria-pressed` と、`state.editable` が偽のときの `disabled`（UI-021）
   - `#viewer-frame` の `is-editing` クラスと、`#editmode-badge` の `hidden`（UI-055, DSP-126）。**ラベルをスクロールバーの内側に置くため、`#viewer` の `offsetWidth - clientWidth` を `--viewer-scrollbar-width` として `#viewer-frame` に与える**（ウィンドウ幅の変化でも測り直す。DSP-126）
   - チェックボックスの有効化（IMP-261）と、セルの印（IMP-262）
+  - **ボタン・枠・ラベル・チェックボックス・セルの印は 1 つの関数（`render`）で同時に切り替え、`applyEditMode` / `leaveEditMode` / `EditModeDTO` を写すときのすべてがそこを通る**（DSP-320）。
   - **編集モードでなくなったら、セルの編集欄を取り消す**（`cancelCellEdit`。FR-142 の「編集モードが終わった場合は取り消す」）。**取り消す時点で編集欄にフォーカスがあれば（`document.activeElement` が編集欄）、`deps.focusViewer()` で本文ペインへ移す。** そうでなければフォーカスは動かさない（UI-055 の「フォーカスが外れたことによる取り消し」と同じ扱い）。**編集欄は DOM から取り除かれるため、フォーカスがあったまま消すと `body` に落ち、`PageUp` / `PageDown` が効かなくなる**（BUG-007 と同じ症状）。**ボタン・`Ctrl+Shift+M`・削除・読み直しのどの経路で終わっても、この 1 か所を通る。**
-- `document:removed`（IMP-320）を受けたら `state.editMode` と `state.editable` を偽にして画面へ写す（Go 側は既に終えており、次に読み込めるまで開始させない。IMP-195, FR-140 の表）。
-- **状態画面（`showStateScreen`。IMP-250）を出すときも、`state.editable` と `state.editMode` を偽にして写す**（FR-140 の表）。
+- `document:removed`（IMP-320）を受けたら `state.editMode` と `state.editable` を偽にして画面へ写す（`main.js` の購読が `leaveEditMode()` を呼ぶ。Go 側は既に終えており、次に読み込めるまで開始させない。IMP-195, FR-140 の表）。
+- **状態画面（`showStateScreen`。IMP-250）を出すときも、`state.editable` と `state.editMode` を偽にして写す**（FR-140 の表。`leaveDocument()` が `leaveEditMode()` を呼ぶ）。
 
 ### IMP-261: チェックボックスの切り替え **MUST**
 
@@ -1373,7 +1434,7 @@ FR-141 / DSP-126 / DSP-321 を実装する。
 
 - 編集モードの間、`isOwnRef(input, 'task')` が真の `input[type=checkbox]` から `disabled` を外し、`is-editable` のクラスを付ける。**編集モードでない間と、鍵の合わない `input`（生 HTML）には何もしない**——`disabled` のまま、CSS の `pointer-events: none`（DSP-121）も残る。
 - `#markdown` に `change` のリスナを 1 つ置く（イベント委譲）。対象が上の条件を満たすときだけ処理する。
-- **見た目はブラウザが既に反転している**（`change` の時点）。これが FR-141 の「即座に反転」（NFR-012）にあたる。その値を `checked` として `api.setTask(ref, checked)` を呼ぶ。`ref` は `data-ref` の値そのものを渡す（IMP-316）。
+- **見た目はブラウザが既に反転している**（`change` の時点）。これが FR-141 の「即座に反転」（NFR-012）にあたる。その値を `checked` として `api.setTask(ref, checked)` を呼ぶ。`ref` は `data-ref` の値そのものを渡す（IMP-316）。**値は `refs.js` の `ownRef(input, 'task')` で得る**（IMP-260）。**呼び出しそのものが失敗した（`Promise` が拒否された）ときは `stale` と同じく戻し、通知しない**（Go 側は回復したパニックも DTO で返す。IMP-310）。
 - 結果に応じて整える。
 
 | 結果 | 見た目 | 通知 |
@@ -1392,7 +1453,7 @@ FR-142 / UI-055 / DSP-127 / DSP-321 を実装する。
 
 ```js
 export function isCellEditing()   // 編集欄が開いているか（IMP-244 の Esc / Enter の振り分け）
-export function cancelCellEdit()  // 開いていれば取り消す（IMP-220 の手順 0a, IMP-244）
+export function cancelCellEdit()  // 開いていれば取り消して true、開いていなければ false（IMP-220 の手順 0a, IMP-244）
 ```
 
 **編集できるセルの印**
@@ -1404,13 +1465,13 @@ export function cancelCellEdit()  // 開いていれば取り消す（IMP-220 �
 - `#markdown` に `dblclick` のリスナを 1 つ置く。`state.editMode` が真で、`closest('th, td')` が `isOwnRef(cell, 'cell')` を満たすときだけ処理する。
 - **セルの中のボタンの上でのダブルクリックは無視する**（FR-142）。対象は `.sort-btn`（IMP-229）と `.media-actions`（IMP-228）であり、判定は `closest('.sort-btn, .media-actions, .cell-editor')` で行う。**開いている編集欄（`.cell-editor`）の中のダブルクリックも無視する**——語を選ぼうとしてダブルクリックすると、同じセルで編集欄が作り直され、入力中の文字が失われる。無視するときは下の `removeAllRanges()` も呼ばない（編集欄の中の語の選択を残す）。**セルの中のリンクの上では編集を始めてよい**（1 回目のクリックの遷移は IMP-223 が止めている）。
 - 既定のダブルクリックによる単語の選択は、`dblclick` で `getSelection().removeAllRanges()` を呼んで消す。
-- `api.getCellSource(ref)` を呼ぶ。`stale` なら何もしない。`error` なら `notify` して開かない（`edit-conflict` のときは Go 側が読み直しを送っている。IMP-195）。
-- **応答を待つ間にセルが DOM から消えていたら（再描画が先に届いた）、または `state.editMode` が偽になっていたら（ボタンや `Ctrl+Shift+M` で編集モードを終えた。本文は再描画されないため、セルは残っている）、開かない。**
-- `<input type="text" class="cell-editor">` を作り、`value` に `text` を入れて**セルの中**に置く（`th` / `td` に `is-cell-editing` のクラスを付ける。配置と寸法は DSP-127）。`focus()` し、カーソルを末尾へ置く。**開いている編集欄は常に 1 つだけとする。**
+- `api.getCellSource(ref)` を呼ぶ（`ref` は `ownRef(cell, 'cell')`）。`stale` なら何もしない。`error` なら `notify` して開かない（`edit-conflict` のときは Go 側が読み直しを送っている。IMP-195）。
+- **応答を待つ間にセルが DOM から消えていたら（再描画が先に届いた）、または `state.editMode` が偽になっていたら（ボタンや `Ctrl+Shift+M` で編集モードを終えた。本文は再描画されないため、セルは残っている）、開かない。** **後から別のセルをダブルクリックしていたときも開かない**——ダブルクリックのたびに番号を進め、応答が届いた時点で最新の番号でなければ捨てる。応答の順が入れ替わると、先に押したセルの編集欄が後から押したセルの編集欄を置き換えるためである。
+- `<input type="text" class="cell-editor">` を作り、`value` に `text` を入れて**セルの中**に置く（`th` / `td` に `is-cell-editing` のクラスを付ける。配置と寸法は DSP-127）。`focus({ preventScroll: true })` し、`setSelectionRange` でカーソルを末尾へ置く。**開いている編集欄は常に 1 つだけとする**（開く前に `cancelCellEdit()`）。**`value` の設定でもカーソルは末尾へ移る（HTML の規則）が、フォーカスの移動で全体を選ぶエンジンがありうるため、明示して置く**（NFR-061。Chromium では違いが出ず、DOM 検査では確かめられない。実機で見る）。
 
 **キー**（編集欄の `keydown`）
 
-- **`event.isComposing` が真なら何もしない**（FR-142 の IME）。
+- **`event.isComposing` が真なら何もしない**（FR-142 の IME）。**`keyCode` が 229 のときも何もしない**——変換を確定する `Enter` を、`isComposing` が偽の `keydown` として届けるエンジンがある（NFR-061。実機で見る）。
 - `Enter`: 確定する。`preventDefault()` と `stopPropagation()` を行う（IMP-244 の検索の移動へ届かせない）。
 - `Esc` はここで扱わない。**IMP-244 の振り分けの (3) が `cancelCellEdit()` を呼ぶ**（右クリックメニューが開いていれば (1) が先に閉じる）。
 - `Ctrl+Z` / `Ctrl+Y` は素通しする（入力欄の中の取り消し。FR-144, IMP-244）。
@@ -1432,7 +1493,7 @@ export function cancelCellEdit()  // 開いていれば取り消す（IMP-220 �
 **確定**
 
 1. `value` を控えて編集欄を取り除く。
-2. **見た目を先に変える**（NFR-012, DSP-321）。**セルの直接の子のうち `.sort-btn` 以外**を 1 つの `DocumentFragment` へ退避し（画像の `.media-actions` は `.media-image` の中にあり、画像ごと退避する。IMP-228）、代わりに `<span class="cell-pending">` に `textContent` で控えた文字列を入れて置く。**`innerHTML` を使わない**（IMP-220）。
+2. **見た目を先に変える**（NFR-012, DSP-321）。**セルの直接の子のうち `.sort-btn` 以外**を 1 つの `DocumentFragment` へ退避し（画像の `.media-actions` は `.media-image` の中にあり、画像ごと退避する。IMP-228）、代わりに `<span class="cell-pending">` に `textContent` で控えた文字列を入れて**セルの先頭に**置く（並べ替えのボタンは末尾に残る）。**`innerHTML` を使わない**（IMP-220）。**`Enter` で確定したときの本文ペインへのフォーカスの移動（手順 5）は、この直後、`setCell` の応答を待つ前に行う。**
 3. `api.setCell(ref, value)` を呼ぶ。
 4. 結果に応じて整える。`changed` なら何もしない（再描画を待つ）。**`changed` が偽・`stale`・`error` なら、`.cell-pending` を退避した子で戻す**（セルがまだ DOM にある場合だけ）。`error` は `notify` する。
 5. **`Enter` で確定した後と `Esc` で取り消した後は、`deps.focusViewer()` で本文ペインへフォーカスを戻す**（UI-055）。
@@ -1452,7 +1513,7 @@ export function undoEdit()   // 編集モードでなければ false
 export function redoEdit()
 ```
 
-- `state.editMode` が偽なら `false` を返す（IMP-244。既定の動作を止めない）。
+- `state.editMode` が偽なら `false` を返す（IMP-244。既定の動作を止めない）。**真なら呼んで、応答を待たずに `true` を返す**（`toggleEditMode` と同じ理由）。
 - `api.undoEdit()` / `api.redoEdit()` を呼ぶ。**見た目を先に変えない。** どこが変わるかをフロントエンドは知らない（`Patch` は Go 側にある。IMP-108）。表示は `document:changed` で届く。
 - `error` なら `notify` する。`changed` が偽（取り消すものが無い）なら何もしない（FR-144 の「通知しない」）。**`stale` なら何もしない**（通知しない。取り消しは鍵を持たないため、編集モードでなくなっていた・状態画面へ移っていた場合に当たる。FR-143）。
 - **入力欄にフォーカスがあるときは、ここへ来ない**（IMP-244 が素通しする）。

@@ -1,6 +1,9 @@
 package document
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -43,6 +46,25 @@ type Document struct {
 	NeedsKaTeX    bool               // KaTeX の遅延ロード判定（AR-021）
 	NeedsPlantUML bool               // PlantUML の遅延ロード判定（AR-021, MD-085）
 	Warnings      []Warning          // 描画は継続するが利用者に伝える事象
+	Digest        [sha256.Size]byte  // 読み込んだ生バイト列の要約（FR-143 の「把握している内容」）
+	RefKey        string             // この描画の目印の鍵（IMP-120）。描画のたびに作り直す
+}
+
+// Editable は編集モードを開始できる文書かを返す（IMP-100, FR-140 の表）。
+// 不正なバイト列を置き換えた文書は、表示とファイルの内容が一致しないため偽とする。
+//
+// 置き換えたかどうかは、Load が付ける WarnInvalidEncoding で判断する。同じ事実を
+// 別のフィールドにも持つと、片方だけが食い違いうる。
+func (d *Document) Editable() bool {
+	if d == nil {
+		return false
+	}
+	for _, w := range d.Warnings {
+		if w.Kind == WarnInvalidEncoding {
+			return false
+		}
+	}
+	return true
 }
 
 // WarningKind は警告の種別（IMP-100）。
@@ -67,6 +89,12 @@ type LoadOptions struct {
 	// Confirmed が true の場合、ConfirmThreshold を超えていても描画する。
 	// FR-016 の「Open anyway」に対応する。
 	Confirmed bool
+
+	// RefKey が空でなく、読んだ生バイト列の要約が ExpectDigest と一致すれば、
+	// 新しい鍵を作らずにこの値を使う（IMP-120）。
+	// 編集モードの書き込みの直後の読み直しだけが渡す（IMP-195 の 8, FR-143）。
+	RefKey       string
+	ExpectDigest [sha256.Size]byte // RefKey を使ってよい内容の要約（書き込んだ内容の SHA-256）
 }
 
 // SizeError はサイズ超過を、判断に必要な数値とともに伝える（IMP-102）。
@@ -123,11 +151,25 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 		return nil, classifyError(abs, err)
 	}
 
+	// 要約と鍵は読んだ直後、正規化と変換の前に決める（IMP-102 の図）。
+	//
+	// **要約は正規化の前の生バイト列で取る**（FR-143, FR-144）。正規化の後で取ると、
+	// 外部のエディタが改行コードや BOM だけを変えて保存したときに「変わっていない」と
+	// 判断し、CRLF の文書へ LF の位置で書き込む（UT-116 ケース 4・5）。内容の写しは
+	// 保持しない。
+	digest := sha256.Sum256(raw)
+	key, err := refKeyFor(opts, digest)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", abs, err)
+	}
+
 	text, replaced := Normalize(raw)
 
 	// 相対パスの基準は表示中ファイルのディレクトリとする（AR-042）。
 	// ツリールートを基準にしてはならない。
-	res, err := r.Render(text, filepath.Dir(abs))
+	// **自分の鍵を渡す。** 渡さないと目印が付かず、編集・並べ替え・リンクのコピーが
+	// 働かない（IMP-110, UT-116 ケース 8・9）。
+	res, err := r.Render(text, filepath.Dir(abs), key)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", abs, err)
 	}
@@ -141,6 +183,8 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 		NeedsMermaid:  res.NeedsMermaid,
 		NeedsKaTeX:    res.NeedsKaTeX,
 		NeedsPlantUML: res.NeedsPlantUML,
+		Digest:        digest,
+		RefKey:        key,
 
 		// 警告がなくても nil ではなく空スライスを返す。JSON で [] になり、
 		// フロントエンドが null を場合分けせずに済む（Headings と同じ扱い）。
@@ -152,6 +196,33 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	}
 
 	return doc, nil
+}
+
+// refKeyLen は鍵の元にする乱数のバイト数（IMP-102。16 進で 16 文字になる）。
+const refKeyLen = 8
+
+// refKeyFor はこの描画の目印の鍵を決める（IMP-102, IMP-120）。
+//
+// **鍵は Load のたびに作り直す。** 同じファイルを読み直しても値が変わり、鍵が変わる
+// こと自体が「その描画の後に再描画が起きた」ことの印になる（FR-143）。書き手は変換より
+// 前に文書を書くため鍵を知りようがなく、生 HTML で目印を偽装できない（NFR-030）。
+//
+// 例外は opts.RefKey が空でなく、**読んだ生バイト列の要約が opts.ExpectDigest と一致する**
+// ときで、その値を使う。編集モードの書き込みの直後の読み直し（IMP-195 の 8）だけが渡す。
+// **一致しなければ新しい鍵を作る**——書き込みと読み直しの間に外部の書き込みが入ると、
+// 古い描画で作った指示が通り、別のチェックボックスを書き換える（UT-116 ケース 10）。
+// ExpectDigest を渡さない（ゼロ値）場合も、生バイト列の要約とは一致しないため作り直す
+// （一致を確かめずに鍵を使わない。ケース 11）。
+func refKeyFor(opts LoadOptions, digest [sha256.Size]byte) (string, error) {
+	if opts.RefKey != "" && digest == opts.ExpectDigest {
+		return opts.RefKey, nil
+	}
+
+	var b [refKeyLen]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("cannot generate a reference key: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 // checkSize はサイズ閾値を判定する（IMP-101, FR-016）。

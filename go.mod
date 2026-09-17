@@ -2,6 +2,8 @@ module github.com/kznagamori/go_MarkView
 
 go 1.25.0
 
+toolchain go1.26.8
+
 require (
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/fsnotify/fsnotify v1.10.1
@@ -12,6 +14,7 @@ require (
 	github.com/yuin/goldmark-emoji v1.0.6
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc
 	github.com/yuin/goldmark-meta v1.1.0
+	golang.org/x/net v0.56.0
 	golang.org/x/sys v0.46.0
 )
 
@@ -43,7 +46,6 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 )

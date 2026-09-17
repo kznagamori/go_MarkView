@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"errors"
@@ -26,6 +26,12 @@ var errPanic = errors.New("recovered from panic")
 // （FR-061, AR-062）。
 var errClipboard = errors.New("cannot write to the clipboard")
 
+// errPaste はクリップボードからテキストを読めなかったことを表す（FR-063, AR-062）。
+//
+// ReadClipboard は Go の error のまま返す（IMP-308）。種別は 1 つしかなく、フロントエンドは
+// 失敗なら strings.js の paste の文言を出す（IMP-315）。
+var errPaste = errors.New("cannot read the clipboard")
+
 // errLinkNotFound はリンク先が見つからないことを表す（FR-050）。
 var errLinkNotFound = errors.New("link target not found")
 
@@ -45,7 +51,7 @@ var errNoTarget = errors.New("no file is currently targeted")
 // ための拒否であり（IMP-300 の 3, NFR-035）、通常の操作では起こらない。
 var errUnknownEditor = errors.New("the selected editor is not available")
 
-// newErrorDTO はエラーを ErrorDTO へ写す（IMP-315）。
+// newErrorDTO は**文書を開く経路**（IMP-192）のエラーを ErrorDTO へ写す（IMP-315）。
 //
 // path は対象のパス（リンクの場合は href）。エラー値そのものからは取り出せない
 // ため、呼び出し側が渡す。番兵エラーは `fmt.Errorf("%s: %w", path, err)` の形で
@@ -53,20 +59,35 @@ var errUnknownEditor = errors.New("the selected editor is not available")
 //
 // **分類できないエラーは render-error とする。** 想定外の失敗を「見つからない」
 // と伝えると、利用者は存在するファイルを探し続けることになる。
+//
+// **状態画面の種別へ落とすのは、文書を開く経路だけである**（IMP-315）。ステータスに出す
+// 操作は、それぞれの写し方を使う——リンクの委譲は newOpenFailedDTO、エディタは
+// newEditorErrorDTO、書き込みは newEditErrorDTO。ここを使い回すと、分類できない失敗で
+// 状態画面が出て本文が消える（BUG-013。v1.0.0 はリンクの委譲でこの形だった）。
 func newErrorDTO(path string, err error) *ErrorDTO {
 	if err == nil {
 		return nil
 	}
 
+	var dto *ErrorDTO
+
 	// サイズ超過は判断に必要な数値を伴う（IMP-102, UI-052）。
 	var sizeErr *document.SizeError
 	if errors.As(err, &sizeErr) {
-		return newSizeErrorDTO(sizeErr)
+		dto = newSizeErrorDTO(sizeErr)
+	} else {
+		kind, message := classifyError(path, err)
+		dto = &ErrorDTO{Kind: kind, Message: message, Path: path}
 	}
 
-	kind, message := classifyError(path, err)
+	// 状態画面を出した失敗には、開く処理が画面の対象の表示用パスを添えている（IMP-307,
+	// IMP-192。screenError）。**ステータスに出す種別には添えていない**ため、空のまま残る。
+	var screen *screenError
+	if errors.As(err, &screen) {
+		dto.DisplayPath, dto.OutsideTree = screen.displayPath, screen.outsideTree
+	}
 
-	return &ErrorDTO{Kind: kind, Message: message, Path: path}
+	return dto
 }
 
 // newSizeErrorDTO はサイズ超過を写す（IMP-315, FR-016）。
@@ -152,6 +173,50 @@ func newEditorErrorDTO(err error) *ErrorDTO {
 	return &ErrorDTO{
 		Kind:    errKindEditorFailed,
 		Message: "Failed to start the editor.",
+	}
+}
+
+// newOpenFailedDTO はリンク先を OS の既定のハンドラへ委譲できなかったことを伝える
+// （IMP-315, IMP-312, FR-050, FR-053）。
+//
+// opener.ErrUnsupportedScheme・opener.ErrNotFound・プロセスを起動できない（Linux で
+// xdg-open が無いなど）のいずれも同じ種別とし、**ステータスに出す**。本文は残す
+// （FR-110。BUG-013）。**Path にはリンクの生値（href）を入れる**——OS の既定のハンドラが
+// 起動されるため、MarkView は実行ファイルのパスを知らない。
+func newOpenFailedDTO(href string, err error) *ErrorDTO {
+	if err == nil {
+		return nil
+	}
+	return &ErrorDTO{
+		Kind:    errKindOpenFailed,
+		Message: fmt.Sprintf("Cannot open: %s", href),
+		Path:    href,
+	}
+}
+
+// newEditErrorDTO は編集モードの書き込みの失敗を伝える（IMP-315, IMP-195, FR-143）。
+//
+// 書き込む前にファイルが変更されていた（document.ErrChanged）は edit-conflict、それ以外
+// （document.ErrPermission・表の形の確かめで拒んだ document.ErrNotEditable・書き込みの失敗・
+// 回復したパニック）は edit-failed とし、どちらも**ステータスに出す**。
+//
+// **指示が古かった（document.ErrStale）はここへ渡さない。** 失敗ではなく通知もしない
+// （EditResultDTO.Stale。IMP-315）。呼び出し側（editmode.go）が先に分ける。
+func newEditErrorDTO(path string, err error) *ErrorDTO {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, document.ErrChanged) {
+		return &ErrorDTO{
+			Kind:    errKindEditConflict,
+			Message: "The file changed on disk and was not saved.",
+			Path:    path,
+		}
+	}
+	return &ErrorDTO{
+		Kind:    errKindEditFailed,
+		Message: fmt.Sprintf("Failed to save: %s", path),
+		Path:    path,
 	}
 }
 

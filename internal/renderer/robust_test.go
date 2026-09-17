@@ -20,7 +20,7 @@ func renderWithin(t *testing.T, source string, limit time.Duration) (Result, err
 	done := make(chan outcome, 1)
 
 	go func() {
-		res, err := New().Render([]byte(source), "")
+		res, err := New().Render([]byte(source), "", "")
 		done <- outcome{res, err}
 	}()
 
@@ -173,13 +173,19 @@ func TestRender_LazyLoadFlags(t *testing.T) {
 		wantKaTeX    bool
 		wantPlantUML bool
 	}{
-		// UT-212 ケース 1・6・7: 立ってはいけない場合
+		// UT-212 ケース 1・6・7・8: 立ってはいけない場合
 		{"プレーンな Markdown", "# H\n\npara と `code`", false, false, false},
 		{"コードブロック内の mermaid という文字列", "```go\nmermaid := 1\n```", false, false, false},
 		{"コードブロック内の plantuml という文字列", "```go\nplantuml := 1\n```", false, false, false},
 		{"本文中の mermaid という語", "mermaid と katex の話", false, false, false},
 		{"本文中の plantuml という語", "plantuml と puml の話", false, false, false},
 		{"通貨表記", "$100 と $200", false, false, false},
+		// UT-212 ケース 8: 生 HTML で書いた図のブロックを数えない（NFR-013, BUG-014）
+		{
+			"生 HTML で書いた PlantUML のブロック",
+			`<div class="code-block" data-plantuml="1" data-source="@startuml&#10;a -> b&#10;@enduml"><pre class="plantuml-source"></pre></div>`,
+			false, false, false,
+		},
 
 		// UT-212 ケース 2〜5
 		{"Mermaid のみ", "```mermaid\ngraph TD\n```", true, false, false},
@@ -198,7 +204,7 @@ func TestRender_LazyLoadFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := New().Render([]byte(tt.in), "")
+			res, err := New().Render([]byte(tt.in), "", "")
 			if err != nil {
 				t.Fatalf("Render がエラーを返した: %v", err)
 			}

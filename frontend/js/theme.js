@@ -12,7 +12,7 @@
 import { S } from "./strings.js";
 import { state, saveConfig } from "./state.js";
 import { setTip } from "./toolbar.js";
-import { redrawMermaid, redrawPlantUML } from "./lazy.js";
+import { redrawDiagrams, startDrawing } from "./lazy.js";
 import { $ } from "./util.js";
 
 // applyTheme はテーマを画面へ反映する。値は "light" | "dark"。
@@ -59,6 +59,10 @@ export function toggleTheme() {
 
   // Mermaid と PlantUML は配色を自前で持つため引き直す（IMP-231, IMP-243, DSP-370）。
   // **await しない。** 描画を待って画面全体の切り替えを遅らせない。
-  redrawMermaid($("markdown"));
-  redrawPlantUML($("markdown"));
+  //
+  // **描画の世代は 1 つだけ進め、両方に同じ番号を渡す**（IMP-230）。それぞれで進めると、後に
+  // 呼んだほうが先に呼んだほうの描画を止める。前の描画（文書の描画や前の切り替え）は止まる。
+  //
+  // **描き直した図にも原寸表示を当て直す**（media.js の onDiagramSettled。FR-121, DSP-370）。
+  redrawDiagrams($("markdown"), startDrawing());
 }

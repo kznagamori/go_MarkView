@@ -167,7 +167,7 @@ flowchart LR
 | UI-101 | OSS ライセンス表示欄 | IMP-251 | DSP-171 |
 | UI-102 | 情報ウィンドウ内リンクの扱い | IMP-170, IMP-251 | DSP-171 |
 | UI-103 | エディタ選択ウィンドウ | IMP-172, IMP-252, IMP-309 | DSP-172, DSP-182 |
-| UI-104 | 拡大画面 | IMP-253, IMP-247, IMP-203, IMP-290, IMP-202, IMP-242, IMP-244, IMP-295 | DSP-173, DSP-030, DSP-050 |
+| UI-104 | 拡大画面 | IMP-253, IMP-247, IMP-203, IMP-290, IMP-202, IMP-242, IMP-244, IMP-295, IMP-223 | DSP-173, DSP-030, DSP-050 |
 | UI-105 | テーマ配色の基準 | IMP-243 | DSP-010, DSP-011, DSP-012, DSP-370, DSP-040, DSP-050 |
 | UI-110 | 設定として保存する項目 | IMP-150, IMP-303, IMP-310 | DSP-310 |
 | UI-111 | 設定として保存しない項目 | IMP-150, IMP-190, IMP-194, IMP-210, IMP-242, IMP-303 | — |
@@ -206,7 +206,7 @@ flowchart LR
 | MD-072 | 生 HTML の扱い（サニタイズ） | IMP-116, IMP-225, IMP-120 | — |
 | MD-073 | Front Matter | IMP-111 | — |
 | MD-080 | Mermaid の描画対象 | IMP-115, IMP-231, IMP-228 | DSP-270, DSP-124 |
-| MD-081 | Mermaid のセキュリティ設定 | IMP-231 | — |
+| MD-081 | Mermaid のセキュリティ設定 | IMP-231, IMP-223 | — |
 | MD-082 | Mermaid の遅延読み込み | IMP-230, IMP-120, IMP-260 | — |
 | MD-083 | PlantUML の描画対象 | IMP-119, IMP-233, IMP-228 | DSP-272, DSP-124 |
 | MD-084 | PlantUML のセキュリティ設定 | IMP-119, IMP-233, IMP-115, IMP-116, IMP-120, IMP-260, IMP-230 | — |
@@ -377,7 +377,7 @@ flowchart LR
 | IMP-220 | 本文の挿入 | FR-020, UI-050, UI-051, AR-052, NFR-011, FR-121, FR-014, FR-122, FR-063, FR-130, FR-140, FR-142 |
 | IMP-221 | コピーボタン | FR-060, FR-061, AR-062, FR-120, NFR-030 |
 | IMP-222 | スクロール連動 | FR-042, AR-051, NFR-012, AR-053, FR-041 |
-| IMP-223 | リンククリックの捕捉 | FR-050, MD-026, MD-070, AR-060, FR-142, MD-021, AR-053, FR-053, FR-110 |
+| IMP-223 | リンククリックの捕捉 | FR-050, MD-026, MD-070, AR-060, FR-142, MD-021, AR-053, FR-053, FR-110, MD-081, UI-104 |
 | IMP-224 | アウトラインの構築 | FR-040, FR-041, MD-026, UI-040, AR-053, FR-042 |
 | IMP-225 | GitHub Alerts のアイコン付与 | MD-040, MD-072 |
 | IMP-226 | 画像の読み込み失敗 | FR-022, FR-111, NFR-061, FR-122 |
@@ -595,26 +595,13 @@ flowchart LR
 **上の一覧は空である。** 要求を追加したときに `TBD` を置いたら、ここへ 1 行ずつ載せる（90.6.4 の `TBD` の検査）。**この一覧が空でない間は、その要求の実装に着手しない。** テストを先に書く運用（4.25.0, 4.36.0）を続けるためであり、`TBD` のまま実装すると `UI-051` や `FR-035` と同じ「担当の ID が無い条項」が検証の側に生まれる（90.6.4 の IMPORTANT）。
 
 > [!IMPORTANT]
-> **仕様の段階で追随させられるものは 4.44.0 までに済ませた。** 次は実装の段階であり、**コードと一緒に以下を追随させる。** 上位が正であり（[README](README.md)）、ここに挙げたものを残したまま rc を打たない（BR-080）。**4.44.0 のレビューで見つけた、仕様どおりになっていない既存のコード・スクリプト・ワークフローもここに載せる**（仕様の作業ではコードを変えていない）。
+> **仕様の段階で追随させられるものは 4.44.0 までに、実装の段階で追随させるものは 4.45.0〜4.69.0 で済ませた（BUG-017 の修正を含む）。** CI（`ci.yml`）・リリース CI（`release.yml`）・`scripts/smoke`・`scripts/domids`・`scripts/gentestdata`・`scripts/e2e`・`docs/tests/gen_manual_test_xlsx.py`・`testdata/e2e/`・Go（`desktop` / `internal/`）・フロントエンド・ゴールデン（UT-214）・利用者向け文書・`CLAUDE.md` である（4.44.0 のレビューで見つけた、仕様どおりになっていなかった既存のコード・スクリプト・ワークフローを含む）。上位が正であり（[README](README.md)）、**下の表に残ったものを残したまま rc を打たない**（BR-080）。**ただし AR-004 の行は rc の成果物でしか記録できない**ため、rc の手動テスト（E2E-313 の手順 8）の記録を反映する。
 >
-> | 対象 | 追随が要るもの（把握している範囲） |
+> | 対象 | 追随が要るもの |
 > | --- | --- |
-> | CI（`ci.yml`） | 描画スモークを走らせる契機のパスを BR-052 の表に揃える（`frontend/js/` の全体、`frontend/css/tokens.css` / `markdown.css`、`internal/renderer/` / `internal/localurl/` / `internal/applog/`、`go.mod` / `go.sum`、`testdata/e2e/plantuml-limits.md`。**`markdown.css` は今の `ci.yml` にあるので消さない**）。**サイズの警告の閾値が 25 MiB になっている**（BR-060 / NFR-021 は 30 MB）。脆弱性の検査（`govulncheck`。NFR-034、SHOULD）が無い |
-> | リリース CI（`release.yml`） | `vendor-update` の `reason` が **`license-rejected` / `notice-mismatch` のときにリリースを中止する**（BR-043。今は理由を見ずに先へ進む）。**リリースノートに PlantUML の更新前後の版を載せる**（BR-051。`vendorupdate` は出力しているが渡していない） |
-> | `scripts/smoke` | BR-054 の 3 つの検査と、その判定の単体テスト（UT-813〜UT-815）。**文書の id の名前空間は、ページが各要素の名前空間（XHTML / SVG）を返し、Go 側で判定する。** **目印の照合は `refs.js` の `isOwnRef` / `ownLinkTarget` / `ownSource` を呼び、偽装した図のブロックが描画されないことも見る。** **`Render` に実行のたびに作った鍵を渡す**（IMP-110）。`testdata/smoke.md` に `Status` の見出し・ラベルに `id` を書いた Mermaid の図・GFM の表とタスクとリンク・生 HTML の偽の目印・**偽装した図のブロックと `data-source` を偽装したコードブロック**を足す（E2E-012） |
-> | `scripts/domids` | `index.html` の id と資産の決め打ち id が `user-content-` で始まらないことの検査（BR-043 の 2）と、UT-810 のケース 10〜12 |
-> | `scripts/gentestdata` | `-edit` と `generated/edit/` の中身（E2E-012 の表）。**`generated/edit/` 自体は消さず、中身だけを作り直す**（MarkView が監視していても作り直せるように）。**`expected/` は人が書いたリテラルで持つ** |
-> | `scripts/e2e` | E2E-104 のケース 5: `looksLikeOurLog` が、アプリ名を含む **GLib の既定のログの形（`(MarkView:<pid>): Gtk-WARNING **: …`）を自前のログと数えている**。Linux の終了は MarkView のプロセスへ `SIGTERM` を送る（`xvfb-run` のシェルへ送らない。ランナーで確かめる） |
-> | `docs/tests/gen_manual_test_xlsx.py` | `strip_markup` がコードスパンの中の `**` を消す（E2E-384 の `` `**fresh**` `` が `fresh` になる）。コードスパンを退避してから太字を落とす |
-> | `testdata/e2e/` | `media.md` / `tables.md` / `contextmenu.md` / `id-collision.md` / **`mermaid.md` / `markers.md`** / `docs/img/badge.png` / **`docs/img/medium.png`**（E2E-012）。**v1.1.0 より前の文言**を直す（`README.md` の「編集機能を持たない」「フロントで実行するのは Mermaid と KaTeX だけ」、`docs/design.md` の「読むだけの道具」、`scripts/gentestdata` の生成物の文言） |
-> | Go（`package main` / `internal/`） | **BUG-012**: 状態画面になったら前の文書の監視を外し `showing` を偽にする（`open.go` の `commitPending`）、監視のイベントを `showing` と `session.SameFile` で照合する、`Reload` は `target` を読み直す（`bind.go`）、`ErrorDTO.DisplayPath` / `OutsideTree`。**BUG-013**: `classifyError` と `link.go` を `open-failed` に写す。**BUG-014**: 図のブロックに鍵の付いた `data-ref`（`mermaid.go` / `plantuml.go`）、`sanitize.go` の `div` の `data-ref`。**そのほか**: `sameFile` を `session.SameFile` へ移す、監視の通知チャネルをバッファ 1 の上書きにする（IMP-140）、`LoadOptions.ExpectDigest`、同意の引き継ぎ（`currentConfirmed`） |
-> | フロントエンド | **`js/refs.js`**（鍵の照合を移す）と **`js/docswitch.js`**（`leaveDocument`）の新設、`main.js` の既存の `leaveDocument` を `recordScroll` へ改名、`lazy.js` / `copy.js` を `ownSource` に、`shortcuts.js` の入力欄の判定を狭める（IMP-244）、`strings.js` の `errOpenFailed`、`status.js` / `filetree.js` を `state.target` に、`index.html` の `#btn-editmode` に `disabled` |
-> | ゴールデン（UT-214） | 目印の属性（**図のブロックの `data-ref` を含む**）と `id` の接頭辞で出力が変わる。**差分がこの 2 種類だけであることを読んでから更新する** |
-> | 利用者向け文書 | ルート `README.md`（「MarkView 自身は書かない」）、`docs/usage.md`（ツールバーの図の `Edit`、「編集機能はありません」、右クリックメニュー、拡大表示、並べ替え）、`docs/markdown.md` と `docs/showcase.md`（「チェックボックスは読み取り専用」、見出しの `id` が `user-content-` で始まること）、**`docs/settings.md` / `docs/troubleshooting.md`（WebView のキャッシュにリモート画像が残ることと消し方。NFR-042）** |
-> | `CLAUDE.md` | 実装した版の画面に合わせる（ツールバーのボタンの数など）。コマンド節の「実装待ち」の注記を外す |
 > | 05 章 AR-004 の表 | **E2E-313 の手順 8 で記録した L1 のデータ領域の名前と大きさを反映する**（rc.3 / rc.4 の記録には残っていなかった） |
 >
-> **実装の時点で、実機で確かめると決めたもの**（仕様に書いた前提が成り立つかを先に見る。**rc の手動テストでも同じことを見る**——右端の列のケース）:
+> **実装の時点で、実機で確かめると決めたもの**（仕様に書いた前提が成り立つかを先に見る。**rc の手動テストでも同じことを見る**——右端の列のケース）。**「修正の前に実際に起きる」の行は、確かめた結果を「確かめ方」の列に書く**（4.67.0）:
 >
 > | 前提 | 確かめ方 | 規定 | 手動テスト |
 > | --- | --- | --- | --- |
@@ -625,7 +612,10 @@ flowchart LR
 > | 標準の右クリックメニューが開発ビルドとリリースビルドの両方で出ない | `wails dev` と配布物で右クリックする | IMP-193, IMP-249 | E2E-371 の確認内容 1・9（配布物のみ） |
 > | 拡大画面の表示中、`inert` を与えたステータス領域が操作を受け付けず、表示は更新される | W1 / L1 で拡大画面を開いたままファイルを削除する | IMP-253, UI-104 | E2E-353 の確認内容 10、E2E-354 の確認内容 5 |
 > | 編集できるセルの破線（`outline-offset` が負の値）が両エンジンで罫線の内側に描かれる | W1 / L1 で編集モードにして表を見る | DSP-126, UI-055 | E2E-382 の確認内容 2 |
-> | **文書の id の衝突（BUG-011）が、修正の前に実際に起きる** | **修正を入れる前に E2E-327 を実施し、NG になることを確かめる**（記録に残さない。手順は E2E-327 の IMPORTANT） | AR-053 | E2E-327 |
-> | **状態画面の間に前の文書が残る（BUG-012）が、修正の前に実際に起きる** | 修正を入れる前に E2E-322 を実施し、確認内容 4・5 が NG になることを確かめる | FR-016, IMP-192, IMP-307 | E2E-322 |
-> | **リンク先を開けないと状態画面になる（BUG-013）が、修正の前に実際に起きる** | L1 で `xdg-open` の無い `PATH` で起動し、E2E-264 の手順 3 を実施する | FR-053, IMP-315 | E2E-264 |
-> | **図のブロックの偽装（BUG-014）が、修正の前に実際に起きる** | 修正を入れる前に E2E-328 を実施し、NG になることを確かめる | NFR-030, IMP-120 | E2E-328 |
+> | **文書の id の衝突（BUG-011）が、修正の前に実際に起きる** | **修正を入れる前に E2E-327 を実施し、NG になることを確かめる**（記録に残さない。手順は E2E-327 の IMPORTANT）。**結果: v1.0.0 の W1 で NG**（2026-09-14） | AR-053 | E2E-327 |
+> | **状態画面の間に前の文書が残る（BUG-012）が、修正の前に実際に起きる** | 修正を入れる前に E2E-322 を実施し、確認内容 4・5 が NG になることを確かめる。**結果: v1.0.0 の W1 で NG**（2026-09-14） | FR-016, IMP-192, IMP-307 | E2E-322 |
+> | **リンク先を開けないと状態画面になる（BUG-013）が、修正の前に実際に起きる** | L1 で `xdg-open` の無い `PATH` で起動し、E2E-264 の手順 3 を実施する。**結果: 実施できなかった**（2026-09-14。修正前の症状は実機で確かめていない。修正後は rc の E2E-264 で見る） | FR-053, IMP-315 | E2E-264 |
+> | **図のブロックの偽装（BUG-014）が、修正の前に実際に起きる** | 修正を入れる前に E2E-328 を実施し、NG になることを確かめる。**結果: v1.0.0 の W1 で NG**（2026-09-14） | NFR-030, IMP-120 | E2E-328 |
+> | **Mermaid の `click` で URL を指定したノードで WebView の中が遷移する（[BUG-015](../bugs/2026-09-17-bug-015-mermaid-click-link-navigation.md)）が、修正の前に実際に起きる** | v1.0.0 の配布物で E2E-234 の手順 3 を実施する。**結果: NG**（2026-09-17） | MD-081, AR-060 | E2E-234 |
+> | **リンクを中ボタンで押すと、Go を通らずに外へ渡るかウィンドウが遷移する（[BUG-016](../bugs/2026-09-17-bug-016-link-middle-click.md)）が、修正の前に実際に起きる** | v1.0.0 の配布物で `testdata/e2e/README.md` のリンクを中ボタンで押す（調査報告の 3 章）。**結果: W1 / L1 とも NG**（2026-09-17） | AR-060, FR-050 | E2E-264 |
+> | **図や数式を描く前に検索したヒットが、描き終えた後に件数だけ残る（[BUG-017](../bugs/2026-09-18-bug-017-search-hits-before-rendering.md)）が、修正の前に実際に起きる** | v1.0.0 の配布物で調査報告の 4 章の手順を行う（`testdata/e2e/generated/slow-plantuml.md` を開いてすぐ `zzqpending` を検索し、最後の図が理由に変わるまで十数秒待つ）。**結果: W1 で NG**（2026-09-18）。**修正後は rc の E2E-271 の手順 11〜13 で見る** | FR-080, IMP-241 | E2E-271 |

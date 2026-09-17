@@ -15,7 +15,9 @@ export function initToolbar(deps) {
   setTip($("btn-reload"), S.tipReload, "reload");
   setTip($("btn-outline"), S.tipOutline, "outline");
   setTip($("btn-filetree"), S.tipFileTree, "filetree");
-  setTip($("btn-edit"), S.tipEdit, "edit");
+  setTip($("btn-edit"), S.tipOpenInEditor, "edit");
+  // 表記は shortcuts.js の editMode（Ctrl+Shift+M）から付く（IMP-244, IMP-290）
+  setTip($("btn-editmode"), S.tipEditMode, "editMode");
   setTip($("btn-about"), S.tipAbout, "about");
   // テーマのツールチップは切り替え先で変わるため applyTheme が設定する（IMP-243）
 
@@ -25,6 +27,9 @@ export function initToolbar(deps) {
   bind("btn-outline", deps.onOutline);
   bind("btn-filetree", deps.onFileTree);
   bind("btn-edit", deps.onEdit);
+  // 編集モードの切り替え（IMP-260 の toggleEditMode）は P18 で渡す。**それまでボタンは disabled のまま**
+  // であり（IMP-202）、渡さなくても押せない。
+  bind("btn-editmode", deps.onEditMode);
   bind("btn-about", deps.onAbout);
 }
 

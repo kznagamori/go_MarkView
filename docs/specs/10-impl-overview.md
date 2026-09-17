@@ -22,7 +22,7 @@
 
 | 項目 | 内容 | 根拠 |
 | --- | --- | --- |
-| Go | 1.25 以上。`go.mod` の `go` ディレクティブは 1.25 とする（Go が正規化して `1.25.0` と書く。Wails v2.13.0 以降の要求。BR-001） | BR-001 |
+| Go | 1.25 以上。`go.mod` の `go` ディレクティブは 1.25 とする（Go が正規化して `1.25.0` と書く。Wails v2.13.0 以降の要求。BR-001）。**`toolchain` ディレクティブで CI とリリースがビルドに使う版を固定する**（現在 `go1.26.8`。BR-001, NFR-034） | BR-001, NFR-034 |
 | モジュールパス | `github.com/kznagamori/go_MarkView` | — |
 | フレームワーク | Wails v2 系 | AR-001 |
 | フロントエンド | 素の HTML / CSS / JavaScript（ES2020 相当）。ビルド工程なし | AR-050 |
@@ -34,19 +34,29 @@ AR-011 の構成を実装単位まで具体化したもの。
 
 ```
 go_MarkView/
-├── main.go                     エントリポイント、CLI 解析、Wails 起動
-├── app.go                      App 型の状態とライフサイクル（IMP-190, IMP-193, IMP-194）
-├── open.go                     文書を開く共通処理（IMP-192）
-├── bind.go                     バインドメソッドとドロップ判定（IMP-310, IMP-313）
-├── editor.go                   エディタで開く 3 つのバインドメソッド（IMP-310, IMP-331）
-├── editmode.go                 編集モードのバインドメソッド。錠・読み書きの呼び出し・イベント送出だけ（IMP-195, IMP-316）。外部エディタの editor.go と混ぜない
-├── link.go                     リンク遷移の判定（IMP-312）
-├── errors.go                   エラーの分類（IMP-315）
-├── dto.go                      フロントエンドとの境界の型（IMP-302〜IMP-309, IMP-316）
+├── main.go                     エントリポイント、CLI 解析、埋め込み（IMP-030）、Wails 起動
 ├── console_windows.go          親プロセスのコンソールへ繋ぎ直す（IMP-031, IMP-193）
 ├── console_other.go            同上。Windows 以外は何もしない（IMP-031）
-├── webview_windows.go          WebView2 の版の取得（IMP-031, IMP-181）
-├── webview_other.go            WebKitGTK の版の取得（IMP-031, IMP-181）
+├── desktop/                    Wails との境界（package desktop。IMP-012）
+│   ├── desktop.go              パッケージの説明と、ライフサイクルの関数の取り出し（IMP-193, IMP-194）
+│   ├── app.go                  App 型の状態とライフサイクル（IMP-190, IMP-193, IMP-194）
+│   ├── open.go                 文書を開く共通処理（IMP-192）
+│   ├── open_route.go           文書を開いた経路と、経路によって変わるもの（IMP-192）
+│   ├── watch.go                表示中ファイルの監視のイベントの受け取り（IMP-140, IMP-192）
+│   ├── drop.go                 ファイルのドロップの受け取りと判定（IMP-313）
+│   ├── bind.go                 バインドメソッド（IMP-310）
+│   ├── clipboard.go            クリップボードのバインドメソッド（IMP-310, AR-062）
+│   ├── editor.go               エディタで開く 3 つのバインドメソッド（IMP-310, IMP-331）
+│   ├── editmode.go             編集モードのバインドメソッド。錠・読み書きの呼び出し・イベント送出だけ（IMP-195, IMP-316）。外部エディタの editor.go と混ぜない
+│   ├── link.go                 リンク遷移の判定（IMP-312）
+│   ├── recover.go              バインドメソッドの入口で回復したパニックの扱い（IMP-022, IMP-310）
+│   ├── errors.go               エラーの分類（IMP-315）
+│   ├── dto.go                  フロントエンドとの境界の型（IMP-302〜IMP-305, IMP-307, IMP-308）
+│   ├── dto_about.go            アプリケーション情報の型（IMP-306）
+│   ├── dto_editor.go           外部エディタの型（IMP-309）
+│   ├── dto_editmode.go         編集モードの型（IMP-316）
+│   ├── webview_windows.go      WebView2 の版の取得（IMP-031, IMP-181）
+│   └── webview_other.go        WebKitGTK の版の取得（IMP-031, IMP-181）
 ├── go.mod / go.sum
 ├── wails.json
 ├── internal/
@@ -63,6 +73,7 @@ go_MarkView/
 │   │   ├── document.go         Document 型、Load、サイズ判定、番兵エラー
 │   │   ├── encoding.go         BOM・改行・UTF-8 検証、行数
 │   │   ├── edit.go             書き換え位置と生バイト列の対応、Patch（IMP-106）
+│   │   ├── editcell.go         表のセルの書き換え（PlanCell / CellSource）と、書いた後の表の形の確かめ（IMP-106）
 │   │   ├── write.go            一時ファイル + リネームによる置き換え（IMP-107）
 │   │   ├── editlog.go          取り消し履歴（IMP-108）
 │   │   ├── editsession.go      編集モードの状態と判断（IMP-109）
@@ -136,7 +147,11 @@ go_MarkView/
 ```
 
 - `internal/` 配下は外部から import されないことを保証する目的で使用する。
+- **Wails に依存するものはルートの `main.go`（`package main`）と `desktop/`（`package desktop`）に限る**（IMP-012）。`desktop` を `internal/` の下に置かない——`internal/` の各パッケージが Wails に依存しないという規則を、ディレクトリだけで読み取れるようにする。**ルートに残すのは `main.go` と `console_*.go` だけとする**（4.60.0。利用者の判断）。`go:embed` はパッケージのディレクトリより上を参照できないため、埋め込み（IMP-030）は `main.go` に置く。
+  - **Go では 1 つのディレクトリが 1 つのパッケージである。** `App` のメソッドを持つファイルは `App` と同じディレクトリにしか置けない。責務で分けたファイルは `desktop/` の中に足す。
 - 1 ファイルの行数は目安として 400 行以内とし、超える場合は責務で分割する。
+  - **スタイルシート（`frontend/css/`）はこの目安の対象外とする**（4.57.0。利用者の判断）。規則の効き方は詳細度と並び順（カスケード）で決まり、ファイルを分けると `index.html` の `<link>` の順序が要件になる。代わりに、**表示仕様の ID ごとの節（`/* --- 名前（DSP-nnn） --- */`）で区切る。** v1.0.0 の `components.css` も 1072 行だった。
+  - **開発用のスクリプト（`scripts/` と `docs/tests/`）はこの目安の対象とする**（4.66.0。利用者の判断）。配布物に入らなくても、判定を持つもの（BR-052）は読み手が多く、スタイルシートのような分けられない理由（カスケードの順序）も無い。4.66.0 で `scripts/smoke/main.go`（→ `check.go` / `print.go`）・`harness.js`（→ `collect.js`）・`scripts/e2e/binary.go`（→ `startup.go`）・`scripts/vendorupdate/main.go`（→ `manifest.go` / `files.go`）・`scripts/genlicenses/main.go`（→ `modules.go`）・`docs/tests/gen_manual_test_xlsx.py`（→ `manual_cases.py`）を分けた。**テストのファイルと同梱資産（`frontend/vendor/`）は数えない。**
 
 ### IMP-012: パッケージの依存方向 **MUST**
 
@@ -169,9 +184,9 @@ flowchart TD
 - `mdfile`（IMP-105）を例外としているのは、Markdown の拡張子判定を `filetree`（IMP-132）と `session`（IMP-193）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、両者が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
 - `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
 - `applog`（IMP-023）を例外としているのは、「既定ではログを出さない」（NFR-041）が**判定を 1 か所に集めないと守れない**ためである。`MARKVIEW_DEBUG` の判定が散れば、そのうち 1 か所が漏れて配布物が出力を始める。実際に go-webview2 が標準ロガーへ直接書いていた件（IMP-023）を E2E-104 で検出しており、これは自前のコードでも同じように起こりうる。`mdfile` / `localurl` と同じく**標準ライブラリしか使わない葉**であり、**`applog` に依存を追加してはならない**。
-- `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼んでよいのは `package main`（ルート直下の `.go`。IMP-011）だけとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。**「`main.go` と `app.go` の 2 つだけ」ではない。** ルート直下は責務ごとに分割されており（`bind.go` / `editor.go` / `link.go` ほか）、ファイル名を数え上げる書き方では、追加されたファイルの扱いが読めなくなる。境界は**パッケージ**で引く。
+- `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼んでよいのは `package main`（`main.go`）と `desktop` パッケージ（`desktop/` の `.go`。IMP-011）だけとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。**「`main.go` と `app.go` の 2 つだけ」ではない。** `desktop/` は責務ごとに分割されており（`bind.go` / `editor.go` / `link.go` ほか）、ファイル名を数え上げる書き方では、追加されたファイルの扱いが読めなくなる。境界は**パッケージ**で引く。**`internal/` から `desktop` を import しない。**
 - **編集モードの書き換え処理と判断（IMP-106〜IMP-109）は `document` に置く。新しいパッケージ（`internal/editor` など）を作らない。** 位置を求めるには `renderer` の goldmark の構成が要り（IMP-121）、上の 2 系統のうち `renderer` を呼べるのは `document` だけである。**`internal/editor` という名前は特に使わない**——外部エディタの起動（IMP-171）と取り違えやすく、そちらを別パッケージに分けない理由（IMP-170）とも紛れる。
-- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に、**編集モードの状態と書き込みの判断は `internal/document`（IMP-109）に**置き、`app.go` と `editmode.go` からは呼ぶだけにする。`app.go` に置いたロジックは `package main` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
+- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に、**編集モードの状態と書き込みの判断は `internal/document`（IMP-109）に**置き、`app.go` と `editmode.go` からは呼ぶだけにする。`app.go` に置いたロジックは `desktop` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
 ## 10.3 実装規約（IMP-020 系）
 
@@ -190,7 +205,7 @@ flowchart TD
 - 関数は `error` を返して呼び出し元へ委ねる。`panic` は使用しない。
 - 事象の判別が必要なエラーは番兵エラー（`errors.New` によるパッケージ変数）として定義し、呼び出し側は `errors.Is` で判定する。
 - 文脈を追加する場合は `fmt.Errorf("...: %w", err)` でラップする。
-- ユーザに見せる文言はエラー値に含めない。`package main`（`errors.go`。IMP-011）が `ErrorDTO` の種別へ写し、文言はフロントエンドが選ぶ（IMP-315）。エラー値そのものは開発者向けの英語とする。
+- ユーザに見せる文言はエラー値に含めない。`desktop`（`errors.go`。IMP-011）が `ErrorDTO` の種別へ写し、文言はフロントエンドが選ぶ（IMP-315）。エラー値そのものは開発者向けの英語とする。
 
 主要な番兵エラーは以下とする。
 
@@ -226,7 +241,7 @@ var (
 
 FR-111（異常終了の回避）を実装レベルで保証するため、以下の 2 点で `recover` を行う。
 
-1. `package main` の各バインドメソッドの入口（`bind.go` / `editor.go` / `link.go` / `editmode.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタの 3 つは `editor-failed`、書き込みの 4 つは `edit-failed`、`SetEditMode` と `GetCellSource` は通知しない。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
+1. `desktop` の各バインドメソッドの入口（`bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go`。回復の関数は `recover.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタの 3 つは `editor-failed`、書き込みの 4 つは `edit-failed`、`SetEditMode` と `GetCellSource` は通知しない。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
 2. `renderer` の変換処理。goldmark 拡張や chroma の想定外の入力で発生したパニックを、変換エラーとして返す。
 
 `recover` した内容は、開発モード（IMP-023）でのみ標準エラー出力へスタックトレースを出力する。
@@ -295,6 +310,7 @@ var thirdPartyLicenses string
 ```
 
 - `all:` 接頭辞を付け、`_` や `.` で始まるファイルも含める。
+- **埋め込みはルートの `main.go` に置く。** `go:embed` はパッケージのディレクトリより上を参照できない。ライセンス一覧は `desktop.NewApp` へ引数で渡す（`desktop` から埋め込まない。IMP-011）。
 - `frontend/vendor/vendor.json` も同じ FS に含め、`buildinfo` から読み出す（IMP-181）。
 - 埋め込み対象に不要なファイル（`.map` 等のソースマップ）を含めない。vendor 取得時に除外する（BR-042）。
 

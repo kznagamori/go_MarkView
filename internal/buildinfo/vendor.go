@@ -97,7 +97,7 @@ func parseVendors(data []byte) []VendorEntry {
 // webviewVersion が空の場合、その区画ごと省略する。「WebView2 」とだけ
 // 書かれた行は情報として役に立たないためである。
 //
-// **空が渡るのは取得に失敗したときだけである。** 値は package main の
+// **空が渡るのは取得に失敗したときだけである。** 値は desktop パッケージの
 // webviewVersion() が渡す（IMP-181）。Windows は go-webview2 の
 // webviewloader から、Linux は WebKitGTK の API から取得できる。
 // **常に空を渡す実装は UI-100 を満たさない。**

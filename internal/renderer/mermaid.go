@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"bytes"
+	"strconv"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -24,6 +25,10 @@ type mermaidBlock struct {
 	ast.BaseBlock
 
 	source []byte // 図の元テキスト
+
+	// ref は図のブロックの目印の値（`<鍵>:mermaid:<n>`。IMP-115, IMP-120）。
+	// 鍵が空なら空で、属性を出さない。
+	ref string
 }
 
 func (n *mermaidBlock) Kind() ast.NodeKind { return kindMermaidBlock }
@@ -52,6 +57,7 @@ type mermaidTransformer struct{}
 
 func (mermaidTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
+	key, _ := pc.Get(refKeyKey).(string)
 
 	// 走査しながら木を書き換えないよう、対象を集めてから差し替える。
 	var blocks []*ast.FencedCodeBlock
@@ -62,11 +68,19 @@ func (mermaidTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 		return ast.WalkContinue, nil
 	})
 
+	// 番号は文書の中の Mermaid ブロックの出現順（0 起点）。**描画に失敗するものも
+	// 数える**——Go 側は描画の成否を知らず、FR-120 の「同じ対象」と同じ数え方になる
+	// （IMP-120）。集めた順が文書の順である。
+	index := 0
 	for _, b := range blocks {
 		if !bytes.EqualFold(b.Language(source), []byte("mermaid")) {
 			continue
 		}
-		m := &mermaidBlock{source: bytes.TrimRight(b.Lines().Value(source), "\n")}
+		m := &mermaidBlock{
+			source: bytes.TrimRight(b.Lines().Value(source), "\n"),
+			ref:    diagramRef(key, "mermaid", index),
+		}
+		index++
 		b.Parent().ReplaceChild(b.Parent(), b, m)
 		pc.Set(needsMermaidKey, true)
 	}
@@ -89,9 +103,12 @@ func renderMermaid(w util.BufWriter, source []byte, n ast.Node, entering bool) (
 		return ast.WalkContinue, nil
 	}
 
-	src := n.(*mermaidBlock).source
+	block := n.(*mermaidBlock)
+	src := block.source
 
-	_, _ = w.WriteString(`<div class="code-block" data-lang="mermaid" data-mermaid="1" data-source="`)
+	_, _ = w.WriteString(`<div class="code-block" data-lang="mermaid" data-mermaid="1" `)
+	writeDiagramRef(w, block.ref)
+	_, _ = w.WriteString(`data-source="`)
 	_, _ = w.Write(escapeAttribute(src))
 	_, _ = w.WriteString("\">\n")
 	_, _ = w.WriteString(`<pre class="mermaid-source">`)
@@ -99,6 +116,30 @@ func renderMermaid(w util.BufWriter, source []byte, n ast.Node, entering bool) (
 	_, _ = w.WriteString("</pre>\n</div>\n")
 
 	return ast.WalkContinue, nil
+}
+
+// diagramRef は図のブロックの目印の値を組み立てる（IMP-115, IMP-119, IMP-120）。
+// 鍵が空なら空文字を返す（目印を付けない。IMP-110）。
+func diagramRef(key, kind string, index int) string {
+	if key == "" {
+		return ""
+	}
+	return key + ":" + kind + ":" + strconv.Itoa(index)
+}
+
+// writeDiagramRef は図のブロックの data-ref 属性を、後ろに空白を付けて書く。
+//
+// **フロントエンドは鍵の合うブロックだけを描画し、その data-source だけを使う**
+// （IMP-260）。生 HTML で class="code-block" と data-mermaid / data-plantuml と
+// data-source を書けば同じ形を作れるため、目印が無いと Go 側の検査（IMP-119）を
+// 経ていない図が描かれ、見えている内容と違う原文がコピーされる（BUG-014）。
+func writeDiagramRef(w util.BufWriter, ref string) {
+	if ref == "" {
+		return
+	}
+	_, _ = w.WriteString(attrDataRef + `="`)
+	_, _ = w.Write(escapeAttribute([]byte(ref)))
+	_, _ = w.WriteString(`" `)
 }
 
 // escapeAttribute は HTML 属性値としてエスケープする（IMP-115）。

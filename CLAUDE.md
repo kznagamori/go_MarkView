@@ -11,21 +11,21 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 **v1.0.0 までに見つかった不具合 10 件（BUG-001〜010）と、その時点の未解決の課題は、いずれも決着している。** **あわせて `UI-031`（ツリーのキーボード操作。SHOULD）も実装した**——**rc.3 で未実装のまま OK が付いていた**ためである。
 
 > [!IMPORTANT]
-> **`v1.1.0` に向けて、要求と、実装・表示・単体テスト・E2E の仕様を書いた（仕様 4.44.0。2026-09-14）。** 編集モード（FR-140〜FR-144）、図と画像の拡大表示（FR-120〜FR-122）、表の並べ替え（FR-130）、右クリックメニュー（FR-063）の 4 つと、**BUG-011〜BUG-014 の対策**である。**3 つの対応表（90.3 / 31.10 / 40.5）に `TBD` は無い。** 手動テストは 86 件になった（G15〜G18 と E2E-327 / E2E-328）。**次は実装であり、テストを先に書く。** 実装の段階で追随させるもの（CI の契機・`scripts/smoke`・`scripts/domids`・`gentestdata -edit`・検証用データ・ゴールデン・利用者向け文書）は 90.6.5 にある。
+> **`v1.1.0` の実装を終えた（仕様 4.66.0。2026-09-18）。** 編集モード（FR-140〜FR-144）、図と画像の拡大表示（FR-120〜FR-122）、表の並べ替え（FR-130）、右クリックメニュー（FR-063）の 4 つと、**BUG-011〜BUG-016 の修正**である。要求と実装・表示・テストの仕様を先に書き（4.39.0〜4.44.0）、**単体テストと自動 E2E を先に書いてから、スタブを置き換えて実装した。** 実装の途中で分かったことは、同じ変更で仕様へ戻している（4.45.0〜4.67.0。改訂履歴）。手元（Windows）では、単体テスト・描画スモーク 2 部・`domids` が緑、配布物の自動 E2E（`binary`）が NG 0 であり（SKIP の 5 件は Windows では確かめられないもの）、利用者向け文書も v1.1.0 の画面に合わせた。**編集モードの実装で外してはならない点は「破ってはいけない規約」の「編集モード」にある。**
 >
-> **4.39.0 で「アプリ内に編集機能を持たない」（1.3.2）と「表示中のファイルを書き換える経路を持たない」（NFR-031）を改訂した。** 書き換えは構造を変えない 2 種類（チェックボックス・表のセル）に限り、編集モードの中でだけ行う。**実装で外してはならない点**: 生 HTML と GFM の区別は**変換ごとの乱数の鍵**（IMP-120）でだけ行い、属性の形で判断しない。書き換え処理と、**編集モードの状態と判断**（`EditSession`。IMP-109）は `internal/document` に置き、**`internal/editor` を作らない**（IMP-012）。`editmode.go` は錠・読み書きの呼び出し・イベント送出だけにする。**`ioMu` を持ったまま文書を開き直すときは `openLocked` を呼ぶ**（`sync.Mutex` は再入できない。IMP-192）。`Render` と `Locate` は同じ数え方の関数を共有する（IMP-121）。書き込みは一時ファイル＋リネームで、読み直しと書き込みは `ioMu` で 1 つずつ（IMP-107, IMP-190）。状態の正は Go 側（IMP-195）。再描画で引き継ぐ状態は DSP-352 の表に従う。**`Open anyway` で開いた文書は、同じ文書の再描画では確認し直さない**（FR-016。書き込みの後の読み直しで編集モードが黙って終わらないため）。実装の段階で追随させるもの（CI・スクリプト・検証用データ・利用者向け文書・この CLAUDE.md）は 90.6.5 にある。
+> **rc を打つ前に**、終了時の確認をすべて回す（90.6.5 の「下位の文書の追随」の表に残るのは、rc の後に記録する AR-004 の行だけである）。**そのうえで rc の成果物に対して手動テスト 86 件**（G15〜G18 と E2E-327 / E2E-328 を含む）を実施し、**実機でしか確かめられない前提**（90.6.5 の表）と、**BUG-011〜BUG-016 の修正後の振る舞い**を見る。**Linux のビルド、Linux でだけ走る単体テスト（UT-112 / UT-407 / UT-809 の一部）、`govulncheck` は CI でしか走らない。** 05 章 AR-004 の表の L1 の行は、rc の E2E-313 の手順 8 で記録してから埋める。
 
 > [!IMPORTANT]
-> **[BUG-011](docs/bugs/2026-09-14-bug-011-document-id-collision.md)（文書の中の id が画面と同梱資産の id を乗っ取る）は未修正である。** v1.0.0 から残っており、**仕様 4.42.0 のレビュー中にコードを読んで見つけた**（手動テストでは出ていない）。`## Tooltip` という見出しでツールチップの文言が見出しに書き込まれ、`## Editor open` でエディタ選択ウィンドウの `Open` が押せなくなる。**対策は仕様 4.43.0 に入れた**——文書から生まれる id をすべて `user-content-` で始める（AR-053。GitHub と同じ）。**Mermaid のラベルに書いた `id` は Go 側では直らない**ため、`mermaid.initialize` に `dompurifyConfig: { SANITIZE_NAMED_PROPS: true }` を渡す（IMP-231）。**直す前に E2E-327 を実施し、NG になることを確かめる。**
-
-> [!IMPORTANT]
-> **仕様 4.43.0 の横断レビュー（4.44.0）で、v1.0.0 から残る不具合をさらに 3 件、コードを読んで見つけた**（いずれも未修正。手動テストでは確かめていなかった箇所）。
+> **v1.0.0 から残っていた不具合 4 件（BUG-011〜BUG-014）を修正した。** いずれも**仕様のレビュー中にコードを読んで見つけた**もので、手動テストでは出ていなかった（4.42.0 / 4.44.0）。**BUG-011 / 012 / 014 は、直す前に v1.0.0 の実機で NG になることを確かめた**（E2E-327 / E2E-322 / E2E-328）。**BUG-013 だけは、修正前の症状を実機で確かめられていない**（L1 で E2E-264 の手順 3 を実施できなかった）。
 >
-> - **[BUG-012](docs/bugs/2026-09-14-bug-012-state-screen-previous-document.md)**: 状態画面（大きなファイルの確認など）の間、**ステータス領域のパスとツリーの強調が前の文書のまま**残り、**前の文書の監視も続く**——その文書が外部で更新されると、確認画面が前の文書の表示に置き換わる。`F5` も前の文書を読み直す（FR-016, FR-014, FR-015）。**`ErrorDTO` に表示用のパスを載せ（IMP-307）、状態画面になったら前の文書の監視を外す（IMP-192）。**
-> - **[BUG-013](docs/bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)**: 画像などのリンクを既定のアプリで開けなかったとき、**ステータス表示ではなく `render-error` の状態画面になり本文が消える**（FR-053）。**分類できないエラーを `render-error` に落とす既定の枝が、リンクの経路にも効いていた。** 種別 `open-failed` を足す（IMP-315）。
-> - **[BUG-014](docs/bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)**: **生 HTML で図のブロックの目印（`class="code-block"` と `data-plantuml` / `data-source`）を偽装できる。** PlantUML の取り込み指令の検査（MD-084）を通らずに描画へ回り、**コピーボタンが画面に見えていない文字列をコピーする**（NFR-030）。**図のブロックにも変換ごとの鍵を付け（IMP-120）、鍵を読むのは `js/refs.js` だけにする**（IMP-260）。
+> - **[BUG-011](docs/bugs/2026-09-14-bug-011-document-id-collision.md)**（`## Tooltip` のような見出しや生 HTML の `id` が、画面と同梱資産の要素を乗っ取る）: 文書から生まれる id をすべて `user-content-` で始め（AR-053。GitHub と同じ）、本文の要素は本文の中だけを探す（`findInDocument` / `findHeading`。IMP-223, IMP-224）。**Mermaid のラベルに書いた `id` は Go 側では直らない**ため、`SANITIZE_NAMED_PROPS` を渡す（IMP-231）
+> - **[BUG-012](docs/bugs/2026-09-14-bug-012-state-screen-previous-document.md)**（状態画面の間、パス・ツリーの強調・監視・`F5` が前の文書のまま）: 状態画面になったら前の文書の監視を外し（IMP-192）、`Reload` は `target` を読み直し（IMP-310）、表示用のパスは `ErrorDTO` に載せる（IMP-307）
+> - **[BUG-013](docs/bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)**（リンク先を開けないと状態画面になり本文が消える）: **分類できないエラーを `render-error` に落とす既定の枝が、リンクの経路にも効いていた。** 種別 `open-failed` を足し、ステータスに出す（IMP-315）
+> - **[BUG-014](docs/bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)**（生 HTML で図のブロックを偽装すると、取り込み指令の検査を通らずに描かれ、コピーボタンが見えていない文字列をコピーする）: 図のブロックにも変換ごとの鍵を付け（IMP-120）、鍵を読むのは `js/refs.js` だけにする（IMP-260）
 >
-> **直す前に、E2E-322（BUG-012）・E2E-264 の L1 の手順 3（BUG-013）・E2E-328（BUG-014）を実施し、NG になることを確かめる。**
+> **v1.1.0 の実装中に、さらに 2 件を見つけて直した。** BUG-015（Mermaid の `click` の URL で WebView の中が遷移する）は検証用データの DOM 検査で、BUG-016（リンクの中ボタン）はその調査の途中で見つけ、**どちらも利用者が v1.0.0 の実機で症状を確かめてから直した。** **6 件とも、修正後の振る舞いは rc の手動テストで実機で見る。**
+>
+> **[BUG-017](docs/bugs/2026-09-18-bug-017-search-hits-before-rendering.md)（図や数式を描く前に検索すると、描き終えた後に件数だけが残り、移動しても何も起きない）も直した**（仕様 4.69.0）。 v1.0.0 から残っており、テーマの切り替えの描き直しを直すときにコードを読んで見つけ、DOM 検査で v1.0.0 と作業ツリーの両方で再現した（4.67.0）。**描画（Mermaid・PlantUML・KaTeX）が原文の要素を置き換えると、その中の検索のヒットは DOM から外れるが、検索の状態は持ったまま数える。** **v1.0.0 の W1 で症状を確かめてから直した**（2026-09-18。調査報告の 4.1）——描き終える前は 2 件を `Enter` で移動できるが、描き終えると件数は 2 のままハイライトが本文の 1 つだけになり、移動しなかった。**図や数式を描き終えたら、画面から消えたヒットを件数から除き、原文が戻った図はその中を探し直す**（`search.js` の `syncHits`。IMP-241）。**画面は動かさない。**
 
 > [!IMPORTANT]
 > **v1.0.0 までの不具合は 10 件あり、すべて片づいた。** rc.2 の NG がまとまった **5 件**（BUG-001〜005）、**その修正中に見つかった 2 件**（BUG-006 / BUG-007）、**rc.3 の NG がまとまった 3 件**（BUG-008 / BUG-009 / BUG-010）である。
@@ -44,22 +44,25 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 | [BUG-002](docs/bugs/2026-09-04-bug-002-filetree-reload-on-show.md) | ツリーペインを開き直しても更新されない | E2E-244 | `main.js` / `panes.js`。**FR-035 の 3 契機のうち 1・2 が未実装だった**（IMP-240） | **済**（E2E-244 が OK） |
 | [BUG-003](docs/bugs/2026-09-04-bug-003-outline-auto-hide.md) | 狭めてもアウトラインが隠れない | E2E-246 | **実装は正常だった。** 仕様とテスト仕様の不備（4.23.0 で反映済み） | **決着**（コード変更なし） |
 | [BUG-004](docs/bugs/2026-09-04-bug-004-search-collapsed-details.md) | 折りたたみの中のヒットへ移動しない | E2E-271 | `util.js` の `openAncestorDetails` を 4 か所から使う（IMP-241, IMP-223, IMP-224） | **済**（E2E-271 が OK） |
-| [BUG-005](docs/bugs/2026-09-04-bug-005-about-webview-version.md) | 情報ダイアログに WebView の版が出ない | E2E-301 | `bind.go` と、新設した `webview_windows.go` / `webview_other.go`（IMP-181） | **済**（**rc.3 / rc.4 とも W1 / L1 で E2E-301 が OK**。Linux 側もこれで決着した） |
+| [BUG-005](docs/bugs/2026-09-04-bug-005-about-webview-version.md) | 情報ダイアログに WebView の版が出ない | E2E-301 | `bind.go` と、新設した `webview_windows.go` / `webview_other.go`（IMP-181。v1.1.0 で `desktop/` へ移した） | **済**（**rc.3 / rc.4 とも W1 / L1 で E2E-301 が OK**。Linux 側もこれで決着した） |
 | [BUG-006](docs/bugs/2026-09-05-bug-006-status-id-collision.md) | **PlantUML を含む文書を開くとステータス領域が壊れ、以降の通知がすべて出ない** | E2E-239/240 | `frontend/index.html` の `id="status"` → **`statusbar`**（IMP-202） | **済**（E2E-239 / 240 / 225 が OK） |
 | [BUG-007](docs/bugs/2026-09-05-bug-007-viewer-focus-on-open.md) | **文書を開いてもフォーカスが本文へ移らず、`PageUp` / `PageDown` が効かない** | E2E-253 | `frontend/js/viewer.js` にフォーカス移動（IMP-220 の手順 11） | **済**（E2E-253 / 274 が OK） |
-| [BUG-008](docs/bugs/2026-09-06-bug-008-broken-image-alt-webkitgtk.md) | **Linux で、読み込みに失敗した画像の代替テキストが出ない**（枠は出る） | E2E-231/236 | `viewer.js` と `markdown.css`。`<img>` を **`<span class="img-broken">`** へ置き換え、`alt` を `textContent` で描く（IMP-226, DSP-123） | **済**（rc.4 で **W1 / L1 とも E2E-236 が OK**。描画スモークでは原理的に見えない） |
+| [BUG-008](docs/bugs/2026-09-06-bug-008-broken-image-alt-webkitgtk.md) | **Linux で、読み込みに失敗した画像の代替テキストが出ない**（枠は出る） | E2E-231/236 | `viewer.js`（v1.1.0 で `decorate.js` へ移した）と `markdown.css`。`<img>` を **`<span class="img-broken">`** へ置き換え、`alt` を `textContent` で描く（IMP-226, DSP-123） | **済**（rc.4 で **W1 / L1 とも E2E-236 が OK**。描画スモークでは原理的に見えない） |
 | [BUG-009](docs/bugs/2026-09-06-bug-009-task-checkbox-size-webkitgtk.md) | Linux でチェックボックスが 1px 小さい（13px / 12px） | E2E-231 | **コード変更なし。** 許容差として決着（NFR-061。2px 以内） | **決着**（4.33.0） |
 | [BUG-010](docs/bugs/2026-09-06-bug-010-plantuml-4096-testdata.md) | **E2E-240 の「4096 px を超える図」が構文エラーになっており、制限を一度も検証していなかった** | E2E-240 | `testdata/e2e/plantuml-limits.md` の 6 節を差し替え（40 クラス・1 行 1 関係）。**アプリの実装は正しい** | **済**（4.34.0。`lazy.js` のコメント 1 行だけ残る） |
-| [BUG-011](docs/bugs/2026-09-14-bug-011-document-id-collision.md) | **文書の見出しや生 HTML の `id` が、画面（`tooltip` / `state-screen` / `status-message` ほか）と同梱資産（`status` / `cy`）の要素を乗っ取る** | E2E-327 | `internal/renderer`（id に `user-content-`）と `frontend/js/util.js`（本文の中だけを探す `findInDocument`）。**仕様の不足**（AR-053 を新設） | **未修正**（仕様 4.43.0 に対策を入れた。実装待ち） |
-| [BUG-012](docs/bugs/2026-09-14-bug-012-state-screen-previous-document.md) | **状態画面の間、ステータス領域のパスとツリーの強調が前の文書のまま残り、前の文書の外部更新や `F5` で確認画面が前の文書の表示に置き換わる** | E2E-322 | `open.go`（状態画面で前の文書の監視を外す。IMP-192）、`bind.go` の `Reload`（`target` を読み直す。IMP-310）、`errors.go`（`ErrorDTO.DisplayPath`。IMP-307）、`status.js` / `filetree.js`（`state.target`。IMP-250）。**仕様の不足** | **未修正**（仕様 4.44.0 に対策を入れた。実装待ち） |
-| [BUG-013](docs/bugs/2026-09-14-bug-013-link-open-failure-state-screen.md) | **リンク先を既定のアプリで開けないと、ステータス表示ではなく状態画面になり本文が消える** | E2E-264（L1） | `errors.go`（種別 `open-failed`。IMP-315）と `main.js` の `handleLink`。**仕様の不足** | **未修正**（仕様 4.44.0 に対策を入れた。実装待ち） |
-| [BUG-014](docs/bugs/2026-09-14-bug-014-diagram-marker-spoofing.md) | **生 HTML で図のブロックを偽装すると、PlantUML の取り込み指令の検査を通らず描画され、コピーボタンが見えていない文字列をコピーする** | E2E-328 | `internal/renderer`（図のブロックに鍵の付いた `data-ref`。IMP-120, IMP-116）と `frontend/js/refs.js`（`isOwnRef` / `ownSource`。IMP-260）。**仕様の不足** | **未修正**（仕様 4.44.0 に対策を入れた。実装待ち） |
+| [BUG-011](docs/bugs/2026-09-14-bug-011-document-id-collision.md) | **文書の見出しや生 HTML の `id` が、画面（`tooltip` / `state-screen` / `status-message` ほか）と同梱資産（`status` / `cy`）の要素を乗っ取る** | E2E-327 | `internal/renderer`（見出し・脚注・生 HTML の id に `user-content-`）、`frontend/js/util.js`（本文の中だけを探す `findInDocument` と、見出しだけを完全な id で探す `findHeading`）、`lazy.js`（Mermaid の `SANITIZE_NAMED_PROPS`）。**仕様の不足**（AR-053 を新設） | **済**（仕様 4.43.0 の対策を実装した。描画スモークの検査 8 と DOM 検査で確認。**修正前の NG は v1.0.0 の実機で確認。修正後の実機での確認は rc の E2E-327**） |
+| [BUG-012](docs/bugs/2026-09-14-bug-012-state-screen-previous-document.md) | **状態画面の間、ステータス領域のパスとツリーの強調が前の文書のまま残り、前の文書の外部更新や `F5` で確認画面が前の文書の表示に置き換わる** | E2E-322 | `desktop/open.go` / `watch.go`（状態画面で前の文書の監視を外す。IMP-192）、`desktop/bind.go` の `Reload`（`target` を読み直す。IMP-310）、`desktop/errors.go`（`ErrorDTO.DisplayPath`。IMP-307）、`status.js` / `filetree.js`（`state.target`。IMP-250）。**仕様の不足** | **済**（仕様 4.44.0 の対策を実装した。DOM 検査で確認。**修正前の NG は v1.0.0 の実機で確認。修正後の実機での確認は rc の E2E-322**） |
+| [BUG-013](docs/bugs/2026-09-14-bug-013-link-open-failure-state-screen.md) | **リンク先を既定のアプリで開けないと、ステータス表示ではなく状態画面になり本文が消える** | E2E-264（L1） | `desktop/errors.go` / `link.go`（種別 `open-failed`。IMP-315）と `navigate.js` の `handleLink`（v1.0.0 では `main.js`）。**仕様の不足** | **済**（仕様 4.44.0 の対策を実装した。DOM 検査で確認。**修正前の症状は実機で確かめていない**（L1 で E2E-264 の手順 3 を実施できなかった）。**修正後の実機での確認は rc の E2E-264（L1）**） |
+| [BUG-014](docs/bugs/2026-09-14-bug-014-diagram-marker-spoofing.md) | **生 HTML で図のブロックを偽装すると、PlantUML の取り込み指令の検査を通らず描画され、コピーボタンが見えていない文字列をコピーする** | E2E-328 | `internal/renderer`（図のブロックに鍵の付いた `data-ref`。IMP-120, IMP-116）と `frontend/js/refs.js`（`isOwnRef` / `ownSource`。IMP-260）、`lazy.js` / `copy.js`（鍵の合うブロックだけを描き、その原文だけをコピーする）。**仕様の不足** | **済**（仕様 4.44.0 の対策を実装した。描画スモークの検査 10 と DOM 検査で確認。**修正前の NG は v1.0.0 の実機で確認。修正後の実機での確認は rc の E2E-328**） |
+| [BUG-015](docs/bugs/2026-09-17-bug-015-mermaid-click-link-navigation.md) | **Mermaid の `click` で URL を定義したノードを押すと、WebView の中でページが遷移して戻れなくなる**（同梱の Mermaid 11.17.2 は `strict` でも SVG の `<a xlink:href>` を出し、本文のリンクの捕捉は `href` 属性しか見ていなかった。**v1.0.0 の実機で利用者が再現**） | E2E-234 | `frontend/js/util.js` の `linkHref`、`viewer.js`（本文と `#expand-view`）、`contextmenu.js`（IMP-223, IMP-231, IMP-249, IMP-253）。**仕様の不足**。**図の中のリンクは本文のリンクと同じく既定のブラウザで開き、拡大画面では何もしない**（利用者の判断。MD-081 を改めた） | **済**（仕様 4.59.0。DOM 検査で確認。**修正後の実機での確認は rc の E2E-234**） |
+| [BUG-016](docs/bugs/2026-09-17-bug-016-link-middle-click.md) | **リンクをマウスの中ボタンで押すと、W1 では Markdown へのリンクが既定のブラウザへ回って表示されず、L1 では MarkView のウィンドウがリンク先に置き換わって戻れなくなる**（本文のリンクの捕捉が `click` だけを受けていた。中ボタンは `auxclick` で届き、リンクをたどる処理はその既定の動作である。AR-060。**v1.0.0 の実機で利用者が確認**） | E2E-264 | `frontend/js/viewer.js`（`#markdown` と `#expand-view` で `auxclick` の既定の動作を止める。`click` でも `event.button` を見る——**WebKitGTK 2.46 より前は中ボタンでも `click` を出す**。IMP-223）。**中ボタンでは何もしない**（利用者の判断） | **済**（仕様 4.61.0。DOM 検査と W1 の実物の exe で確認。**L1 の実機での確認は rc の E2E-264**） |
+| [BUG-017](docs/bugs/2026-09-18-bug-017-search-hits-before-rendering.md) | **図や数式を描く前に検索すると、描き終えた後も件数が残るのにハイライトが消え、`Enter` で件数だけが進んでスクロールしない**（描画が原文の `<pre>` と数式の要素を置き換え、その中の `<mark>` が DOM から外れるが、`state.search.hits` は持ったまま数える。**v1.0.0 から**。DOM 検査で再現） | E2E-271 | `frontend/js/search.js` の `syncHits`（外れたヒットを落とし、原文が戻ったブロックだけ探し直す。スクロールしない。IMP-241）と、描き終えたときの知らせ（`lazy.js` / `puml.js`。IMP-230, IMP-232）。**仕様の不足**（IMP-241 は描画が原文を置き換える順序を考えていなかった） | **済**（仕様 4.69.0。**修正前の症状は v1.0.0 の W1 で確認**（2026-09-18）。DOM 検査 15 項目と、描き終えるまで十数秒かかる文書で確認。**修正後の実機での確認は rc の E2E-271**） |
 
 | 区分 | 内容 |
 | --- | --- |
-| **ある** | `main.go` とルートの Go ファイル群（Wails との境界）、`internal/` 13 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / **同梱資産は Mermaid・KaTeX・PlantUML の 3 つとも配置済み**）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`・`pack`・`vendorupdate`・**`domids`**）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/`（利用者向け 5 文書 + 仕様 20 文書 + `bugs/` の調査報告 15 件）、`assets/`、`.github/workflows/`（`ci.yml`・`release.yml`）、ルート `README.md` |
-| **未修正** | **BUG-011〜BUG-014**（対策は仕様 4.43.0 / 4.44.0 に入れた。実装待ち）。v1.0.0 までの 10 件は片づいている（4.23.0〜4.38.0）。**v1.0.0 の時点で `UI-031`（ツリーのキーボード操作）も実装した**——`IMP-248` を新設し、`filetree.js` に roving tabindex と `keydown` を足した |
-| **未実施** | **v1.1.0 の手動テスト 86 件**（rc の成果物で全件）。**その前に、修正を入れる前の実装で E2E-327 / E2E-328 / E2E-322 / E2E-264（L1 の手順 3）を実施し、NG になることを確かめる。** v1.0.0 は rc.4 で 67 件を全件実施した（OK 66 / NG 0 / 対象外 1）。**次に何かを変えたら、また rc から始める**（BR-080, E2E-205）|
+| **ある** | `main.go`（ルート。CLI・埋め込み・Wails の起動）と `desktop/`（Wails との境界。`App` とバインドメソッド）、`internal/` 13 パッケージ、`frontend/`（HTML / CSS / JS / アイコン / **同梱資産は Mermaid・KaTeX・PlantUML の 3 つとも配置済み**）、`go.mod`、`wails.json`、`scripts/`（`copyicons`・`genchroma`・`genlicenses`・`smoke`・`gentestdata`・`e2e`・`pack`・`vendorupdate`・**`domids`**）、`licenses/THIRD_PARTY.md`、`testdata/`（`showcase.md`・`smoke.md`・`e2e/`）、`docs/`（利用者向け 5 文書と索引 + 仕様 20 文書 + `bugs/` の調査報告 18 件 + `tests/`（記録用 Excel の生成スクリプトと実施記録））、`assets/`、`.github/workflows/`（`ci.yml`・`release.yml`）、ルート `README.md` |
+| **未修正** | **無し。** BUG-001〜BUG-017 はすべて片づいた（v1.0.0 までの 10 件は 4.23.0〜4.38.0、v1.1.0 の 7 件は 4.43.0〜4.69.0）。**ただし BUG-011〜BUG-017 の修正後の振る舞いは、まだ実機で確かめていない**（rc の手動テストで見る）。**v1.0.0 の時点で `UI-031`（ツリーのキーボード操作）も実装した**——`IMP-248` を新設し、`filetree.js` に roving tabindex と `keydown` を足した |
+| **未実施** | **v1.1.0 の手動テスト 86 件**（rc の成果物で全件）。**修正前の確認は済んでいる**——v1.0.0 の実機で E2E-327 / E2E-328 / E2E-322 が NG、E2E-264（L1 の手順 3）は実施できなかった。v1.0.0 は rc.4 で 67 件を全件実施した（OK 66 / NG 0 / 対象外 1）。**次に何かを変えたら、また rc から始める**（BR-080, E2E-205）|
 
 > [!NOTE]
 > **41 章の「確認内容」は番号付きになった**（E2E-200, E2E-204）。**不具合の指摘は「E2E-223 の確認内容 2 が NG」と番号で行う。** 記録用 Excel にも同じ番号で出る。同じ原因の NG には同じ不具合番号（`BUG-nnn`）を付ける。
@@ -73,10 +76,10 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 > - 利用者向けドキュメントは `docs/`（`usage.md` / `markdown.md` / `showcase.md` / `settings.md` / `troubleshooting.md` と索引の `README.md`）。**`docs/` 内どうしは相対リンクでよい**。同じ場所に一緒に置かれるため
 > - `docs/showcase.md` は「こう書くと、こう出る」の見本。**`testdata/showcase.md` とは別物**（あちらは描画を固定するゴールデンテストの入力であり、こちらは利用者が読む対訳）。記法を足したときは両方を見る
 > - 日本語で書く。UI-024 が英語と定めているのは UI 文言・エラーメッセージ・`--help` / `--version` の出力であり、文書は含まない
-> - **画面を説明する記述は、仕様書の図（03 章）か `frontend/index.html` を開いてから書く。** ペインの並びは `Files` → `Outline` → 本文であり、ツールバーのボタンは **v1.0.0 では 7 つ**（`Open` `Reload` `Theme` `Outline` `Files` `Edit` と、右端の `?`。検索と倍率のボタンは無い）。**v1.1.0 の仕様（UI-020）では 8 つ**——`Open` `Reload` `Theme` `Outline` `Files` `Open in editor`（エディタで開く）`Edit mode`（編集モード）と、右端の `?`。**利用者向け文書は、実装した版の `index.html` に合わせて書く。****間違えても機械が教えてくれない種類の記述**である
+> - **画面を説明する記述は、仕様書の図（03 章）か `frontend/index.html` を開いてから書く。** ペインの並びは `Files` → `Outline` → 本文であり、ツールバーのボタンは **v1.1.0 で 8 つ**——`Open` `Reload` `Theme` `Outline` `Files` `Open in editor`（エディタで開く。鉛筆）`Edit mode`（編集モード。チェック付きの四角）と、右端の `?`（UI-020。検索と倍率のボタンは無い）。**v1.0.0 は 7 つ**で、`Edit` は「エディタで開く」を指していた。**利用者向け文書は、実装した版の `index.html` に合わせて書く。****間違えても機械が教えてくれない種類の記述**である
 > - アスキーアートは組み立ててから桁を検証する。枠内は ASCII のみにする（日本語の全角幅で崩れるため）
 
-仕様は `specs-4.2.0` タグの時点で一度完成しており、その後の改訂は `docs/specs/README.md` の改訂履歴に記録する（現在 **4.44.0**）。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直し、**改訂履歴に 1 行足して版を上げる**（NFR-071）。
+仕様は `specs-4.2.0` タグの時点で一度完成しており、その後の改訂は `docs/specs/README.md` の改訂履歴に記録する（現在 **4.69.0**）。実装時は**仕様を正とし、迷ったら実装ではなく仕様を読む**。仕様と違う判断をしたときは、同じ変更で仕様書を直し、**改訂履歴に 1 行足して版を上げる**（NFR-071）。
 
 > [!IMPORTANT]
 > **進捗の唯一の状態は `workspace/plans/implementation-progress.md`**（現在地・タスク一覧・検証ログ・決定と逸脱の記録・未解決の課題）。作業を始める前に読む。手順は同じディレクトリの `implementation-prompt.md`。
@@ -103,7 +106,8 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 ### 構造
 
-- **`internal/` は Wails に依存しない。** Wails の API を呼んでよいのは `package main`（ルート直下の `.go`）だけ（IMP-012）。これが崩れると単体テストに GUI 依存が付いてくる（UT-002）。
+- **`internal/` は Wails に依存しない。** Wails の API を呼んでよいのは `main.go`（`package main`）と `desktop/`（`package desktop`）だけ（IMP-012）。これが崩れると単体テストに GUI 依存が付いてくる（UT-002）。**ルートに Go のファイルを足さない**——ルートは `main.go` と `console_*.go` だけにする（IMP-011。4.60.0。利用者の判断）。`App` のメソッドを持つファイルは `App` と同じ `desktop/` にしか置けない（Go は 1 ディレクトリ 1 パッケージ）。
+- **`App` の公開メソッドはすべてフロントエンドから呼べる**（Wails の `Bind`。IMP-300）。公開メソッドは IMP-310 の一覧に限る。**ライフサイクルの関数（`onStartup` ほか）を公開メソッドにしない**——Wails は起動オプションに渡された関数を関数名で照合して外すだけであり、`main.go` で包んで渡すと JavaScript から呼べるようになる。`desktop.LifecycleOf` で取り出す。
 - **判断を伴うロジックを `app.go` に置かない。** 履歴・起動時の対象解決・表示用パスの算出・**同じファイルの判定（`session.SameFile`）**は `internal/session` へ、編集モードの判断は `internal/document` へ（IMP-012, IMP-191, IMP-193, IMP-109）。
 - **`internal/` 同士の依存は 2 系統のみ**（IMP-012）。`document → renderer` と、任意のパッケージ → **葉パッケージ**（`mdfile` / `localurl` / `applog`）。葉は標準ライブラリしか使わず、**葉に依存を追加してはならない**。それ以外の共通処理は `app.go` で組み合わせる。
 - フロントエンドから任意のパスを開く汎用 API を作らない。開く経路は 6 つに限る（IMP-300, IMP-192）。
@@ -130,7 +134,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 - KaTeX は `.math-inline` / `.math-block` に対して**要素単位で `katex.render`** を呼ぶ。auto-render を使わない（IMP-232）。
 - `outlineVisible`（利用者の意思・保存する）と `outlineSuppressed`（幅不足による一時抑制・保存しない）を別の変数で持つ（IMP-246, UI-026）。
 - Go を経由しない文字列を `innerHTML` に渡さない。UI 文言は `textContent`（IMP-220）。
-- 本文中のリンクは**常に `preventDefault()`**。WebView 内でページ遷移を発生させない（IMP-223, AR-060）。
+- 本文中のリンクは**常に `preventDefault()`**。WebView 内でページ遷移を発生させない（IMP-223, AR-060）。**`click` だけでなく `auxclick` も受ける**——中ボタンは `auxclick` で届き、リンクをたどる処理はその既定の動作である。**左ボタン以外では何もしない**（`event.button` を見る。WebKitGTK 2.46 より前は中ボタンでも `click` を出す。[BUG-016](docs/bugs/2026-09-17-bug-016-link-middle-click.md)）。
 - **本文への移動は `util.js` の `openAncestorDetails` を通す**（IMP-241, IMP-223, IMP-224）。検索・アンカー（リンクのクリックと、開いた直後の復元）・アウトラインの 4 か所が同じ関数を使う。**閉じた `<details>` の中は `scrollIntoView` の対象にならない**——大きさは返るのにスクロールは起きず、自動で開きもしない（BUG-004）。**「大きさを持っているか」で検知しようとすると見落とす。**
 - **描画エンジンの既定の振る舞いに、要求の充足を委ねない**（NFR-061）。「ブラウザが既定でこう描くから」を根拠に実装を省くと、**その既定が違う環境で要求が満たされなくなる。** **読み込みに失敗した画像は `<img>` を `<span class="img-broken">` へ置き換え、`alt` を `textContent` で描く**（IMP-226, DSP-123）。**WebKitGTK は `alt` を描かず、自前の壊れ画像アイコン（□＋`?`）を描く**——枠だけが出て中身が空になっていた（BUG-008）。**委ねてよいのは、差が出ても要求が壊れないものだけである**（チェックボックスの寸法は 2px 以内の差を許容する。BUG-009）。
 - **ツリーのキーボード操作は `#tree` の 1 か所で受け、修飾キー付きは扱わない**（UI-031, IMP-248）。**`Alt+←` / `Alt+→` は履歴の移動である**（UI-090）——ツリーが横取りすると戻れなくなる。**`Enter` で開いた後のフォーカスは本文ペインへ移す**（IMP-220 の手順 11）。経路ごとに分けない。ツリーに残すと `PageUp` / `PageDown` が効かず、**利用者から見れば BUG-007 と同じ症状になる。** フォーカスリングは **`.tree-item:focus-visible > .tree-row`** に出す——`li` に出すと展開中は配下の木全体が囲まれる（DSP-330, DSP-016）。
@@ -143,6 +147,7 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 - **`viz-global.js` を先に、`plantuml.js` を後に読む**（IMP-230, IMP-233）。逆にすると Graphviz が見つからない。
 - **`viz-global.js` の読み込みに失敗したら、PlantUML の描画を一切行わない**（IMP-233）。Graphviz 不在のまま class 図を投げると**処理系ごと止まり、以降のすべての描画が返ってこなくなる**。
 - **`render()` は Promise を返さない。** 完了は `MutationObserver` で待つ（IMP-233）。`await` して終わりにできない。
+- **図の大きさの上限は `render()` に `maxSvgSize: 4096` を渡して明示する**（MD-083, IMP-233。4.64.0）。**1.2026.8 から処理系の既定が 8192 px になった**——省くと同梱資産の更新だけで描ける大きさが変わり、`plantuml-limits.md` の検証が崩れる（次の rc の資産で描画スモークが失敗して見つけた）。1.2026.7 以前は指定を無視する。
 - **4096 px 超えの拒否は例外を投げない**（IMP-233）。`render()` は正常に戻り、**出力先の要素へ例外のテキストが書き込まれる**（`Diagram too large for browser rendering: <幅>x<高さ> (max 4096)`）。**`try` / `catch` ではなく「SVG 以外が入った」経路で拾う。** **`skinparam dpi` はこの移植版では大きさに影響しない**（BUG-010）。
 - **`!include` 系の指令は Go 側で弾く**（MD-084, IMP-119, NFR-032）。フロントで `XMLHttpRequest` を潰す方式は採らない。**`from` の無い `!theme plain` は拒まない**（組み込みテーマは使える）。
 - **`viz-global.js` を改変・再圧縮・結合しない。先頭の著作権表示を削らない**（BR-042）。このファイルには **Graphviz（EPL-2.0）**がオブジェクトコードで入っており、**改変しないことがコピーレフトを伝播させない条件になっている**（NFR-051）。サイズが厳しくてもここを削れない。**改行コードの正規化も改変である**——`frontend/vendor/** -text` を `.gitattributes` から外さない。
@@ -168,6 +173,20 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 - **`%TEMP%\MarkView` の権限（Linux は `0700` / `0600`）を緩めない**（UI-112）。設定ファイルにエディタのパスが入った以上、これは閲覧の秘匿だけでなく**任意コード実行の防止**にも効いている。
 - **端末エディタ（`vim` / `nano`）に対応しない**（IMP-172）。端末を持たずに起動され、利用者からは「押しても無反応」に見える。プリセットに入れない。
 
+### 編集モード
+
+**この製品で唯一、表示中のファイルを書き換える経路**である（NFR-031）。4.39.0 で「アプリ内に編集機能を持たない」（1.3.2）と「表示中のファイルを書き換える経路を持たない」（NFR-031）を改訂し、**書き換えは構造を変えない 2 種類（タスクリストのチェックボックス・表のセルの文字）に限り、編集モードの中でだけ行う**と決めた。**対象を増やすときは FR-140 系の改訂から始める**——「ついでにここも」と足すと境界が消えてエディタになる。
+
+- **生 HTML と GFM の区別は、変換ごとの乱数の鍵（IMP-120）でだけ行い、属性の有無や形で判断しない。** 文書の書き手は鍵を知りようがない。属性で判断すると、書き換えの対象を偽装できる（NFR-030。図のブロックの [BUG-014](docs/bugs/2026-09-14-bug-014-diagram-marker-spoofing.md) と同じ形）。
+- **書き換えの処理と、編集モードの状態と判断（`EditSession`。IMP-109）は `internal/document` に置く。** `internal/editor` を作らない（IMP-012）。`desktop/editmode.go` は錠・読み書きの呼び出し・イベントの送出だけにする。
+- **`Render` と `Locate` は同じ数え方の関数を共有する**（IMP-121）。描画で付けた目印の番号と、書き換える位置の番号が別の数え方になると、違うチェックボックスやセルを書き換える。
+- **書き込み先は Go 側が保持する表示中のファイルだけ**とし、フロントエンドから書き込み先のパスを受け取らない（FR-143, IMP-300）。フロントエンドが伝えるのは「どの目印か」と新しい文字列だけである。**書き込みの指示は、それを作った描画に対してだけ有効とする**（`EditSeq`。FR-143, IMP-109）——見た目を先に変えるため、指示が届く前に別の文書へ切り替わっていることがある。
+- **書き込みは一時ファイル＋リネームで行い、書き換える箇所以外のバイト列を 1 バイトも変えない**（FR-143, IMP-107）。BOM・改行コード・末尾の改行・Front Matter を残し、**読み込み時の正規化（FR-021）を書き戻さない。** 読み取り専用のファイルは置き換えない。
+- **表示中ファイルの読み直しと書き込みは `ioMu` で 1 つずつ行う**（IMP-190）。割り込ませると、自分の書き込みを「外部の変更」と取り違えて取り消しの履歴を捨てる。**錠を取る順序は常に `ioMu` → `mu`**（逆にするとデッドロックする）。**`ioMu` を持ったまま文書を開き直すときは `openLocked` を呼ぶ**——`open` は `ioMu` を取り、`sync.Mutex` は再入できない（IMP-192）。
+- **状態の正は Go 側**（IMP-195）。フロントエンドは届いた `DocumentDTO.editMode` / `editable` / `editSeq` に従う。
+- **`Open anyway` で開いた文書は、同じ文書の再描画では確認し直さない**（`currentConfirmed`。FR-016, IMP-192）。確認し直すと、書き込みの後の読み直しで確認画面になり、編集モードが黙って終わる。
+- **再描画と文書の切り替えで引き継ぐ状態は DSP-352 の表に従う**（並べ替え・原寸表示・拡大画面・編集モード・取り消し履歴・セルの編集欄）。機能ごとに別々に決めると、1 つだけ違う振る舞いになる。
+
 ### 永続化とプライバシー
 
 - **`config.Config` に「ウィンドウ位置・表示倍率・最大化状態」のフィールドを作らない。** 構造体になければ保存も復元も起こり得ない（IMP-150, UI-111）。倍率と最大化状態は**多重起動のために外した**（UI-115）。設定ファイルは全インスタンスで共有され、保存は構造体まるごとの後勝ちになるため、ウィンドウごとに変える値を保存対象にしてはならない。
@@ -180,20 +199,21 @@ MarkView — Markdown の**閲覧に特化した**軽量デスクトップアプ
 
 - `panic` を使わない。番兵エラーを返し、呼び出し側は `errors.Is` で判定する（IMP-021）。
 - **モーダルダイアログを使わない。** 通知先はステータス領域・本文中・本文ペインの状態画面の 3 か所（FR-110, UI-052）。
-- どの異常系でも異常終了しない。`app.go` の各バインドメソッド入口と `renderer` の変換で `recover` する（FR-111, IMP-022）。
+- どの異常系でも異常終了しない。`desktop` の各バインドメソッドの入口（`desktop/recover.go`）と `renderer` の変換で `recover` する（FR-111, IMP-022）。
 
 ### ビルド
 
 - **Linux ビルドは `-tags webkit2_41` を必ず指定する**（AR-003, BR-010）。忘れると 4.0 系にリンクされ Ubuntu 24.04 で起動しない。
+- **CI とリリースがビルドに使う Go の版は `go.mod` の `toolchain` が決める**（現在 `go1.26.8`。BR-001, IMP-010）。`go` の行（1.25.0）は下限であり、`toolchain` が無いと `setup-go` は 1.25.0 を入れる——**v1.0.0 までは修正版の出る前の標準ライブラリでビルドしていた**（`govulncheck` で 33 件）。**CI の `govulncheck` が失敗したら、依存か `toolchain` を上げる**（NFR-034, BR-052。Linux と Windows の両方で走る）。`toolchain` を消さない。
 - **UPX 等の実行ファイル圧縮を使わない**（BR-010, NFR-052）。ウイルス対策ソフトの誤検知を招く。
 - アイコンの原本は `assets/` が唯一の正。ビルド前に `build/` へ複製する（BR-013）。`assets/icon.ico` を `go:embed` しない（IMP-032）。
-- 既定ではログを出さない。`MARKVIEW_DEBUG=1` のときだけ標準エラーへ（IMP-023, NFR-041）。**環境変数を読むのは `internal/applog` だけ**にする。`grep -rn MARKVIEW_DEBUG --include=*.go` が 1 ファイルしか返さないこと。判定が散ると、そのうち 1 か所が漏れて配布物が出力を始める。
+- 既定ではログを出さない。`MARKVIEW_DEBUG=1` のときだけ標準エラーへ（IMP-023, NFR-041）。**環境変数を読むのは `internal/applog` だけ**にする。`grep -rn '"MARKVIEW_DEBUG"' --include=*.go .`（**引用符ごと**探す）が `internal/applog` の 1 ファイルしか返さないこと——引用符を付けないと、語に触れているコメント（`main.go` / `internal/watcher`）まで返る。判定が散ると、そのうち 1 か所が漏れて配布物が出力を始める。
 
 ## テストの書き方
 
 `docs/specs/30-test-policy.md` が方針、`31-test-cases.md` がケース。この仕様は「有効なテストを書くこと」と「**有効でないテストを書かないこと**」を等しく重視する。
 
-対象は `internal/` と、**`scripts/` のうち合否を判定するもの**（`scripts/domids` と、`scripts/smoke` の判定）。**`package main`（ルート直下の `.go` すべて）** / フロントエンド / WebView / ネットワークは対象外（UT-002, IMP-042）。**生成・取得・梱包を行うスクリプトも対象外**——出力そのものを CI が突き合わせるため（BR-041）。**「`main.go` と `app.go` の 2 つだけ」ではない。** 境界はファイル名ではなくパッケージで引く。
+対象は `internal/` と、**`scripts/` のうち合否を判定するもの**（`scripts/domids` と、`scripts/smoke` の判定）。**`package main`（`main.go` / `console_*.go`）と `desktop` パッケージ（`desktop/` の `.go` すべて）** / フロントエンド / WebView / ネットワークは対象外（UT-002, IMP-042）。**生成・取得・梱包を行うスクリプトも対象外**——出力そのものを CI が突き合わせるため（BR-041）。**「`main.go` と `app.go` の 2 つだけ」ではない。** 境界はファイル名ではなくパッケージで引く。
 
 > [!IMPORTANT]
 > **描画スモークテスト（`scripts/smoke`）は Chromium 系ブラウザしか起動しない。** Linux で実行しても WebKitGTK は一度も使われず、**描画エンジン間の差は原理的に見えない**（BR-054, E2E-109, NFR-061）。**エンジン差の検証は手動テストだけである**（E2E-231 / E2E-236 / E2E-239）。**「スモークが緑だから Linux も大丈夫」とは言えない。**
@@ -226,6 +246,7 @@ wails dev
 go test ./...
 go test -race ./...          # CI で最低限これを実行する
 go test -shuffle=on ./...    # 順序依存の検出
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...   # 既知の脆弱性（NFR-034）。CI は Linux（-tags webkit2_41）と Windows で実行し、見つかれば失敗
 go test ./internal/renderer -update   # ゴールデンの更新（差分を必ず読む）
 
 # 生成物（コミットする。手で書き換えない）
@@ -233,21 +254,22 @@ go run ./scripts/genchroma            # frontend/css/chroma.css（IMP-114, DSP-0
 go run ./scripts/genlicenses          # licenses/THIRD_PARTY.md（BR-040, FR-101）
 
 # 同梱資産の決め打ち id と index.html の id が衝突していないこと（BR-042, BR-052）
-#   v1.1.0 で「決め打ち id が user-content- で始まらないこと」の検査を足す（BR-043 の表 2。実装待ち）
+#   どちらの id も user-content- で始まらないことも見る（BR-043 の表 2, AR-053）
 go run ./scripts/domids               # CI が毎回実行する。判定の単体テストは UT-810
 
 # 描画スモークテスト（BR-054, E2E-109）。同梱資産を更新したら必ず実行する
 #   **2 部走る。** assets（同梱資産と画像）と limits（PlantUML の制限）
 #   判定には単体テストがある（UT-811, UT-812）
-#   v1.1.0 で文書の id の名前空間・表の並べ替えの比較・目印の照合（図のブロックとコピーの原文を含む）の
-#   検査を足す（BR-054。判定は UT-813〜UT-815。実装待ち）
+#   文書の id の名前空間・表の並べ替えの比較・目印の照合（図のブロックとコピーの原文を含む）も見る
+#   （BR-054。判定は UT-813〜UT-815）
 go run ./scripts/smoke                # Chromium 系ブラウザを自動で探す
 #   MARKVIEW_SMOKE_BROWSER=... で明示指定。Node.js は要らない（BR-001）
 
 # E2E の検証用データのうち巨大なもの（E2E-012）。コミットしない
-go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
+go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る（slow-plantuml.md は E2E-271 の検索の確認用）
 go run ./scripts/gentestdata -clean   # 消す
-#   v1.1.0 で -edit を足す（generated/edit/ の中身を作り直す。G18 の各ケースの前に実行する。実装待ち）
+go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18 の各ケースの前に実行する）
+#   generated/edit/ 自体は消さない（MarkView が監視していても作り直せる）。expected/ は人が書いたリテラル
 
 # 自動 E2E テスト（E2E-101〜108）。リリース CI が配布物に対して実行する
 #   **ビルド時に版を埋めること。** 既定は dev であり、埋めないと E2E-102 が NG になる
@@ -292,6 +314,11 @@ comm -3 /tmp/def.txt /tmp/ref.txt   # 何も出なければ、定義と参照が
 
 **プレリリースは省略できない工程**（BR-080, E2E-205）。
 
+> [!NOTE]
+> **次の rc では Mermaid 12.0.0（メジャー版）・KaTeX 0.18.7・PlantUML 1.2026.8 が取り込まれる見込み**（2026-09-18 に確かめた）。その資産で描画スモーク 2 部と `domids` が通ることを確かめてある（PlantUML の上限は `maxSvgSize` で 4096 に明示した。4.64.0）。**図の見た目は手動テストで見る。**
+>
+> **`license-rejected` / `notice-mismatch` のときはリリース CI が止まる**（`Stop on rejected assets`。BR-043）。取得の失敗（`fetch-failed`）は止めない。**`scripts/vendorupdate` には版を固定する手段が無い**（常に `latest`）ため、止まったら人が原因を確かめ、コードと仕様を新しい版に合わせてから打ち直す。
+
 1. `v<version>-rc.<n>` を打つ → CI が Mermaid / KaTeX / PlantUML を最新版へ更新（BR-043）し、自動 E2E テストを通してプレリリースを作る
 2. **CI がタグを付け替えたか確かめる。** 資産が更新されると**新しいコミットへタグが移る**。`git fetch --tags --force` して、**そのコミットを作業ブランチへ取り込む**
 3. **プレリリースの成果物**に対して手動テスト（v1.0.0 は 67 件、**v1.1.0 からは 86 件**）を実施し、結果を `docs/tests/results/` にコミット。**ローカルのビルドでは代わりにならない**（E2E-011。BR-043 の資産更新が反映されない）
@@ -324,8 +351,8 @@ comm -3 /tmp/def.txt /tmp/ref.txt   # 何も出なければ、定義と参照が
 
 ## 規約
 
-- **コードコメントは日本語**で書く。仕様書と同じ言語にすることで、`FR-016` のような ID の前後の説明をそのまま引ける。コードは `main` と `internal/` のみで外部から import されないため、英語 godoc の読み手は実質いない。
+- **コードコメントは日本語**で書く。仕様書と同じ言語にすることで、`FR-016` のような ID の前後の説明をそのまま引ける。コードは `main`・`desktop/`・`internal/` のみで外部から import されないため、英語 godoc の読み手は実質いない。
 - ただし**利用者に見えるものはすべて英語**。UI 文言・エラーメッセージ・`--help` / `--version` の出力・Go のエラー値（IMP-021, UI-024）。ツールチップの英日併記のみ例外。
 - 命名は IMP-020 に従う。パッケージ名は小文字 1 語・複数形にしない、型名にパッケージ名を繰り返さない（`filetree.Node`）、エラー変数は `Err` + 内容。
-- 1 ファイルは目安 400 行以内。超えたら責務で分割する（IMP-011）。
+- 1 ファイルは目安 400 行以内。超えたら責務で分割する（IMP-011）。**開発用のスクリプト（`scripts/` と `docs/tests/`）も対象**（4.66.0）。**スタイルシート（`frontend/css/`）は対象外**——カスケードの順序が `<link>` の順序の要件になるため（4.57.0）。テストのファイルと同梱資産（`frontend/vendor/`）は数えない。
 - コミットメッセージは日本語、`docs:` `feat:` のような接頭辞を付ける。**`-F` でファイルから読ませるときは `--cleanup=verbatim` を付ける**——付けないと **git が `#` で始まる行をコメントとして削除する**。`## 検証` のような Markdown の見出しが**黙って消える**。`git commit` と `git tag -a` の両方に効く。

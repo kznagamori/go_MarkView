@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"bytes"
 	"encoding/base64"
 	"net/url"
 	"regexp"
@@ -9,6 +10,10 @@ import (
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/microcosm-cc/bluemonday"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+	"golang.org/x/net/html"
 )
 
 // allowedElements は MD-072 が許可する要素。**ハードコードし、設定で緩めない。**
@@ -109,14 +114,146 @@ func Policy() *bluemonday.Policy {
 	// bluemonday では属性を許可した要素がそのまま許可要素になるため、
 	// allowedElements には足さず、例外をこの 1 か所に閉じ込めている。
 	// type を持たない input や type="text" の input は通らない。
+	//
+	// **属性を 1 つでも許可した要素は、その属性だけで残る**（bluemonday v1.0.27）。
+	// `<input disabled>` は type が落ちて文字の入力欄として残るため、type="checkbox"
+	// を持たない input はサニタイズの後に取り除く（sanitizeAfter。IMP-116）。
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
 	p.AllowAttrs("checked", "disabled").OnElements("input")
+
+	// 編集・並べ替え・図の目印（IMP-120）。値の形を正規表現で縛り、要素を限る。
+	//
+	// **形を縛っても偽装は防げない**（書き手は同じ形を書ける）。防ぐのは変換ごとの
+	// 鍵であり、照合はフロントエンドの refs.js と Go 側の EditSession が行う
+	// （IMP-260, IMP-109）。形を縛るのは、目印以外の用途で属性を通さないためである。
+	p.AllowAttrs("data-ref").Matching(editRefPattern).OnElements("input", "table", "th", "td")
+	p.AllowAttrs("data-ref").Matching(diagramRefPattern).OnElements("div")
+	p.AllowAttrs("data-link").Matching(linkRefPattern).OnElements("a")
 
 	// 支援技術向けの役割。goldmark の脚注が出す doc-* だけを通す。
 	p.AllowAttrs("role").Matching(regexp.MustCompile(`^doc-[a-z]+$`)).
 		OnElements("a", "div", "li", "sup")
 
 	return p
+}
+
+// 目印の値の形（IMP-116, IMP-120）。数は符号なしの 10 進数だけを受け付ける
+// （document.ParseRef も同じ形に揃える。UT-108 ケース 5）。
+var (
+	editRefPattern    = regexp.MustCompile(`^[0-9a-f]{16}:(?:task:[0-9]+|table:[0-9]+|cell:[0-9]+:[0-9]+:[0-9]+)$`)
+	diagramRefPattern = regexp.MustCompile(`^[0-9a-f]{16}:(?:mermaid|plantuml):[0-9]+$`)
+	linkRefPattern    = regexp.MustCompile(`^[0-9a-f]{16}:`)
+)
+
+// sanitizeAfter はサニタイズの後に、属性指定だけでは閉じ込められない 2 つを直す
+// （IMP-116, AR-053）。
+//
+//   - 生 HTML の id 属性に DocumentIDPrefix を付ける（既に付いている値には付けない）
+//   - type="checkbox" を持たない input を取り除く
+//
+// **1 回の走査で行い、開始タグと自己終了タグの両方を見る。** bluemonday は
+// `<div id="x"/>` を自己終了タグのまま出し、ブラウザはこれを開始タグとして扱う。
+// 開始タグだけを見ると、接頭辞の無い id や入力欄が本文に残る（UT-219 ケース 13、
+// UT-209 ケース 23）。
+//
+// **直さないトークンは Raw() のバイト列をそのまま書く。** 出力を変えない
+// （ゴールデンテストに目印と接頭辞以外の差分を出さない。UT-214）。
+//
+// hasRawHTML が偽なら走査を省く。生 HTML が無ければ、出力の id と input はすべて
+// 自分で出したものである（IMP-116。NFR-011）。**数を数えて省いてはならない**——
+// bluemonday は object などを中身ごと捨てるため、id や `<input` の数は書き手が
+// 合わせられる（UT-219 ケース 12、UT-209 ケース 24）。
+func sanitizeAfter(sanitized []byte, hasRawHTML bool) []byte {
+	if !hasRawHTML {
+		return sanitized
+	}
+
+	var out bytes.Buffer
+	out.Grow(len(sanitized) + 64)
+
+	z := html.NewTokenizer(bytes.NewReader(sanitized))
+	for {
+		tt := z.Next()
+		if tt == html.ErrorToken {
+			// 入力はメモリ上のバイト列であり、終わり（io.EOF）以外では止まらない。
+			break
+		}
+
+		if tt != html.StartTagToken && tt != html.SelfClosingTagToken {
+			out.Write(z.Raw())
+			continue
+		}
+
+		// Raw() は次の Next() で無効になるため、Token() を取る前に写しておく。
+		raw := append([]byte(nil), z.Raw()...)
+		tok := z.Token()
+
+		if tok.Data == "input" && !isCheckboxInput(tok) {
+			// 文字の入力欄として本文に出さない。input は空要素であり、
+			// 対になる終了タグは無い。
+			continue
+		}
+
+		if !prefixRawID(&tok) {
+			out.Write(raw)
+			continue
+		}
+		// 組み立て直すタグだけ、属性値を HTML の属性値としてエスケープし直す
+		// （Token.String が行う）。トークンの種類（末尾の /> の有無）は保つ。
+		out.WriteString(tok.String())
+	}
+
+	return out.Bytes()
+}
+
+// isCheckboxInput は input のトークンが type="checkbox" を持つかを返す。
+// サニタイズを通った後の値であり、type は checkbox 以外が既に落ちている。
+func isCheckboxInput(tok html.Token) bool {
+	for _, a := range tok.Attr {
+		if a.Key == "type" && a.Val == "checkbox" {
+			return true
+		}
+	}
+	return false
+}
+
+// prefixRawID は id 属性が DocumentIDPrefix で始まらなければ付け、書き換えたかを返す。
+//
+// **「既に付いている値には付けない」はこの走査に必須の規則である。** 見出しと
+// 脚注の id は出力の時点で接頭辞が付いており（IMP-117, IMP-111）、付け直すと
+// 二重になる。
+func prefixRawID(tok *html.Token) bool {
+	changed := false
+	for i, a := range tok.Attr {
+		if a.Key == "id" && !strings.HasPrefix(a.Val, DocumentIDPrefix) {
+			tok.Attr[i].Val = DocumentIDPrefix + a.Val
+			changed = true
+		}
+	}
+	return changed
+}
+
+// hasRawHTMLKey は、構文木に生 HTML があったかを parser.Context へ置く鍵。
+var hasRawHTMLKey = parser.NewContextKey()
+
+// rawHTMLTransformer は構文木に生 HTML（HTMLBlock / RawHTML）があるかを調べ、
+// Context に置く（sanitizeAfter の走査を省いてよいかの判断。IMP-116）。
+type rawHTMLTransformer struct{}
+
+func (rawHTMLTransformer) Transform(doc *ast.Document, _ text.Reader, pc parser.Context) {
+	found := false
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.Kind() {
+		case ast.KindHTMLBlock, ast.KindRawHTML:
+			found = true
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	pc.Set(hasRawHTMLKey, found)
 }
 
 // classPattern は class 属性に許可する値の正規表現を組み立てる（IMP-116）。

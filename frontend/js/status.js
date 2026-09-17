@@ -12,7 +12,13 @@ const MESSAGE_MS = 5000;
 
 let messageTimer = 0;
 
-// updateStatus は表示中の文書からステータス領域を組み立てる（DSP-150）。
+// updateStatus は表示中の文書、または状態画面の対象からステータス領域を組み立てる
+// （DSP-150, DSP-302）。
+//
+// **左のパスは `state.doc ?? state.target` から出す**（IMP-250）。状態画面（confirm-large /
+// too-large / render-error）の間は画面の対象のパスを出し、**右の文字コード・行数は出さない**
+// （描画していない）。v1.0.0 は state.doc しか見ておらず、状態画面の間も前の文書のパスが残っていた
+// （BUG-012）。
 //
 // 文言は textContent で入れる。Go を経由しない文字列を innerHTML へ渡さない
 // （IMP-220）。
@@ -22,8 +28,12 @@ export function updateStatus() {
 
   clear(meta);
 
-  if (!state.doc) {
+  const shown = state.doc ?? state.target;
+  if (!shown || !shown.displayPath) {
+    // 対象が分からない状態画面（回復したパニック。IMP-310）と welcome は空にする。
+    // ツールチップも残さない。
     clear(path);
+    path.title = "";
     return;
   }
 
@@ -35,17 +45,20 @@ export function updateStatus() {
 
   const text = document.createElement("span");
   text.className = "status-path-text";
-  text.textContent = state.doc.displayPath;
+  text.textContent = shown.displayPath;
   path.appendChild(text);
 
-  if (state.doc.outsideTree) {
+  if (shown.outsideTree) {
     const mark = document.createElement("span");
     mark.className = "status-outside";
     mark.textContent = ` ${S.outsideTree}`;
     path.appendChild(mark);
   }
 
-  path.title = state.doc.path;
+  path.title = shown.path;
+
+  // 右の項目は描画した文書にだけ出す（DSP-302）。
+  if (!state.doc) return;
 
   // 倍率は 100 % 以外のときだけ出す（FR-081）。等倍が既定であり、常に
   // 表示すると変更されていることが目に留まらなくなる。

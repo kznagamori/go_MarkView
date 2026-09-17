@@ -12,12 +12,21 @@
 | --- | --- |
 | `README.md` | このファイル。起動時に自動表示される（FR-013） |
 | `docs/design.md` | 相対リンクの遷移先（E2E-261）。アンカー付きリンクの対象（E2E-263） |
-| `docs/img/sample.png` | ローカル画像（1600 x 300）。本文幅を超えるため縮小される（E2E-236） |
+| `docs/img/sample.png` | ローカル画像（1600 x 300）。本文幅を超えるため縮小され、原寸表示と拡大画面のボタンが付く（E2E-236, E2E-351） |
+| `docs/img/badge.png` | 80 x 20 の小さな画像。縮小されないため、ボタンが付かない（E2E-351） |
+| `docs/img/medium.png` | 900 x 200 の画像。初期サイズのウィンドウでは収まり、狭めると縮小される（E2E-351） |
 | `outside/external.md` | ツリールート外への遷移先（FR-052, E2E-265） |
 | `broken/invalid-utf8.md` | 不正な UTF-8 を含む（FR-021, E2E-323） |
+| `plantuml-limits.md` | PlantUML の描けないもの（E2E-240） |
+| `mermaid.md` | Mermaid 図と、`click` を定義したノード（E2E-234） |
+| `media.md` | 図と画像の原寸表示と拡大画面（G15。E2E-351〜E2E-354） |
+| `tables.md` | 表の並べ替え（G16。E2E-361, E2E-362） |
+| `contextmenu.md` | 右クリックメニューとリンク先のコピー（G17。E2E-371, E2E-372） |
+| `id-collision.md` | 文書の id と画面の id の衝突（E2E-327） |
+| `markers.md` | 生 HTML で偽装した図とコードブロックの目印（E2E-328） |
 | `node_modules/` `vendor/` `.hidden/` | **ツリーに出てはいけない**ディレクトリ（FR-031, E2E-241） |
 | `notes.txt` | Markdown ではないファイル。**ツリーに出てはいけない**（FR-031） |
-| `generated/` | 巨大ファイルなど。`go run ./scripts/gentestdata` で作る。コミットしない |
+| `generated/` | 巨大ファイルなど。`go run ./scripts/gentestdata` で作る。**編集モードの検証用の `generated/edit/`** は `-edit` で作り直す（G18。E2E-381〜E2E-388）。コミットしない |
 
 `testdata/showcase.md`（BR-053）は**複製しません**。記法の網羅はあちらが担い、
 ここは「ファイルとディレクトリの関係」を確かめるためのものです。
@@ -29,6 +38,7 @@
 
 ```bash
 go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
+go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18 の各ケースの前）
 go run ./scripts/gentestdata -clean   # 消す
 ```
 
@@ -38,7 +48,7 @@ go run ./scripts/gentestdata -clean   # 消す
 
 - ディレクトリが**先**、ファイルが**後**に並ぶ
 - `node_modules` `vendor` `.hidden` は**出ない**
-- `notes.txt` と `docs/img/sample.png` も**出ない**（Markdown ではないため）
+- `notes.txt` と `docs/img/` の画像も**出ない**（Markdown ではないため）
 - `generated` は**出る**。除外の対象ではなく、中身も Markdown だからである。
   ここから `large-12mb.md` を選んで E2E-322 を実施できる
 
@@ -144,12 +154,13 @@ go run ./scripts/gentestdata -clean   # 消す
 ### 段落 1
 
 MarkView は Markdown の**閲覧に特化した**軽量デスクトップアプリケーションです。
-編集機能を持たず、書くための道具は既にあるものを使います。
+表示中のファイルを書き換えるのは、編集モードでのチェックボックスと表のセルだけです（FR-140）。
+それ以外の編集には、既にある道具（外部エディタ）を使います。
 
 ### 段落 2
 
 変換とシンタックスハイライトは Go 側で行います（AR-031）。
-フロントエンドで実行するのは Mermaid と KaTeX だけです。
+フロントエンドで実行するのは Mermaid・KaTeX・PlantUML だけです。
 
 ### 段落 3
 

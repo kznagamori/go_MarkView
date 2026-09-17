@@ -1,15 +1,10 @@
-package main
+package desktop
 
 import (
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/kznagamori/go_MarkView/internal/applog"
 	"github.com/kznagamori/go_MarkView/internal/filetree"
 	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/ostheme"
@@ -23,65 +18,10 @@ import (
 // 6 つに限り、いずれも open（IMP-192）を通る。
 //
 // **各メソッドの入口で recover する**（IMP-022, FR-111）。goldmark 拡張や
-// 想定外の入力で落ちても、アプリケーションごと終了させない。
-
-// errNotPending は確認待ちでないパスに OpenConfirmed が呼ばれたことを表す
-// （IMP-314, FR-016）。
-var errNotPending = errors.New("no pending confirmation for this path")
-
-// recoverBind はパニックをエラーへ変える（IMP-022）。
+// 想定外の入力で落ちても、アプリケーションごと終了させない。回復の関数は recover.go にある。
 //
-// 戻り値にエラーを持つメソッドで使う。利用者には状態画面の render-error
-// として見える（IMP-315）。
-func recoverBind(err *error) {
-	r := recover()
-	if r == nil {
-		return
-	}
-
-	// 開発モードでのみ、発生箇所とスタックを標準エラーへ出す
-	// （IMP-023, NFR-041）。判定は applog が持つ。
-	applog.Recovered("app.bind", r)
-
-	*err = fmt.Errorf("%w: %v", errPanic, r)
-}
-
-// recoverOpen はパニックを OpenResultDTO の Error へ変える（IMP-022, IMP-308）。
-//
-// 分類できないため render-error になり、利用者には状態画面として見える
-// （IMP-315）。
-func recoverOpen(path string, res *OpenResultDTO) {
-	r := recover()
-	if r == nil {
-		return
-	}
-
-	applog.Recovered("app.open", r)
-
-	*res = OpenResultDTO{Error: newErrorDTO(path, fmt.Errorf("%w: %v", errPanic, r))}
-}
-
-// recoverLink はパニックを LinkResultDTO の Error へ変える（IMP-022, IMP-305）。
-func recoverLink(href string, res *LinkResultDTO) {
-	r := recover()
-	if r == nil {
-		return
-	}
-
-	applog.Recovered("app.link", r)
-
-	*res = LinkResultDTO{Kind: linkError, Error: newErrorDTO(href, fmt.Errorf("%w: %v", errPanic, r))}
-}
-
-// recoverQuiet はパニックを握りつぶす（IMP-022）。
-//
-// エラーを返せないメソッドで使う。設定の更新やスクロール位置の記録が
-// 失敗しても、利用者の操作を妨げる理由はない。
-func recoverQuiet() {
-	if r := recover(); r != nil {
-		applog.Recovered("app.quiet", r)
-	}
-}
+// **Wails のランタイムを ctx が nil のまま呼ばない。** ランタイムは nil を受け取ると
+// log.Fatalf でプロセスを終わらせ、recover では止められない（Wails v2.15.0 の getFrontend）。
 
 // GetInitialState は起動直後の状態をまとめて返す（IMP-310, FR-012, FR-013）。
 //
@@ -140,9 +80,15 @@ func (a *App) GetInitialState() InitialStateDTO {
 //
 // キャンセルされた場合は nil を返し、表示中の内容を変更しない。
 func (a *App) OpenFileDialog() (res OpenResultDTO) {
-	defer recoverOpen("", &res)
+	var path string
+	defer a.recoverOpen(&path, &res)
 
-	path, err := runtime.OpenFileDialog(a.context(), runtime.OpenDialogOptions{
+	ctx := a.context()
+	if ctx == nil {
+		return OpenResultDTO{}
+	}
+
+	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{
 		// 初期ディレクトリは現在のツリールート。未確定なら空文字を渡し、
 		// OS の既定（カレントディレクトリ）に任せる（FR-010）。
 		DefaultDirectory: a.GetTreeRoot(),
@@ -167,7 +113,7 @@ func (a *App) OpenFileDialog() (res OpenResultDTO) {
 // **ツリールートは変更しない。** 配布されたドキュメント群を閲覧している間に、
 // ツリーが利用者の操作で移動してしまうことを防ぐ（FR-030）。
 func (a *App) OpenFromTree(path string) (res OpenResultDTO) {
-	defer recoverOpen(path, &res)
+	defer a.recoverOpen(&path, &res)
 
 	return a.openResult(path, openRequest{path: path, src: openFromTree})
 }
@@ -179,18 +125,32 @@ func (a *App) OpenFromTree(path string) (res OpenResultDTO) {
 //
 // ツリールートと履歴は確認画面を出した時点で反映済みのため、ここでは動かさない
 // （openFromConfirm。IMP-192）。
+//
+// **拒否は「何も起きなかった」として返す**（IMP-308, IMP-314）。起きるのは、Open anyway の
+// 二度押し（1 回目で本文が出た後）と、確認画面の間に確認以外の失敗で確認待ちが消えた後である。
+// v1.0.0 は render-error を返しており、二度押しで出たばかりの本文が状態画面に置き換わり、Go 側は
+// 文書を表示中のまま食い違っていた。確認待ちが消えた後は、F5 で確認画面を出し直せる（Reload は
+// 画面の対象を読み直す）。
 func (a *App) OpenConfirmed(path string) (res OpenResultDTO) {
-	defer recoverOpen(path, &res)
+	// 画面の対象にするのは、フロントエンドから受け取った値ではなく Go 側が持つ確認待ちのパス。
+	var target string
+	defer a.recoverOpen(&target, &res)
 
-	a.mu.Lock()
-	pending := a.pendingConfirm
-	a.mu.Unlock()
-
+	pending := a.pendingConfirmPath()
 	if pending == "" || !session.SamePath(pending, path) {
-		return newOpenResult(path, nil, fmt.Errorf("%s: %w", path, errNotPending))
+		return OpenResultDTO{}
 	}
+	target = pending
 
 	return a.openResult(pending, openRequest{path: pending, src: openFromConfirm, confirmed: true})
+}
+
+// pendingConfirmPath は確認待ちのパスを返す（IMP-314）。
+func (a *App) pendingConfirmPath() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.pendingConfirm
 }
 
 // FollowLink は本文中のリンクを処理する（IMP-310, FR-050, FR-053）。
@@ -198,7 +158,7 @@ func (a *App) OpenConfirmed(path string) (res OpenResultDTO) {
 // 判定は IMP-312 が定める順序で行う。**失敗も戻り値で伝える。** パニックを
 // 回復した場合も Kind == linkError として返すため、error を返さない。
 func (a *App) FollowLink(href string) (res LinkResultDTO) {
-	defer recoverLink(href, &res)
+	defer a.recoverLink(href, &res)
 
 	return a.followLink(href)
 }
@@ -208,32 +168,40 @@ func (a *App) FollowLink(href string) (res LinkResultDTO) {
 // 戻れない場合は nil を返す。フロントエンドはボタンを無効化しているが、
 // ショートカットからも呼ばれるため Go 側でも端を守る。
 func (a *App) HistoryBack() (res OpenResultDTO) {
-	defer recoverOpen("", &res)
+	var path string
+	defer a.recoverOpen(&path, &res)
 
-	a.mu.Lock()
-	entry, ok := a.history.Back()
-	a.mu.Unlock()
-
+	entry, ok := a.historyStep((*session.History).Back)
 	if !ok {
 		return OpenResultDTO{}
 	}
+	path = entry.Path
 
 	return a.openHistory(entry)
 }
 
 // HistoryForward は戻る前の文書へ進む（IMP-310, FR-051）。
 func (a *App) HistoryForward() (res OpenResultDTO) {
-	defer recoverOpen("", &res)
+	var path string
+	defer a.recoverOpen(&path, &res)
 
-	a.mu.Lock()
-	entry, ok := a.history.Forward()
-	a.mu.Unlock()
-
+	entry, ok := a.historyStep((*session.History).Forward)
 	if !ok {
 		return OpenResultDTO{}
 	}
+	path = entry.Path
 
 	return a.openHistory(entry)
+}
+
+// historyStep は mu の内側で履歴を 1 つ動かす（FR-051）。
+//
+// **錠は defer で解く。** 途中でパニックが起きても、回復（openPanicked）が錠を取れるようにする。
+func (a *App) historyStep(step func(*session.History) (session.Entry, bool)) (session.Entry, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return step(a.history)
 }
 
 // openHistory は履歴のエントリを開く（FR-051, IMP-192）。
@@ -246,22 +214,40 @@ func (a *App) openHistory(entry session.Entry) OpenResultDTO {
 	})
 }
 
-// Reload は表示中のファイルを読み直す（IMP-310, FR-015）。
+// Reload は画面の対象（target）を読み直す（IMP-310, FR-015）。
 //
-// 表示中の文書がない場合は nil を返す。スクロール位置はフロントエンドが
-// 保持している現在値を使う（IMP-321）。
+// **表示中の文書（current）を開き直さない。** 状態画面の間はその対象をもう一度開く
+// （confirm-large なら確認画面、render-error なら変換をやり直す）。v1.0.0 は current を開き
+// 直しており、状態画面を見ながら F5 を押すと画面に無い前の文書が表示された（BUG-012）。
+//
+// 画面の対象が無い（文書未表示）なら何もしない（IMP-308）。スクロール位置はフロントエンドが
+// 保持している現在値を使う（IMP-321）。確認して開いた文書の同意は開く処理が引き継ぐ（FR-016）。
 func (a *App) Reload() (res OpenResultDTO) {
-	defer recoverOpen("", &res)
+	var target string
+	defer a.recoverOpen(&target, &res)
 
-	a.mu.Lock()
-	current := a.current
-	a.mu.Unlock()
+	// **target を読むところから ioMu の内側で行う。** 錠の外で読むと、読み直すまでの間に別の
+	// 文書を開く処理が済み、画面に無くなった古い対象を読み直してしまう（IMP-190）。
+	// defer は後に置いたものから動くため、パニックのときは錠を解いてから recoverOpen が動く。
+	a.ioMu.Lock()
+	defer a.ioMu.Unlock()
 
-	if current == nil {
+	target = a.screenTarget()
+	if target == "" {
 		return OpenResultDTO{}
 	}
 
-	return a.openResult(current.Path, openRequest{path: current.Path, src: openFromReload})
+	dto, err := a.openLocked(openRequest{path: target, src: openFromReload})
+
+	return newOpenResult(target, dto, err)
+}
+
+// screenTarget は画面の対象を返す（IMP-190）。
+func (a *App) screenTarget() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.target
 }
 
 // ReadDir はディレクトリの直下を読む（IMP-310, FR-032, FR-035）。
@@ -337,27 +323,14 @@ func (a *App) UpdateConfig(patch ConfigDTO) {
 	a.scheduleSave()
 }
 
-// CopyToClipboard はテキストをクリップボードへ書く（IMP-310, FR-061, AR-062）。
-//
-// WebView の Clipboard API は権限や環境によって使えないことがあるため、
-// Go 側を経由する（AR-062）。
-func (a *App) CopyToClipboard(text string) (err error) {
-	defer recoverBind(&err)
-
-	if err := runtime.ClipboardSetText(a.context(), text); err != nil {
-		return fmt.Errorf("%w: %v", errClipboard, err)
-	}
-	return nil
-}
-
 // GetAbout はアプリケーション情報を返す（IMP-310, FR-100, FR-101）。
 func (a *App) GetAbout() AboutDTO {
 	defer recoverQuiet()
 
-	// WebView の版は OS ごとに取り方が違うため package main で解決する
+	// WebView の版は OS ごとに取り方が違うため、Wails との境界（このパッケージ）で解決する
 	// （webview_windows.go / webview_other.go。IMP-181）。**取得に失敗した
 	// ときだけ空文字になり**、Environment が当該区画ごと省く。
-	return newAboutDTO(thirdPartyLicenses, webviewVersion())
+	return newAboutDTO(a.licenses, webviewVersion())
 }
 
 // Quit はアプリケーションを終了する（IMP-310, UI-090）。
@@ -413,49 +386,4 @@ func markdownFilterPattern() string {
 	}
 
 	return strings.Join(patterns, ";")
-}
-
-// dropTarget はドロップされたパスから開く対象を選ぶ（IMP-313, FR-011）。
-//
-// **判定は Go 側で行う**（IMP-300）。複数渡された場合は先頭の Markdown を
-// 採り、他は無視する。ディレクトリなら直下の README を探す。対象がなければ
-// 空文字を返す。
-func dropTarget(paths []string) string {
-	for _, p := range paths {
-		if mdfile.IsMarkdown(p) {
-			return p
-		}
-	}
-
-	// ディレクトリは 1 つだけ渡された場合に限って扱う。複数のディレクトリから
-	// 1 つを選ぶ規則を FR-011 は定めていない。
-	if root := dropRoot(paths); root != "" {
-		if readme, ok := session.FindReadme(root); ok {
-			return readme
-		}
-	}
-
-	return ""
-}
-
-// dropRoot はドロップでツリールートにすべき場所を返す（FR-011, FR-030）。
-//
-// ディレクトリが 1 つだけ落とされた場合に限る。**README が見つからなくても
-// ツリールートは移す。** FR-011 の表の 2 行目は「そのディレクトリを新しい
-// ツリールートとし、直下に README.md があれば表示する」であり、表示できるか
-// どうかとツリーの移動は別である。
-//
-// ファイルが落とされた場合は空文字を返す。ファイルのツリールートは open が
-// 親ディレクトリとして決める（IMP-192）。
-func dropRoot(paths []string) string {
-	if len(paths) != 1 {
-		return ""
-	}
-
-	info, err := os.Stat(paths[0])
-	if err != nil || !info.IsDir() {
-		return ""
-	}
-
-	return filepath.Clean(paths[0])
 }

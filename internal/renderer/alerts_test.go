@@ -167,12 +167,12 @@ func TestRender_AlertStructure(t *testing.T) {
 // Alert への差し替えで Blockquote が別のノードに変わるため、見出しの走査が
 // 途切れていないかを見る。
 func TestRender_AlertHeadings(t *testing.T) {
-	res, err := New().Render([]byte("> [!NOTE]\n> # 見出し"), "")
+	res, err := New().Render([]byte("> [!NOTE]\n> # 見出し"), "", "")
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
 
-	want := []Heading{{Level: 1, Text: "見出し", ID: "見出し"}}
+	want := []Heading{{Level: 1, Text: "見出し", ID: "user-content-見出し"}}
 	if len(res.Headings) != 1 || res.Headings[0] != want[0] {
 		t.Errorf("Headings = %+v, want %+v", res.Headings, want)
 	}

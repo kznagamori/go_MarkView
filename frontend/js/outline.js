@@ -4,7 +4,7 @@
 // **HTML を走査して見出しを抽出しない。** 抽出規則を 2 か所に持たないため。
 
 import { S } from "./strings.js";
-import { $, clear, openAncestorDetails } from "./util.js";
+import { $, clear, findHeading, openAncestorDetails } from "./util.js";
 
 // 「ペイン上端付近」を表す帯。下端を 85 % 削り、上 15 % だけを判定に使う（IMP-222）。
 const BAND = "0px 0px -85% 0px";
@@ -56,8 +56,9 @@ export function observeHeadings(root, headings) {
   for (const heading of headings || []) {
     if (!heading.id) continue; // アンカーを持たない見出しは移動先にできない
 
-    const element = root.querySelector(`[id="${cssEscape(heading.id)}"]`);
-    if (!element) continue;
+    // **完全な id で見出しの要素だけを探す**（findHeading。IMP-222, AR-053）。root は #markdown。
+    const element = findHeading(heading.id);
+    if (!element || !root.contains(element)) continue;
 
     order.push(heading.id);
     observer.observe(element);
@@ -80,7 +81,7 @@ export function syncActive() {
   // 判定は「本文ペインの上端より上にある最後の見出し」（FR-042）。
   let found = "";
   for (const id of order) {
-    const element = document.getElementById(id);
+    const element = findHeading(id);
     if (!element) continue;
     if (element.getBoundingClientRect().top > bandBottom) break;
 
@@ -126,7 +127,9 @@ function onClick(event) {
   const item = event.target.closest("li[data-id]");
   if (!item) return;
 
-  const target = document.getElementById(item.dataset.id);
+  // **findInDocument と document.getElementById を使わない**（IMP-224, AR-053）。前者は接頭辞を
+  // 補って先に探すため `## user-content-foo` の見出しへ移り、後者は画面の要素に当たる（BUG-011）。
+  const target = findHeading(item.dataset.id);
   if (!target) return;
 
   // **アウトラインは折りたたみの中の見出しも項目として並べる**（IMP-224）。
@@ -185,12 +188,4 @@ function itemFor(list, id) {
   }
 
   return null;
-}
-
-// cssEscape は属性セレクタに入れる値をエスケープする。
-//
-// 見出し ID は GitHub 互換のスラッグであり（MD-021）、引用符は現れないが、
-// セレクタへ素の文字列を差し込む形は残さない。
-function cssEscape(value) {
-  return value.replace(/["\\]/g, "\\$&");
 }

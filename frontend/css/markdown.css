@@ -391,6 +391,117 @@
   margin-bottom: 0;
 }
 
+/* --- 表の並べ替えのボタン（DSP-125, UI-054, IMP-229） ---
+
+   ボタンは tablesort.js が鍵の合う GFM の表（本体が 2 行以上）の見出しセルの末尾に置く。
+   **ボタンを持つ見出しセルだけ**に右の余白を足し、見出しの文字とボタンを重ねない。
+   ボタンを持たない見出しセル（生 HTML の表、行が 2 行未満の表）は DSP-122 のまま。
+
+   位置の右とセルの右の余白は、セルのパディング（--md-13。倍率に追随する）から決める。
+   100 % で 右 13px + ボタン 20px + 間隔 4px = 37px（DSP-125）。ボタンそのものは固定 px。 */
+.markdown-body table th:has(> .sort-btn) {
+  position: relative;
+  padding-right: calc(var(--md-13) + 24px);
+}
+
+.markdown-body .sort-btn {
+  position: absolute;
+  top: 50%;
+  right: var(--md-13);
+  /* 見出しの文字が折り返して高くなっても上下中央に置く（DSP-125） */
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-subtle);
+  z-index: var(--z-copy);
+  cursor: pointer;
+}
+
+.markdown-body .sort-btn:hover {
+  background: var(--neutral-muted);
+  color: var(--fg-default);
+}
+
+/* 並べ替えている列（tablesort.js が th に aria-sort を付ける。IMP-295）。
+   **アイコンの形でも昇順と降順を区別している**（icon-sort-asc / icon-sort-desc。UI-054）。
+   ホバーしても色を変えない（DSP-125） */
+.markdown-body th[aria-sort] > .sort-btn,
+.markdown-body th[aria-sort] > .sort-btn:hover {
+  color: var(--accent-fg);
+}
+
+/* --- 編集モード中のチェックボックスとセル（DSP-126, DSP-127, DSP-321, UI-055） ---
+
+   is-editable は editmode.js が**鍵の合う**チェックボックスとセルにだけ付ける（IMP-261, IMP-262）。CSS は鍵を
+   読めないためクラスで受ける。**付かないもの（生 HTML の input と表、補われたセル）は DSP-121 / DSP-122 のまま**
+   であり、並べて見分けられる。編集モードでない間はどのクラスも付かず、見た目は変わらない。 */
+
+/* DSP-121 の読み取り専用の指定（pointer-events: none）を上書きする */
+.markdown-body input[type="checkbox"].is-editable {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* ホバーは周りの淡い帯。**輪郭線にしない**——フォーカスリング（DSP-016 の 2px の線）と紛れる */
+.markdown-body input[type="checkbox"].is-editable:hover {
+  box-shadow: 0 0 0 3px var(--neutral-muted-strong);
+}
+
+/* 罫線の内側 4px の破線。outline は寸法を持たず、セルの大きさと表の配置を変えない */
+.markdown-body table th.is-editable,
+.markdown-body table td.is-editable {
+  cursor: text;
+  outline: 1px dashed var(--border-default);
+  outline-offset: -4px;
+}
+
+.markdown-body table th.is-editable:hover,
+.markdown-body table td.is-editable:hover {
+  outline-style: solid;
+  outline-color: var(--accent-fg);
+}
+
+/* 編集中のセルは編集欄の位置の基準になる。並べ替えのボタンを持つ見出しセルは既に relative である */
+.markdown-body table .is-cell-editing {
+  position: relative;
+}
+
+/* セルの編集欄（DSP-127）。セルの内側いっぱいに重ね、**セルの寸法を変えない**（UI-055）。
+   パディングはセル（DSP-122 の --md-6 / --md-13。倍率に追随する）から枠の 2px を引き、文字の位置をセルの
+   文字とそろえる（100 % で 4px 11px）。書体と大きさと太さはセルから受け継ぐ（見出し行は太字のまま） */
+.markdown-body .cell-editor {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-copy);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: calc(var(--md-6) - 2px) calc(var(--md-13) - 2px);
+  color: var(--fg-default);
+  background: var(--canvas-default);
+  border: 2px solid var(--accent-fg);
+  border-radius: 0;
+  font: inherit;
+}
+
+/* 枠そのものがフォーカスを示すため、フォーカスリングを重ねない（DSP-016 の例外、DSP-127） */
+.markdown-body .cell-editor:focus-visible {
+  outline: none;
+}
+
+/* 確定した直後、再描画が届くまでのセルの文字（DSP-321）。記法は描かず、入力された文字列をそのまま出す */
+.markdown-body .cell-pending {
+  color: var(--fg-muted);
+}
+
 /* --- 画像（DSP-123, FR-022） --- */
 
 .markdown-body img {
@@ -420,6 +531,93 @@
   padding: 8px 12px;
   border: 1px dashed var(--color-border-default);
   color: var(--color-fg-muted);
+}
+
+/* --- 図と画像のボタンと原寸表示（DSP-124, UI-053, FR-121, IMP-228） ---
+
+   ボタンは media.js が置く。図は .code-block の直下（コピーボタンの左）、画像は .media-image の直下。
+   **ボタンをスクロールする器（.media-frame）の中に置かない**——中の絶対配置は横スクロールで流れる。
+   ボタンは本文中に足したボタンであり、寸法は px で与えて倍率に追随させない（DSP-021）。 */
+.markdown-body .media-actions {
+  position: absolute;
+  top: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  z-index: var(--z-copy);
+}
+
+/* 図: コピーボタン（右 8px・28px）と間隔 4px の左。画像: 右 8px */
+.markdown-body .code-block > .media-actions {
+  right: 40px;
+}
+
+.markdown-body .media-image > .media-actions {
+  right: var(--space-2);
+}
+
+/* 見た目はコピーボタン（DSP-251）と同じ。**display: none にしない**（UI-053）。
+   表示と非表示は hidden 属性で切り替える（base.css の [hidden] が勝つ。IMP-202） */
+.markdown-body .media-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--canvas-default);
+  color: var(--fg-muted);
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.markdown-body .media-btn:hover,
+.markdown-body .media-btn:focus-visible {
+  opacity: 1;
+  background: var(--neutral-muted);
+}
+
+/* 原寸表示中（トグル ON。DSP-101 と同じ表し方） */
+.markdown-body .media-btn[aria-pressed="true"] {
+  opacity: 1;
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+/* 画像を包む器。**包む前と位置と大きさを変えない**（段落の中の流れを崩さない。DSP-124） */
+.markdown-body .media-image {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+}
+
+.markdown-body .media-image > .media-frame {
+  display: block;
+  max-width: 100%;
+}
+
+/* 原寸表示では横スクロールの器を本文幅いっぱいに取る */
+.markdown-body .media-image:has(> .media-frame.is-actual) {
+  display: block;
+}
+
+/* 原寸表示: その枠の内側で横スクロールする（UI-050）。はみ出したときだけスクロールバーを出す。
+   図は左寄せにする——中央寄せのままだと、はみ出した左側へスクロールできない */
+.markdown-body .media-frame.is-actual {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  text-align: left;
+}
+
+/* 本来の幅（--media-natural-width。media.js が論理ピクセルで入れる）で描く。倍率に追随しない（DSP-021）。
+   Mermaid の SVG のインラインの max-width は media.js が控えて外している */
+.markdown-body .media-frame.is-actual > svg,
+.markdown-body .media-frame.is-actual > img {
+  max-width: none;
+  width: var(--media-natural-width);
+  height: auto;
 }
 
 /* --- 折りたたみ（MD-026） --- */

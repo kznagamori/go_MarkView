@@ -17,6 +17,13 @@
 //
 // 描画スモークテスト（BR-054）では捕まらない。あちらは index.html を配らず
 // 独自のページを使うため、**衝突しようがない。**
+//
+// **あわせて、どちらの id も文書の id の接頭辞（`user-content-`）で始まらない
+// ことを確かめる**（AR-053, BR-043 の表の 2）。文書から生まれる id はすべてこの
+// 接頭辞で始まる。画面や資産の id がこれで始まると、文書の見出しや生 HTML の
+// `id` と衝突しうる（docs/bugs/2026-09-14-bug-011-document-id-collision.md）。
+// **文書は実行時に来るため、衝突そのものはここでは見えない。** 名前空間が
+// 分かれていることだけを確かめる。
 package main
 
 import (
@@ -49,6 +56,10 @@ var vendorIDRe = regexp.MustCompile(`getElementById\(\s*(['"])([^'"]*)['"]\s*\)`
 // 当たり、存在しない id を検査対象にしてしまう。
 var htmlIDRe = regexp.MustCompile(`(?:^|\s)id\s*=\s*(['"])([^'"]*)['"]`)
 
+// documentIDPrefix は文書から生まれる id の接頭辞（AR-053）。
+// 画面と資産の id は、これで始まってはならない。
+const documentIDPrefix = "user-content-"
+
 // errNoVendor は資産のディレクトリが無いことを表す番兵エラー（IMP-021）。
 var errNoVendor = errors.New("vendor directory not found")
 
@@ -70,21 +81,66 @@ func run(vendorDir, htmlPath string) error {
 	}
 
 	hits := intersect(found, ours)
+	violations := prefixViolations(found, ours, htmlPath)
 
 	fmt.Printf("同梱資産が決め打ちする id: %d 件 %v\n", len(found), sortedKeys(found))
 	fmt.Printf("%s の id: %d 件\n", htmlPath, len(ours))
 
-	if len(hits) == 0 {
-		fmt.Println("交差なし。OK")
+	if len(hits) == 0 && len(violations) == 0 {
+		fmt.Printf("交差なし。%s で始まる id なし。OK\n", documentIDPrefix)
 		return nil
 	}
 
+	// 2 種類は別の誤りであり、直す場所も違う。混ぜずに分けて報告する。
 	var b strings.Builder
-	fmt.Fprintf(&b, "同梱資産と衝突する id が %d 件ある。index.html 側の名前を変えること（BR-042, IMP-202）\n", len(hits))
-	for _, id := range hits {
-		fmt.Fprintf(&b, "  id=%q  ← %s\n", id, strings.Join(found[id], ", "))
+	if len(hits) > 0 {
+		fmt.Fprintf(&b, "同梱資産と衝突する id が %d 件ある。index.html 側の名前を変えること（BR-042, IMP-202）\n", len(hits))
+		for _, id := range hits {
+			fmt.Fprintf(&b, "  id=%q  ← %s\n", id, strings.Join(found[id], ", "))
+		}
+	}
+	if len(violations) > 0 {
+		fmt.Fprintf(&b, "文書の id の接頭辞 %s で始まる id が %d 件ある。文書の id と衝突しうる（AR-053, BR-043）\n", documentIDPrefix, len(violations))
+		for _, v := range violations {
+			fmt.Fprintf(&b, "  id=%q  ← %s\n", v.id, strings.Join(v.files, ", "))
+		}
 	}
 	return errors.New(strings.TrimRight(b.String(), "\n"))
+}
+
+// prefixViolation は、文書の id の接頭辞で始まる画面または資産の id 1 つ（AR-053）。
+type prefixViolation struct {
+	id    string
+	files []string // 見つかったファイル。資産の決め打ちなら資産のファイル、index.html の id ならそのパス
+}
+
+// prefixViolations は、資産の決め打ちと自前の id のうち、文書の id の接頭辞で
+// 始まるものを返す（AR-053, BR-043 の表の 2）。
+//
+// **接頭辞で「始まる」ものだけを見る。** `user-content`（`-` の後が無い）や
+// `my-user-content-x` は文書の id と衝突しえないため違反にしない（UT-810 の
+// ケース 12）。過検出は「検査が厳しすぎる」で片づけられ、やがて検査ごと外される。
+//
+// 同じ id が資産と index.html の両方にあれば 1 件にまとめ、見つかったファイルを
+// 並べる（交差としても別に報告される）。戻り値は id の昇順。
+func prefixViolations(found map[string][]string, ours []string, htmlPath string) []prefixViolation {
+	byID := map[string][]string{}
+	for id, files := range found {
+		if strings.HasPrefix(id, documentIDPrefix) {
+			byID[id] = append(byID[id], files...)
+		}
+	}
+	for _, id := range ours {
+		if strings.HasPrefix(id, documentIDPrefix) && !contains(byID[id], htmlPath) {
+			byID[id] = append(byID[id], htmlPath)
+		}
+	}
+
+	var out []prefixViolation
+	for _, id := range sortedKeys(byID) {
+		out = append(out, prefixViolation{id: id, files: byID[id]})
+	}
+	return out
 }
 
 // vendorIDs は資産の JavaScript から決め打ちの id を集める。

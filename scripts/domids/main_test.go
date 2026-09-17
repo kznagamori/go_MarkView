@@ -1,6 +1,6 @@
 // domids の検査ロジックの単体テスト（UT-810）。
 //
-// 根拠: BR-042 / BR-043 / IMP-202 / IMP-230。
+// 根拠: BR-042 / BR-043 / AR-053 / IMP-202 / IMP-230。
 // 対象範囲の扱いは UT-002（`scripts/` の検証ロジックは単体テストの対象）。
 //
 // **実物のリポジトリを見ない。** 見てしまうと、index.html を直した瞬間に
@@ -255,6 +255,138 @@ func TestRun(t *testing.T) {
 			}
 			if err != nil {
 				t.Errorf("run() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// TestPrefixViolations は、文書の id の接頭辞で始まる id を拾うことを検証する
+// （UT-810 のケース 10〜12。AR-053）。
+//
+// **過検出の側（ケース 12）を先に置く**（UT-013）。接頭辞を「含む」だけで拾う
+// 実装は、衝突しえない id でリリースを止める。
+func TestPrefixViolations(t *testing.T) {
+	const htmlPath = "frontend/index.html"
+
+	tests := []struct {
+		name  string
+		found map[string][]string
+		ours  []string
+		want  []prefixViolation
+	}{
+		{
+			name: "ケース 12: - の後が無い user-content は違反ではない",
+			ours: []string{"user-content"},
+			want: nil,
+		},
+		{
+			name: "ケース 12: 途中に user-content- を含むだけなら違反ではない",
+			ours: []string{"my-user-content-x"},
+			want: nil,
+		},
+		{
+			name:  "ケース 12: 資産の側も、途中に含むだけなら違反ではない",
+			found: map[string][]string{"x-user-content-y": {"a.js"}},
+			want:  nil,
+		},
+		{
+			name: "ケース 10: index.html の id が user-content- で始まる",
+			ours: []string{"statusbar", "user-content-x"},
+			want: []prefixViolation{{id: "user-content-x", files: []string{htmlPath}}},
+		},
+		{
+			name:  "ケース 11: 資産の決め打ちが user-content- で始まる",
+			found: map[string][]string{"status": {"a.js"}, "user-content-x": {"plantuml/plantuml.js"}},
+			want:  []prefixViolation{{id: "user-content-x", files: []string{"plantuml/plantuml.js"}}},
+		},
+		{
+			name: "大文字は接頭辞と一致しない（id は大小を区別する）",
+			ours: []string{"User-Content-x"},
+			want: nil,
+		},
+		{
+			name:  "違反が無ければ空",
+			found: map[string][]string{"status": {"a.js"}, "cy": {"b.js"}},
+			ours:  []string{"statusbar", "app"},
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := prefixViolations(tt.found, tt.ours, htmlPath)
+			if len(got) != len(tt.want) {
+				t.Fatalf("prefixViolations() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i].id != tt.want[i].id {
+					t.Errorf("prefixViolations()[%d].id = %q, want %q", i, got[i].id, tt.want[i].id)
+				}
+				if strings.Join(got[i].files, ",") != strings.Join(tt.want[i].files, ",") {
+					t.Errorf("prefixViolations()[%d].files = %v, want %v", i, got[i].files, tt.want[i].files)
+				}
+			}
+		})
+	}
+}
+
+// TestRun_PrefixViolation は、接頭辞の違反で検査が落ち、交差とは別の種類として
+// 報告されることを検証する（UT-810 のケース 10〜12。AR-053, BR-043 の表の 2）。
+func TestRun_PrefixViolation(t *testing.T) {
+	tests := []struct {
+		name    string
+		vendor  string
+		html    string
+		wantErr bool
+		wantID  string
+	}{
+		{
+			name:    "ケース 10: index.html の id が user-content- で始まる",
+			vendor:  `document.getElementById('status')`,
+			html:    `<footer id="statusbar"></footer><div id="user-content-x"></div>`,
+			wantErr: true,
+			wantID:  "user-content-x",
+		},
+		{
+			name:    "ケース 11: 資産が user-content- で始まる id を決め打ちする",
+			vendor:  `document.getElementById('user-content-x')`,
+			html:    `<footer id="statusbar"></footer>`,
+			wantErr: true,
+			wantID:  "user-content-x",
+		},
+		{
+			name:    "ケース 12: user-content と my-user-content-x は違反ではない",
+			vendor:  `document.getElementById('status')`,
+			html:    `<div id="user-content"></div><div id="my-user-content-x"></div>`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeTree(t, map[string]string{"a.js": tt.vendor})
+			path := filepath.Join(t.TempDir(), "index.html")
+			if err := os.WriteFile(path, []byte(tt.html), 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			err := run(dir, path)
+			if !tt.wantErr {
+				if err != nil {
+					t.Errorf("run() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("run() error = nil, want エラー")
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, tt.wantID) || !strings.Contains(msg, documentIDPrefix+" で始まる") {
+				t.Errorf("run() error = %q, want 接頭辞の違反として %q を含む", msg, tt.wantID)
+			}
+			// 交差とは別の種類として報告する（混ぜると直す場所を誤る）。
+			if strings.Contains(msg, "同梱資産と衝突する") {
+				t.Errorf("run() error = %q, want 交差として報告しない", msg)
 			}
 		})
 	}

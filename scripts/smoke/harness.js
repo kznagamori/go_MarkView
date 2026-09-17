@@ -4,6 +4,11 @@
 // Mermaid / KaTeX 側の API が変わったときに写しだけが古くなり、
 // 「資産を更新しても描画できる」という BR-054 の問いに答えられなくなる。
 //
+// v1.1.0 からは、本番の tablesort.js と refs.js も呼ぶ（BR-054 の「表の並べ替えの
+// 比較」「目印の照合」）。本文の id の事実も集める（「文書の id の名前空間」）。
+// **ここでは判定しない。** どの要素が GFM の由来かも、何を処理系の id とみなすかも、
+// Go 側（scripts/smoke の ids.go / tablesort.go / refs.go）が決める。
+//
 // 結果は DOM へ書かず、Go 側へ POST で返す。描画は非同期であり、
 // ヘッドレスブラウザの --dump-dom は「いつ終わったか」を知らないため、
 // 終わった側から知らせるほうが待ち時間の推測を持ち込まずに済む。
@@ -11,6 +16,26 @@
 // **名前空間として読む。** 個別の名前で import すると、未実装の関数が 1 つ
 // あるだけでモジュールの読み込みごと失敗し、他の検査まで巻き添えになる。
 import * as lazy from "./js/lazy.js";
+
+// **本番の state.js を使う。** refs.js は state.doc.refKey で鍵を照合する
+// （IMP-260）。同じ URL のモジュールは 1 つしか作られないため、ここで入れた値を
+// lazy.js / refs.js / tablesort.js が同じく読む。
+import { state } from "./js/state.js";
+
+// **集める関数は collect.js にある**（harness.js が 400 行の目安を超えたため分けた。IMP-011）。
+// 検証用のページの一部であり本番のモジュールではないため、静的に読む。
+import {
+  collectIds,
+  collectImages,
+  collectMath,
+  collectMermaid,
+  collectPlantUML,
+  collectRefs,
+  collectRejectedPlantUML,
+  collectSort,
+  diagramBlocks,
+  settleImages,
+} from "./_smoke_collect.js";
 
 // **viewer.js は動的に読む。** 静的 import にすると、モジュールの連結に
 // 失敗したときにページごと死に、結果が POST されず「終わらない」形の失敗に
@@ -24,6 +49,24 @@ try {
   ({ markBrokenImages } = await import("./js/viewer.js"));
 } catch (error) {
   viewerError = error && error.message ? error.message : String(error);
+}
+
+// **tablesort.js と refs.js も動的に読む**（BR-054）。理由は viewer.js と同じ。
+// 読めなかったら、その検査だけを失敗 1 件にして他の検査は続ける（UT-814, UT-815）。
+let tablesort = null;
+let tablesortError = "";
+try {
+  tablesort = await import("./js/tablesort.js");
+} catch (error) {
+  tablesortError = error && error.message ? error.message : String(error);
+}
+
+let refs = null;
+let refsError = "";
+try {
+  refs = await import("./js/refs.js");
+} catch (error) {
+  refsError = error && error.message ? error.message : String(error);
 }
 
 const started = performance.now();
@@ -64,6 +107,14 @@ main();
 
 async function main() {
   const root = document.getElementById("markdown");
+
+  // 目印の鍵と並べ替えの入力（BR-054）。**期待値は受け取らない。** 判定は Go 側。
+  const config = await (await fetch("_config")).json();
+
+  // renderDocument（IMP-220）と同じく、描画の前に文書を state へ置く。
+  // 鍵の合う図だけを描く lazy.js（IMP-230）も、この値を読む。
+  state.doc = { refKey: config.refKey };
+
   const report = {
     mermaid: [],
     plantuml: [],
@@ -75,6 +126,18 @@ async function main() {
     elapsedMs: 0,
     userAgent: navigator.userAgent,
     fatal: "",
+    ids: { elements: [], headings: [], plantumlDone: false },
+    sort: { imported: false, error: tablesortError, results: [] },
+    refs: {
+      imported: false,
+      error: refsError,
+      sortImported: false,
+      checkboxes: [],
+      tables: [],
+      cells: [],
+      links: [],
+      blocks: [],
+    },
   };
 
   // KaTeX は描画すると要素の中身を置き換えるため、原文を先に控える。
@@ -102,15 +165,34 @@ async function main() {
       errors.push("lazy.js に drawPlantUML がない（IMP-233 が未実装）");
     } else {
       await lazy.drawPlantUML(root);
+      // **id はこの後に集める。** plantuml.js はログを出すたびに #status を
+      // 書き換えるため、描画の前に見ると衝突していても通る（BR-054, UT-813）。
+      report.ids.plantumlDone = true;
     }
   } catch (error) {
     report.fatal = error && error.message ? error.message : String(error);
   }
 
-  collectMermaid(root, report);
-  collectPlantUML(root, report);
-  collectRejectedPlantUML(root, report);
+  // 並べ替えのボタンを付ける（renderDocument の手順 6c）。**本番の関数を呼ぶ。**
+  if (tablesort && typeof tablesort.attachSortButtons === "function") {
+    try {
+      if (typeof tablesort.initTableSort === "function") tablesort.initTableSort({ closeSearch() {} });
+      tablesort.attachSortButtons(root);
+      report.refs.sortImported = true;
+    } catch (error) {
+      errors.push("attachSortButtons: " + (error && error.message ? error.message : String(error)));
+    }
+  }
+
+  const blocks = diagramBlocks(root);
+
+  collectMermaid(root, blocks, report);
+  collectPlantUML(root, blocks, report);
+  collectRejectedPlantUML(root, blocks, report);
   collectMath(root, mathSources, report);
+  collectIds(root, report);
+  collectSort(tablesort, config.sortCases || [], report);
+  collectRefs(refs, root, blocks, report);
 
   // 画像は非同期に読み込まれる。**結果を集める前に決着させる。**
   await settleImages(root);
@@ -123,152 +205,6 @@ async function main() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(report),
   });
-}
-
-// collectMermaid は図ごとの描画結果を集める。
-//
-// **SVG の有無だけでは足りない。** Mermaid は失敗しても大きさのない SVG を
-// 残すことがあるため、実際の寸法まで見る。
-function collectMermaid(root, report) {
-  const blocks = [...root.querySelectorAll(".code-block[data-mermaid]")];
-
-  blocks.forEach((block, index) => {
-    const svgs = block.querySelectorAll(".mermaid-rendered svg");
-    const box = svgs.length > 0 ? svgs[0].getBoundingClientRect() : null;
-    const line = block.querySelector(".mermaid-error");
-    const source = block.dataset.source || "";
-
-    report.mermaid.push({
-      index,
-      head: source.split("\n")[0].trim(),
-      svg: svgs.length,
-      width: box ? Math.round(box.width) : 0,
-      height: box ? Math.round(box.height) : 0,
-      error: line ? line.textContent : "",
-    });
-  });
-}
-
-// collectPlantUML は図ごとの描画結果を集める。
-//
-// **フックの名前は Mermaid と同じ形にそろえる**（IMP-233）。描画結果は
-// .plantuml-rendered の中へ、描かなかった理由は .plantuml-error へ入る。
-// ここが食い違うと、実装できていても検査が 0 件で落ちる。
-function collectPlantUML(root, report) {
-  const blocks = [...root.querySelectorAll(".code-block[data-plantuml]")];
-
-  blocks.forEach((block, index) => {
-    const svgs = block.querySelectorAll(".plantuml-rendered svg");
-    const box = svgs.length > 0 ? svgs[0].getBoundingClientRect() : null;
-    const line = block.querySelector(".plantuml-error");
-    const source = block.dataset.source || "";
-
-    report.plantuml.push({
-      index,
-      head: source.split("\n")[0].trim(),
-      svg: svgs.length,
-      width: box ? Math.round(box.width) : 0,
-      height: box ? Math.round(box.height) : 0,
-      error: line ? line.textContent : "",
-    });
-  });
-}
-
-// collectRejectedPlantUML は Go 側が描画対象から外したブロックを集める
-// （MD-084, IMP-119, DSP-272）。
-//
-// **これらは data-plantuml を持たない**ため collectPlantUML には現れない。
-// 理由が出ていることを確かめるには、別に数える必要がある。
-function collectRejectedPlantUML(root, report) {
-  const blocks = [...root.querySelectorAll(".code-block[data-puml-error]")];
-
-  report.plantumlRejected = blocks.map((block, index) => {
-    const line = block.querySelector(".plantuml-error");
-    const source = block.dataset.source || "";
-
-    return {
-      index,
-      head: source.split("\n")[0].trim(),
-      svg: block.querySelectorAll("svg").length,
-      error: line ? line.textContent.trim() : "",
-    };
-  });
-}
-
-// settleImages は本文中の img がすべて決着するのを待つ。
-//
-// **固定時間で待たない**（UT-037 と同じ理由）。読み込みが終わった画像は
-// complete が true になる。**置き換えられた画像は DOM から消えるため、
-// 走査のたびに数え直す。**
-async function settleImages(root, deadlineMs = 5000) {
-  const limit = performance.now() + deadlineMs;
-
-  for (;;) {
-    const pending = [...root.querySelectorAll("img")].filter((img) => !img.complete);
-    if (pending.length === 0 || performance.now() > limit) return;
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-// collectImages は読み込みに失敗した画像の扱いを集める（IMP-226, DSP-123）。
-//
-// **見るのは「枠が出たか」ではなく「代替テキストが本文として読めるか」である。**
-// 枠は CSS がこちらで描くため、どのエンジンでも出る。欠けうるのは中身のほうで
-// あり、4.32.0 より前はそこをブラウザ既定に委ねていた（BUG-008）。
-//
-// **エンジン差そのものはここでは見えない**（Chromium 系でしか走らない。
-// BR-054, NFR-061）。見ているのは「自前で描いているか」だけである。
-function collectImages(root, report) {
-  report.images.imgs = [...root.querySelectorAll("img")].map((img) => ({
-    alt: img.getAttribute("alt") || "",
-    className: img.className,
-    complete: img.complete,
-    naturalWidth: img.naturalWidth,
-  }));
-
-  report.images.broken = [...root.querySelectorAll(".img-broken")].map((el) => ({
-    tagName: el.tagName,
-    className: el.className,
-    text: (el.textContent || "").trim(),
-  }));
-
-  // 4.32.0 より前のフック。**残っていたら修正が入っていない**（BUG-008）。
-  report.images.legacy = root.querySelectorAll("img.is-broken").length;
-}
-
-// KaTeX が「解釈できなかった」ことを示す印（IMP-232 の throwOnError: false）。
-//
-// 失敗の現れ方は 2 通りあり、**片方だけを見ると取りこぼす。**
-//
-//   .katex-error       式全体の構文解析に失敗したとき。原文がそのまま残る
-//   errorColor の着色  未知のコマンドだけを赤くして、残りは描き切るとき
-//
-// 後者は `.katex` が普通に生成されるため、要素の有無では区別できない。
-// 実際 `\nosuchcommand{x}` は `<span class="katex">` の中に
-// `<mstyle mathcolor="...">` として現れ、数だけを数えると合格してしまう
-// （2026-09-02 に実機で確認）。
-//
-// **色が付いていること自体を印として使う。** この検証用文書には色を指定する
-// 記法を書かない約束にしてあり（testdata/smoke.md の注記）、出力に色が
-// 現れたらそれは KaTeX が付けたものである。
-const KATEX_FAILURE = '.katex-error, [mathcolor], [style*="color:"]';
-
-// collectMath は数式の描画結果を集める。
-function collectMath(root, sources, report) {
-  const targets = [...root.querySelectorAll(".math-inline, .math-block")];
-
-  let katex = 0;
-  const failed = [];
-
-  targets.forEach((element, index) => {
-    if (element.querySelector(".katex")) katex += 1;
-    if (element.querySelector(KATEX_FAILURE)) {
-      failed.push((sources[index] || "").slice(0, 80));
-    }
-  });
-
-  report.math = { total: targets.length, katex, failed };
 }
 
 function describe(value) {

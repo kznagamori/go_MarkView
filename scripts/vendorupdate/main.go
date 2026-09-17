@@ -31,10 +31,8 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -323,53 +321,6 @@ func emit(updated bool, reason string, results []result) error {
 	return file.Close()
 }
 
-// entry は vendor.json の 1 件（IMP-181 の VendorEntry と同じ形）。
-//
-// **buildinfo を import しない。** あちらは埋め込み済みの JSON を読む側で
-// あり、書く側がその都合に縛られる理由がない（IMP-012）。
-type entry struct {
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	SPDX      string `json:"spdx"`
-	License   string `json:"license"`
-	Source    string `json:"source"`
-	Fetched   string `json:"fetched"`
-	BundledIn string `json:"bundledIn,omitempty"`
-}
-
-func readManifest(path string) ([]entry, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("vendor.json を読めない: %w", err)
-	}
-
-	var entries []entry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("vendor.json を解析できない: %w", err)
-	}
-
-	return entries, nil
-}
-
-func writeManifest(path string, entries []entry) error {
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, append(data, '\n'), 0o644)
-}
-
-func versionOf(entries []entry, name string) string {
-	for _, e := range entries {
-		if e.Name == name {
-			return e.Version
-		}
-	}
-
-	return ""
-}
-
 func orDash(s string) string {
 	if s == "" {
 		return "-"
@@ -392,79 +343,6 @@ func rejected(results []result) []string {
 	}
 
 	return bad
-}
-
-// moveDir は staging の階層を本番へ移す。
-//
-// **os.Rename はファイルシステムをまたげない。** Windows で TEMP が
-// リポジトリと別のドライブにあると必ず失敗する（実測: C: と P:。2026-09-03）。
-// しかもこの関数は移す前に本番を消しており、**失敗すると資産が消えたまま残る。**
-// 落ちる余地を作らないよう、rename がだめなら複製へ落とす。
-func moveDir(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-
-	return copyTree(src, dst)
-}
-
-// copyTree は src の階層を dst へ複製する（BR-042 の preserve）。
-//
-// src が無い場合は何もしない。初回の取得ではまだ置かれていないため。
-func copyTree(src, dst string) error {
-	info, err := os.Stat(src)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	if !info.IsDir() {
-		return copyFile(src, dst)
-	}
-
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return err
-	}
-
-	for _, e := range entries {
-		if err := copyTree(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close() //nolint:errcheck // 読むだけ
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close() //nolint:errcheck
-
-		return err
-	}
-
-	return out.Close()
 }
 
 func lower(s string) string {

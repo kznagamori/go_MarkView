@@ -7,12 +7,16 @@
 // 絶対パスの一致で判定し、経路の追跡は Go 側が算出した displayPath を
 // 区切りで分けた「名前の並び」で行う。結合・正規化・大文字小文字の規則を
 // フロントエンドに持ち込まない。
+//
+// **項目の要素の組み立てと、項目の中を読む関数は treenodes.js にある**（IMP-011）。
 
 import * as api from "./api.js";
-import { S, errorText } from "./strings.js";
+import { errorText } from "./strings.js";
 import { state } from "./state.js";
 import { showMessage } from "./status.js";
-import { $, clear, icon, baseName } from "./util.js";
+// 項目の組み立てと項目の中を読む関数（IMP-011 で分けた）
+import { childByName, childGroup, depthOf, fill, setDirIcons } from "./treenodes.js";
+import { $, clear, baseName } from "./util.js";
 
 let openFile = null;
 
@@ -63,16 +67,17 @@ export async function loadTreeRoot(root) {
   refreshFocusTarget();
 }
 
-// revealCurrent は表示中の文書までの経路を展開し、可視にする（DSP-331）。
+// revealCurrent は表示中の文書（状態画面の間はその対象）までの経路を展開し、可視にする
+// （DSP-331, DSP-302）。
 //
 // ツリールートの外を表示している場合は、選択もせず展開もしない（FR-052, UI-030）。
 export async function revealCurrent() {
   markSelected();
 
-  const doc = state.doc;
-  if (!doc || doc.outsideTree || !doc.displayPath) return;
+  const shown = shownTarget();
+  if (!shown || shown.outsideTree || !shown.displayPath) return;
 
-  const segments = doc.displayPath.split(/[\\/]/).filter(Boolean);
+  const segments = shown.displayPath.split(/[\\/]/).filter(Boolean);
   let container = $("tree");
 
   for (let i = 0; i < segments.length - 1; i += 1) {
@@ -273,74 +278,18 @@ function collapse(item) {
   refreshFocusTarget();
 }
 
-function fill(container, nodes, depth) {
-  for (const node of nodes) {
-    container.appendChild(createItem(node, depth));
-  }
-
-  // 切り詰めは一覧単位。先頭の要素が件数を持つ（IMP-304）。
-  if (nodes.length > 0 && nodes[0].omitted > 0) {
-    container.appendChild(createMore(nodes[0].omitted, depth));
-  }
-}
-
-function createItem(node, depth) {
-  const item = document.createElement("li");
-  item.className = "tree-item";
-  item.setAttribute("role", "treeitem");
-  // roving tabindex（IMP-248）。0 を持つのは refreshFocusTarget が選ぶ 1 つだけ。
-  item.tabIndex = -1;
-  item.dataset.path = node.path;
-  item.dataset.dir = String(node.isDir);
-
-  const row = document.createElement("div");
-  row.className = "tree-row";
-  row.style.setProperty("--depth", String(depth));
-
-  if (node.isDir) {
-    item.setAttribute("aria-expanded", "false");
-    row.appendChild(icon("icon-chevron-right", "tree-arrow"));
-    row.appendChild(icon("icon-dir", "icon"));
-  } else {
-    row.appendChild(spacer());
-    row.appendChild(icon("icon-file", "icon"));
-  }
-
-  row.appendChild(name(node.name));
-  item.appendChild(row);
-
-  if (node.isDir) {
-    const group = document.createElement("ul");
-    group.className = "tree-children";
-    group.setAttribute("role", "group");
-    group.hidden = true;
-    item.appendChild(group);
-  }
-
-  return item;
-}
-
-// createMore は省略された件数を末尾に出す（FR-032, DSP-112）。
+// shownTarget は、ツリーで強調する対象を返す（DSP-302, IMP-250）。
 //
-// data-path を持たせない。クリックしても何も起きない。
-function createMore(count, depth) {
-  const item = document.createElement("li");
-  item.className = "tree-more";
-  item.setAttribute("role", "none");
-
-  const row = document.createElement("div");
-  row.className = "tree-row";
-  row.style.setProperty("--depth", String(depth));
-  row.appendChild(spacer());
-  row.appendChild(name(S.treeMore(count)));
-  item.appendChild(row);
-
-  return item;
+// **`state.doc ?? state.target`** とする。状態画面の間は画面の対象を強調する——v1.0.0 は state.doc
+// しか見ておらず、状態画面の間も前の文書が強調されたまま残っていた（BUG-012）。
+function shownTarget() {
+  return state.doc ?? state.target;
 }
 
-// markSelected は表示中の文書のノードだけを選択状態にする（DSP-330）。
+// markSelected は表示中の文書（状態画面の間はその対象）のノードだけを選択状態にする（DSP-330）。
 function markSelected() {
-  const current = state.doc && !state.doc.outsideTree ? state.doc.path : "";
+  const shown = shownTarget();
+  const current = shown && !shown.outsideTree ? shown.path : "";
 
   for (const item of $("tree").querySelectorAll("li[data-path]")) {
     const selected = item.dataset.path === current;
@@ -353,50 +302,3 @@ function markSelected() {
     }
   }
 }
-
-function setDirIcons(item, expanded) {
-  const uses = rowOf(item).querySelectorAll("use");
-  uses[0].setAttribute("href", expanded ? "#icon-chevron-down" : "#icon-chevron-right");
-  uses[1].setAttribute("href", expanded ? "#icon-filetree" : "#icon-dir");
-}
-
-function childByName(container, wanted) {
-  for (const item of container.children) {
-    if (!item.dataset.path) continue;
-    if (nameOf(item) === wanted) return item;
-  }
-
-  return null;
-}
-
-function childGroup(item) {
-  return item.querySelector(":scope > ul");
-}
-
-function rowOf(item) {
-  return item.querySelector(":scope > .tree-row");
-}
-
-function nameOf(item) {
-  return rowOf(item).querySelector(".tree-name").textContent;
-}
-
-function depthOf(item) {
-  return Number(rowOf(item).style.getPropertyValue("--depth") || 0);
-}
-
-function name(text) {
-  const element = document.createElement("span");
-  element.className = "tree-name";
-  element.textContent = text;
-
-  return element;
-}
-
-function spacer() {
-  const element = document.createElement("span");
-  element.className = "tree-arrow";
-
-  return element;
-}
-

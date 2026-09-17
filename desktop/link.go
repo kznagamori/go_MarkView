@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func (a *App) followLink(href string) LinkResultDTO {
 	// OS へ渡さないことのほうが、対応スキームを増やすことより優先される。
 	if ref.scheme != "" {
 		if err := opener.OpenURL(href); err != nil {
-			return linkFailure(href, err)
+			return linkOpenFailure(href, err)
 		}
 		return LinkResultDTO{Kind: linkExternal}
 	}
@@ -66,7 +66,7 @@ func (a *App) followLink(href string) LinkResultDTO {
 	//    OS の既定アプリケーションへ委譲する（FR-053）。
 	if !mdfile.IsMarkdown(abs) {
 		if err := opener.OpenFile(abs); err != nil {
-			return linkFailure(href, err)
+			return linkOpenFailure(href, err)
 		}
 		return LinkResultDTO{Kind: linkExternal}
 	}
@@ -79,7 +79,8 @@ func (a *App) followLink(href string) LinkResultDTO {
 	return LinkResultDTO{Kind: linkDocument, Document: dto}
 }
 
-// linkFailure は失敗を LinkResultDTO へ写す（IMP-305, IMP-315）。
+// linkFailure は、リンク先が見つからない・リンク先の文書を開けない失敗を LinkResultDTO へ
+// 写す（IMP-305, IMP-315）。**OS への委譲の失敗には使わない**（linkOpenFailure）。
 //
 // **ErrorDTO をそのまま載せる。** リンク先が大きな Markdown だった場合、
 // Kind は needs-confirm になり、フロントエンドは他の経路と同じ確認画面を
@@ -87,6 +88,16 @@ func (a *App) followLink(href string) LinkResultDTO {
 // 確認画面を組み立てられなかった。
 func linkFailure(target string, err error) LinkResultDTO {
 	return LinkResultDTO{Kind: linkError, Error: newErrorDTO(target, err)}
+}
+
+// linkOpenFailure は、リンク先を OS へ委譲できなかった失敗を LinkResultDTO へ写す
+// （IMP-312, IMP-315）。
+//
+// **文書を開く経路の分類（not-found / render-error）を使い回さない。** 分類できない
+// エラーを render-error に落とすと、フロントエンドは状態画面を出して本文が消える
+// （BUG-013。FR-053 は「その旨をステータス表示する」）。
+func linkOpenFailure(href string, err error) LinkResultDTO {
+	return LinkResultDTO{Kind: linkError, Error: newOpenFailedDTO(href, err)}
 }
 
 // parseLinkRef はリンクの生値を分解する（IMP-312）。

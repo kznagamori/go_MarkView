@@ -30,15 +30,26 @@ const (
 // 相対パスの解決そのものは UT-210 が検証している。
 const goldenBaseDir = "/showcase"
 
+// goldenRefKey はゴールデン生成時の目印の鍵（IMP-110, IMP-120）。
+//
+// アプリケーションは変換のたびに乱数の鍵を渡す（IMP-102）が、それではゴールデンが
+// 実行ごとに変わる。固定の鍵を渡し、**目印も含めて**出力を固定する（UT-214）。
+const goldenRefKey = "0123456789abcdef"
+
 // TestRender_Golden は showcase.md の変換結果を固定する
 // （UT-214。根拠: MD-002, BR-053 / IMP-041）。
 //
 // 個別の記法は他のテストが見ている。ここで守りたいのは、**それらを 1 つの
 // 文書に混ぜたときに意図しない描画変化が起きていないこと**である。
+//
+// **v1.1.0 の実装（IMP-120, AR-053）で出力が 2 種類変わる。** 目印の属性
+// （data-ref / data-link。図のブロックの div を含む）と、見出し・脚注の id の
+// 接頭辞（user-content-。脚注の href も）である。**差分がこの 2 種類だけで
+// あることを読んでから -update する**（UT-214, UT-039）。
 func TestRender_Golden(t *testing.T) {
 	source := readShowcase(t)
 
-	res, err := New().Render(source, goldenBaseDir)
+	res, err := New().Render(source, goldenBaseDir, goldenRefKey)
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
@@ -68,7 +79,7 @@ func TestRender_Golden(t *testing.T) {
 // ゴールデンは「変わっていないこと」しか言わない。**中身が薄くなっても
 // 気づけない**ため、要となる性質だけを別に主張しておく。
 func TestRender_GoldenExpectations(t *testing.T) {
-	res, err := New().Render(readShowcase(t), goldenBaseDir)
+	res, err := New().Render(readShowcase(t), goldenBaseDir, goldenRefKey)
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}

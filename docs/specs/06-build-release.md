@@ -19,6 +19,7 @@
 
 - 開発ホストは Windows 11 とする。
 - Go の下限を 1.25 としているのは、**Wails v2.13.0 以降が `go 1.25.0` を要求する**ためである（v2.12.0 以前は 1.22.0）。「v2 系の最新版を使う」という上表の要求と、それより低い下限は両立しない。Wails 側が下限を引き上げた場合は、本項と IMP-010 を同じ変更で追随させる。
+- **CI とリリースがビルドに使う Go の版は、`go.mod` の `toolchain` ディレクティブで固定する**（4.62.0。利用者の判断。現在 `go1.26.8`。IMP-010）。`go` の行（1.25.0）は下限であり、`setup-go` は `toolchain` が無ければ `go` の行の版をそのまま入れる。**`toolchain` が無かった v1.0.0 までは、修正版の出る前の Go 1.25.0 でビルドしていた**——`govulncheck` で、呼んでいる標準ライブラリの関数に届く脆弱性が 33 件見つかった（2026-09-18。どれも 1.25.13 までに修正済み）。**修正版が出たら `toolchain` を上げる**（BR-052 の脆弱性の検査が失敗で知らせる）。サポートの終わった系列（新しい版が 2 つ出た系列）へは下げない。
 - Node.js は**不要**とする。フロントエンドにビルド工程を持たないため（AR-050）。`wails.json` のフロントエンドビルドコマンドは空とする。
 
 ### BR-002: Linux ビルドの追加要件 **MUST**
@@ -190,7 +191,7 @@ Mermaid・KaTeX・PlantUML は、**実ファイルをリポジトリにコミッ
 >
 > 判定は、取得したパッケージのライセンスを `vendor.json` の `spdx`（BR-042）へ書き戻し、**NFR-051 の許容する一覧と突き合わせて**行う。
 >
-> 取得したパッケージのライセンスが**許容する一覧（NFR-051）に無い場合は、その資産を更新せず、リリースを中止する**（`reason` は `license-rejected`。下の表）。**取得に失敗した場合（`fetch-failed`）とは扱いが違う。** 取得の失敗は一時的な事情でありコミット済みの版で続けてよいが、**上流のライセンスが変わったことは人が判断すべき事態**であり、rc を作らずに止めて気づかせる。版を固定するなどの対処をしてから rc を打ち直す（4.44.0 で決定。それまでは「継続する」と書いており、同じ節の表と `scripts/vendorupdate` の「中止を意味する」と食い違っていた）。**自動更新は通常版を上げる方向へ動くため即座の危険は無いが、この検査が無いと上流のライセンス変更が黙って入る。** Mermaid / KaTeX には無かった問題である。
+> 取得したパッケージのライセンスが**許容する一覧（NFR-051）に無い場合は、その資産を更新せず、リリースを中止する**（`reason` は `license-rejected`。下の表）。**取得に失敗した場合（`fetch-failed`）とは扱いが違う。** 取得の失敗は一時的な事情でありコミット済みの版で続けてよいが、**上流のライセンスが変わったことは人が判断すべき事態**であり、rc を作らずに止めて気づかせる。人が原因を確かめて対処してから rc を打ち直す（4.44.0 で決定。**`release.yml` は `reason` がこの 2 つのとき `vendor-update` ジョブを失敗させ、ビルドもリリースも作らない**（`Stop on rejected assets`。4.63.0）。**`scripts/vendorupdate` には版を固定する手段が無い**（常に `latest` を取る。下の NOTE）。それまでは「継続する」と書いており、同じ節の表と `scripts/vendorupdate` の「中止を意味する」と食い違っていた）。**自動更新は通常版を上げる方向へ動くため即座の危険は無いが、この検査が無いと上流のライセンス変更が黙って入る。** Mermaid / KaTeX には無かった問題である。
 
 **`viz-global.js` の告知を `vendor.json` と照合する。** PlantUML を更新したら、そのバンドルに含まれる `viz-global.js` の先頭の告知を読み、次を確かめる。**Mermaid や KaTeX と違い、この 3 件は全文を取りに行かない**（BR-042）ため、同梱の構成が変わったことをここで捕まえる。
 
@@ -277,7 +278,7 @@ go run ./scripts/domids   # 交差があれば終了コード 1。どのファ�
 > - CI 自身が行う push が、ブランチへの push を契機とする検証ワークフロー（BR-052）を再び起動する。コミットメッセージに `[skip ci]` を含めるなどして、二重実行を避けること。この更新内容はリリースジョブ内で既に検証済みであるため、再検証の必要はない。
 
 > [!NOTE]
-> 「常に最新を取り込む」設計は、Mermaid や PlantUML の新しい図種別や不具合修正を自動的に取り込める一方、メジャーバージョンアップによる破壊的変更をリリース直前に抱え込むリスクを伴う。このリスクは BR-054 のスモークテストで受け止める。スモークテストが失敗した場合は、開発者が `vendor.json` のバージョンを明示的に固定したうえでタグを打ち直す運用とする。
+> 「常に最新を取り込む」設計は、Mermaid や PlantUML の新しい図種別や不具合修正を自動的に取り込める一方、メジャーバージョンアップによる破壊的変更をリリース直前に抱え込むリスクを伴う。このリスクは BR-054 のスモークテストで受け止める。スモークテストが失敗した場合は、開発者が原因を確かめ、コードと仕様を新しい版に合わせてからタグを打ち直す。**`vendor.json` の版を書いても固定にはならない**——`scripts/vendorupdate` は常に `latest` を取りに行き、版を固定する手段を持たない（4.63.0 で確かめた。4.62.0 までは「版を明示的に固定したうえで打ち直す運用」と書いていたが、その手段が無かった）。**直さずに古い版のまま rc を作る道は無い**ため、上流の変化はその rc の前に受け止める。
 
 手順 1〜3（取得・告知の照合・`vendor.json` の更新）は `scripts/vendorupdate` が行う。手順 4 以降はワークフローの担当とする。
 
@@ -295,7 +296,7 @@ go run ./scripts/vendorupdate -dir <path>  # 別の場所へ出して確かめ�
 | 置き換え方 | 一時ディレクトリへ取得し、**全部そろってから**置き換える。置く前に既存を消す（版によってフォントの構成が変わりうるため） |
 | 告知の照合 | **`viz-global.js` の先頭を読み、`vendor.json` の `bundledIn` の一覧・著作権表示・Viz.js の版と突き合わせる**（上記）。PlantUML を取得したときだけ行う |
 | 決め打ち id の検査 | **`scripts/vendorupdate` は行わない。** 資産を置き換えた後にワークフローが `scripts/domids` を実行する（上記）。**資産の更新の有無によらず CI でも毎回走る**（BR-052） |
-| 失敗時の終了コード | **0。** 取得の失敗でリリースを中止しないため、呼び出し側が判断できるよう `updated` と `reason`（`updated` / `already-latest` / `fetch-failed` / **`license-rejected`** / **`notice-mismatch`**）を返す。**後ろの 2 つは中止を意味する**（取得の失敗とは扱いが違う）。**決め打ち id の衝突は別の工程で判定する**ため、ここには現れない |
+| 失敗時の終了コード | **0。** 取得の失敗でリリースを中止しないため、呼び出し側が判断できるよう `updated` と `reason`（`updated` / `already-latest` / `fetch-failed` / **`license-rejected`** / **`notice-mismatch`**）を返す。**後ろの 2 つは中止を意味する**（取得の失敗とは扱いが違う。`release.yml` が `vendor-update` ジョブを失敗させる）。**決め打ち id の衝突は別の工程で判定する**ため、ここには現れない |
 
 ## 6.4 リリース成果物（BR-020 系）
 
@@ -441,7 +442,8 @@ Release の本文には少なくとも以下を含める。
 | テストカバレッジ | `go test -cover ./...` の結果を記録 | 記録のみ（**合否にしない**。UT-060） |
 | 生成物の鮮度（BR-041） | `licenses/THIRD_PARTY.md` と `frontend/css/chroma.css` を再生成し、差分がないこと | 失敗 |
 | バイナリサイズ（BR-060） | 計測して記録すること | 警告のみ（CI は失敗させない） |
-| 描画スモークテスト（BR-054） | **描画に関わるパス**に変更を含むとき実行（`frontend/vendor/`, `frontend/js/`（全体）, `frontend/css/tokens.css`, `frontend/css/markdown.css`, `internal/renderer/`, `internal/localurl/`, `internal/applog/`, `scripts/smoke/`, `testdata/smoke.md`, `testdata/e2e/plantuml-limits.md`, `go.mod`, `go.sum`）。**スモークが呼ぶ本番のモジュールと変換を、すべて契機に含める**——含めないと、検査の対象を直した PR でスモークが走らない。**`frontend/js/` は個別のファイルで挙げない。** スモークが動的に読む `viewer.js` / `lazy.js` / `tablesort.js` / `refs.js` は他のモジュールを import しており、**そのどれか 1 つが壊れても読み込みが失敗する。** CSS はスモークのページが読むもの（`scripts/smoke/harness.html`）、`internal/` は `renderer` とその依存、`go.mod` / `go.sum` は goldmark・bluemonday の版（上げると目印と `id` の出力が変わりうる） | 失敗 |
+| 描画スモークテスト（BR-054） | **描画に関わるパス**に変更を含むとき実行（`frontend/vendor/`, `frontend/js/`（全体）, `frontend/css/tokens.css`, `frontend/css/markdown.css`, `internal/renderer/`, `internal/localurl/`, `internal/applog/`, `scripts/smoke/`, `testdata/smoke.md`, `testdata/e2e/plantuml-limits.md`, `testdata/e2e/docs/img/sample.png`, `go.mod`, `go.sum`）。**スモークが呼ぶ本番のモジュールと変換と、検証用の文書が読む画像を、すべて契機に含める**——含めないと、検査の対象を直した PR でスモークが走らない。**`frontend/js/` は個別のファイルで挙げない。** スモークが動的に読む `viewer.js` / `lazy.js` / `tablesort.js` / `refs.js` は他のモジュールを import しており、**そのどれか 1 つが壊れても読み込みが失敗する。** CSS はスモークのページが読むもの（`scripts/smoke/harness.html`）、`internal/` は `renderer` とその依存（`go list -deps ./scripts/smoke` で確かめる）、`testdata/e2e/docs/img/sample.png` は `testdata/smoke.md` の読める画像（消すと画像の検査が落ちる）、`go.mod` / `go.sum` は goldmark・bluemonday の版（上げると目印と `id` の出力が変わりうる） | 失敗 |
+| **依存の既知の脆弱性**（NFR-034） | `go run golang.org/x/vuln/cmd/govulncheck@<固定した版> ./...`（Linux は `-tags webkit2_41`）。**呼んでいる関数に届く脆弱性があれば失敗**（4.62.0。利用者の判断）。**Linux と Windows の両方で実行する**——ビルド制約で片方の OS にしか入らない依存（`go-webview2`、`golang.org/x/sys/windows` など）は、もう片方では調べられない。**標準ライブラリも対象であり、ビルドに使う Go の版（BR-001 の `toolchain`）で結果が変わる**。版は Wails CLI と同じく固定する | 失敗 |
 | **決め打ち id の交差**（BR-042, BR-043） | `go run ./scripts/domids`。同梱資産が `getElementById` で決め打ちする id と、`frontend/index.html` の id が交差しないこと。**どちらも `user-content-` で始まらないこと**（AR-053）。**毎回実行する**（衝突は資産と `index.html` のどちらからも生まれる） | 失敗 |
 
 ### BR-053: 描画の回帰検証 **SHOULD**
@@ -484,7 +486,7 @@ go run ./scripts/smoke -browser "C:\Program Files\Google\Chrome\Application\chro
 
 | 事項 | 決めたこと |
 | --- | --- |
-| 検証用文書 | **2 つを順に描く。** `testdata/smoke.md`（同梱資産と画像、**`Status` の見出し、ラベルに `id` を書いた Mermaid の図、GFM の表とタスクとリンク、生 HTML で書いた偽の目印、生 HTML で偽装した PlantUML / Mermaid のブロックと `data-source` を偽装したコードブロック**）と `testdata/e2e/plantuml-limits.md`（PlantUML の制限。E2E-012）。**`showcase.md` とは共用しない** |
+| 検証用文書 | **2 つを順に描く。** `testdata/smoke.md`（同梱資産と画像、**`Status` の見出し、ラベルに `id` を書いた Mermaid の図、GFM の表とタスクとリンク、生 HTML で書いた偽の目印、生 HTML で偽装した PlantUML / Mermaid のブロック（別の鍵・鍵なし・形の崩れた目印）と `data-source` を偽装したコードブロック**）と `testdata/e2e/plantuml-limits.md`（PlantUML の制限。E2E-012）。**`showcase.md` とは共用しない** |
 | 変換 | 本番の `renderer` を呼ぶ。フロントエンドへ渡る HTML と同じものを描かせる。**目印の鍵は、アプリと同じく実行のたびに作って渡す**（IMP-102, IMP-110）。生 HTML の偽の目印は、その鍵を知らずに書いたものとして照合される |
 | 描画 | 本番の `frontend/js/lazy.js` と `frontend/js/viewer.js` を呼ぶ。**描画コードの写しを持たない。** `viewer.js` は**動的に読む**——連結に失敗したときにページごと死ぬと、結果が返らず「終わらない」形の失敗になる。**表の並べ替えと目印の照合は、本番の `tablesort.js` と `refs.js` を同じく動的に読んで呼ぶ**。**偽装した図のブロックが描画されないことは、`lazy.js` で描画した結果（SVG が生成されないこと）で見る** |
 | 配信 | `frontend/` を `127.0.0.1` の空きポートで配る。**`file://` を使わない**（ES モジュールが読み込めないため） |

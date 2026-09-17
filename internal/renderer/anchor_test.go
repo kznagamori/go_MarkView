@@ -96,7 +96,10 @@ func TestSlugger_EmptyIsNotNumbered(t *testing.T) {
 }
 
 // TestRender_HeadingID は、見出しに ID が付くこととインライン記法の除去を
-// 検証する（UT-202 ケース 7〜9。根拠: MD-021 / IMP-117）。
+// 検証する（UT-202 ケース 7〜9。根拠: MD-021, AR-053 / IMP-117）。
+//
+// id 属性の値は user-content- + スラッグである（AR-053）。スラッグそのものは
+// TestSlug が見る。
 func TestRender_HeadingID(t *testing.T) {
 	tests := []struct {
 		name string
@@ -104,15 +107,15 @@ func TestRender_HeadingID(t *testing.T) {
 		want []string // 出力 HTML に含まれること
 	}{
 		// UT-202 ケース 8・9: インライン記法を除いてからスラッグにする
-		{"強調を除去する", "## **強調**を含む", []string{`<h2 id="強調を含む">`}},
-		{"コードスパンを除去する", "## `code` を含む", []string{`<h2 id="code-を含む">`}},
-		{"リンクを除去する", "## [GitHub](https://github.com) の話", []string{`<h2 id="github-の話">`}},
+		{"強調を除去する", "## **強調**を含む", []string{`<h2 id="user-content-強調を含む">`}},
+		{"コードスパンを除去する", "## `code` を含む", []string{`<h2 id="user-content-code-を含む">`}},
+		{"リンクを除去する", "## [GitHub](https://github.com) の話", []string{`<h2 id="user-content-github-の話">`}},
 
 		// UT-202 ケース 7: 同一文書内の重複
 		{
 			name: "同じ見出しが 3 回",
 			in:   "# Test\n# Test\n# Test",
-			want: []string{`<h1 id="test">`, `<h1 id="test-1">`, `<h1 id="test-2">`},
+			want: []string{`<h1 id="user-content-test">`, `<h1 id="user-content-test-1">`, `<h1 id="user-content-test-2">`},
 		},
 
 		// UT-202 ケース 10: アンカーを持たない見出しには id を出さない
@@ -159,9 +162,9 @@ func TestRender_Headings(t *testing.T) {
 			name: "3 レベルの見出し",
 			in:   "# A\n## B\n### C",
 			want: []Heading{
-				{Level: 1, Text: "A", ID: "a"},
-				{Level: 2, Text: "B", ID: "b"},
-				{Level: 3, Text: "C", ID: "c"},
+				{Level: 1, Text: "A", ID: "user-content-a"},
+				{Level: 2, Text: "B", ID: "user-content-b"},
+				{Level: 3, Text: "C", ID: "user-content-c"},
 			},
 		},
 
@@ -170,8 +173,8 @@ func TestRender_Headings(t *testing.T) {
 			name: "レベルが飛んでいても補正しない",
 			in:   "# A\n### C",
 			want: []Heading{
-				{Level: 1, Text: "A", ID: "a"},
-				{Level: 3, Text: "C", ID: "c"},
+				{Level: 1, Text: "A", ID: "user-content-a"},
+				{Level: 3, Text: "C", ID: "user-content-c"},
 			},
 		},
 
@@ -179,27 +182,27 @@ func TestRender_Headings(t *testing.T) {
 		{
 			name: "強調を含む見出し",
 			in:   "## **強調**見出し",
-			want: []Heading{{Level: 2, Text: "強調見出し", ID: "強調見出し"}},
+			want: []Heading{{Level: 2, Text: "強調見出し", ID: "user-content-強調見出し"}},
 		},
 
 		// UT-203 ケース 6: Setext 形式
 		{
 			name: "Setext 形式の見出し",
 			in:   "A\n===",
-			want: []Heading{{Level: 1, Text: "A", ID: "a"}},
+			want: []Heading{{Level: 1, Text: "A", ID: "user-content-a"}},
 		},
 
 		// UT-090 に従って追加した境界値
 		{
 			name: "引用の中の見出しも拾う",
 			in:   "> # A",
-			want: []Heading{{Level: 1, Text: "A", ID: "a"}},
+			want: []Heading{{Level: 1, Text: "A", ID: "user-content-a"}},
 		},
 		{
 			// 自動リンクは子を持たないため、ラベルを直接拾う必要がある。
 			name: "自動リンクの見出し",
 			in:   "## https://example.com",
-			want: []Heading{{Level: 2, Text: "https://example.com", ID: "httpsexamplecom"}},
+			want: []Heading{{Level: 2, Text: "https://example.com", ID: "user-content-httpsexamplecom"}},
 		},
 		{
 			// 絵文字ショートコードは goldmark-emoji が専用ノードにするため、
@@ -207,12 +210,12 @@ func TestRender_Headings(t *testing.T) {
 			// （T2-11 の showcase.md）で確認する。
 			name: "絵文字を含む見出し",
 			in:   "## :sparkles: A",
-			want: []Heading{{Level: 2, Text: " A", ID: "a"}},
+			want: []Heading{{Level: 2, Text: " A", ID: "user-content-a"}},
 		},
 		{
 			name: "レベル 6 の見出し",
 			in:   "###### F",
-			want: []Heading{{Level: 6, Text: "F", ID: "f"}},
+			want: []Heading{{Level: 6, Text: "F", ID: "user-content-f"}},
 		},
 		{
 			name: "アンカーを持たない見出しは ID が空になる",
@@ -220,19 +223,20 @@ func TestRender_Headings(t *testing.T) {
 			want: []Heading{{Level: 1, Text: "???", ID: ""}},
 		},
 		{
-			// UT-203 ケース 7: ID は UT-202 の規則と一致する
+			// UT-203 ケース 7: ID は user-content- に続く部分が UT-202 の規則と一致する
+			// （接頭辞は AR-053。UT-219）
 			name: "重複した見出しの ID に連番が付く",
 			in:   "# Test\n# Test",
 			want: []Heading{
-				{Level: 1, Text: "Test", ID: "test"},
-				{Level: 1, Text: "Test", ID: "test-1"},
+				{Level: 1, Text: "Test", ID: "user-content-test"},
+				{Level: 1, Text: "Test", ID: "user-content-test-1"},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := New().Render([]byte(tt.in), "")
+			res, err := New().Render([]byte(tt.in), "", "")
 			if err != nil {
 				t.Fatalf("Render(%q) がエラーを返した: %v", tt.in, err)
 			}

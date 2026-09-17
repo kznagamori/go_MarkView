@@ -3,10 +3,101 @@
 // 利用者に見える文言をここに書かない（IMP-290）。
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
 
-// $ は ID で要素を取る。
+// $ は ID で**画面の**要素を取る。
+//
+// **本文（文書）の要素を探すのに使わない。** 文書の書き手は id を自由に決められ、
+// document.getElementById は文書の順で最初の要素を返す——本文に無い id が画面の要素に
+// 当たり、画面の id が本文の要素に奪われる（AR-053, BUG-011）。本文は findInDocument /
+// findHeading で #markdown の中だけを探す。
 export function $(id) {
   return document.getElementById(id);
+}
+
+// linkHref はリンクの要素に書かれたリンク先を返す（IMP-223, IMP-249）。無ければ null。
+//
+// **HTML の <a> は href 属性、SVG の <a> は xlink:href 属性**（SVG 2 の href 属性があればそちらを先に読む）。
+// 同梱の Mermaid は `click A "URL"` のノードを SVG の <a xlink:href> で包む（securityLevel: strict でも）。
+// href 属性だけを読むとリンクに見えず、既定の動作（WebView の中での遷移）が残る（BUG-015）。
+// **a.href（解決済みの URL）を使わない**——書かれた値のまま Go へ渡す（IMP-312）。
+export function linkHref(anchor) {
+  return anchor.getAttribute("href") ?? anchor.getAttributeNS(XLINK_NS, "href");
+}
+
+// DOC_ID_PREFIX は文書から生まれる id の接頭辞（AR-053。GitHub と同じ）。
+//
+// Go 側（renderer.DocumentIDPrefix。IMP-117）が見出し・脚注・生 HTML の id に付ける。
+// **画面の id はこの接頭辞で始めない**（scripts/domids が検査する。BR-052）。
+export const DOC_ID_PREFIX = "user-content-";
+
+// HEADING_TAGS は見出しの要素名（findHeading）。
+const HEADING_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6"];
+
+// findInDocument はリンクのフラグメントが指す本文の要素を返す。無ければ null（IMP-223, AR-053）。
+//
+// **リンクのフラグメントから本文の要素を探す箇所（本文のリンクと、開いた直後のアンカーの復元）は、
+// すべてこの関数を通す。** 手順は IMP-223 の表のとおり。
+//
+//  1. 先頭の # を除く。候補は生のままの値、百分率符号化を復号した値（復号できなければ生のままだけ）の順
+//  2. 各候補について、まず user-content- を前に付けた値で探し、見つからず候補が user-content- で
+//     始まっていれば候補そのもので探す
+//  3. #markdown の中だけを探す。重複した id は文書の順で先の要素（AR-053）
+//
+// **手順 2 の順を逆にしない。** `## user-content-foo` の id は `user-content-user-content-foo` であり
+// （IMP-117）、アンカーのアイコンの href は `#user-content-foo` になる（IMP-227）。候補そのものを
+// 先に探すと、別の見出しに当たるか見つからない。
+//
+// **完全な id が分かっている見出しには使わない**（findHeading）。ここは接頭辞を補って先に探すため、
+// `## foo` の完全な id を渡すと `## user-content-foo` の見出しに当たる。
+export function findInDocument(fragment) {
+  const markdown = document.getElementById("markdown");
+  if (!markdown || typeof fragment !== "string") return null;
+
+  const raw = fragment.startsWith("#") ? fragment.slice(1) : fragment;
+  if (raw === "") return null;
+
+  const candidates = [raw];
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (decoded !== raw) candidates.push(decoded);
+  } catch {
+    // 復号できない値は、生のままの候補だけで探す（IMP-223 の手順 1）。
+  }
+
+  for (const candidate of candidates) {
+    const prefixed = findById(markdown, DOC_ID_PREFIX + candidate);
+    if (prefixed) return prefixed;
+
+    if (candidate.startsWith(DOC_ID_PREFIX)) {
+      const exact = findById(markdown, candidate);
+      if (exact) return exact;
+    }
+  }
+
+  return null;
+}
+
+// findHeading は #markdown の中の h1〜h6 で id が完全に一致する最初の要素を返す。無ければ null
+// （IMP-223, IMP-224, IMP-222）。
+//
+// アウトラインとスクロール連動は Heading.ID（user-content- 付き）を持っているため、これを使う。
+// **生 HTML の `<div id="user-content-test">` が `## Test` の移動先を奪うこともない**——見出しの
+// 要素だけを見る。
+export function findHeading(id) {
+  const markdown = document.getElementById("markdown");
+  if (!markdown || typeof id !== "string" || id === "") return null;
+
+  const escaped = CSS.escape(id);
+  return markdown.querySelector(HEADING_TAGS.map((tag) => `${tag}#${escaped}`).join(", "));
+}
+
+// findById は root の中で id が一致する最初の要素を文書の順で返す。
+//
+// **CSS.escape を通す。** 見出しのスラッグは日本語や記号を含み（MD-021）、生 HTML の id は
+// 任意の文字列である。
+function findById(root, id) {
+  return root.querySelector(`#${CSS.escape(id)}`);
 }
 
 // openAncestorDetails は、要素を包む <details> を根まですべて開く

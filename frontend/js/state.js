@@ -10,6 +10,9 @@ import * as api from "./api.js";
 
 export const state = {
   doc: null, // DocumentDTO（13 章）。未表示なら null
+  // 状態画面が対象にしているファイル { path, displayPath, outsideTree }（ErrorDTO。IMP-307）。
+  // 文書の表示中と welcome では null（IMP-250, DSP-302）。Go 側の target の写しであり保存しない（NFR-042）
+  target: null,
   treeRoot: "", // 絶対パス
   theme: "light", // 実際に適用している値。Go 側が解決済みで渡す（IMP-303）
   themeExplicit: false, // 利用者が自分で切り替えたか（FR-071）
@@ -20,6 +23,10 @@ export const state = {
   fileTreeWidth: 260,
   search: { open: false, query: "", hits: [], index: -1 },
   lazy: { mermaid: false, katex: false, plantuml: false }, // 読み込み済みか
+  // 編集モードの写し（IMP-109 が正。IMP-302, IMP-316）。configPatch には含めない（保存しない。UI-111）
+  editable: false, // 編集モードを開始できるか。DocumentDTO.editable
+  editMode: false, // 編集モードか。DocumentDTO.editMode / EditModeDTO.on
+  editSeq: 0, // 写した編集モードの状態の版。古い値で上書きしないため（IMP-260）
 };
 
 // configPatch は UpdateConfig へ渡す ConfigDTO を組み立てる（IMP-303）。

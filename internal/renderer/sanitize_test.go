@@ -126,12 +126,12 @@ func TestRender_Sanitize_Keeps(t *testing.T) {
 		{
 			name:     "見出しの id",
 			in:       "# Hello World",
-			contains: []string{`<h1 id="hello-world">`},
+			contains: []string{`<h1 id="user-content-hello-world">`},
 		},
 		{
 			name:     "非 ASCII の id",
 			in:       "## 概要",
-			contains: []string{`id="概要"`},
+			contains: []string{`id="user-content-概要"`},
 		},
 
 		// UT-209 ケース 12: Mermaid の属性
@@ -186,7 +186,7 @@ func TestRender_Sanitize_Keeps(t *testing.T) {
 		{
 			name:     "脚注のリンクとクラス",
 			in:       "x[^1]\n\n[^1]: note",
-			contains: []string{`class="footnote-ref"`, `class="footnotes"`, `id="fn:1"`, `href="#fnref:1"`},
+			contains: []string{`class="footnote-ref"`, `class="footnotes"`, `id="user-content-fn:1"`, `href="#user-content-fnref:1"`},
 		},
 		{
 			name:     "相対リンクとアンカー",
@@ -216,6 +216,128 @@ func TestRender_Sanitize_Keeps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRender_Sanitize_Input は、type="checkbox" を持たない input が残らない
+// ことを検証する（UT-209 ケース 14〜16・20・23・24。根拠: MD-072, NFR-030 / IMP-116）。
+//
+// **bluemonday は、許可した属性が 1 つでも残れば要素を残す。** `<input disabled>`
+// は type が落ちて文字の入力欄として本文に出る（type の既定は text）。
+// ケース 16 と 20 は、input をすべて落とす実装でタスクリストが消えることを捕まえる。
+func TestRender_Sanitize_Input(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		checkbox int // 残る input（すべて type="checkbox" であること）の数
+	}{
+		// UT-209 ケース 14: type の無い input
+		{"ケース14_data-refだけのinput", `<input data-ref="0123456789abcdef:task:0">`, 0},
+		// UT-209 ケース 15
+		{"ケース15_disabledだけのinput", "<input disabled>", 0},
+		{"ケース15_type=textとchecked", `<input type="text" checked>`, 0},
+		// UT-209 ケース 16: 過検出の検査
+		{"ケース16_GFMのタスク", "- [ ] a", 1},
+		// UT-209 ケース 20: 行の中の生 HTML（HTMLBlock だけを見て走査を省く実装を捕まえる）
+		{"ケース20_段落の中のinputとGFMのタスク", "para <input disabled> text\n\n- [ ] a", 1},
+		// UT-209 ケース 23: 自己終了タグ（開始タグだけを調べる走査を捕まえる）
+		{"ケース23_自己終了タグのdisabled", "<input disabled/>", 0},
+		{"ケース23_自己終了タグのdata-ref", `<input data-ref="0123456789abcdef:task:0"/>`, 0},
+		// UT-209 ケース 24: <input の数を数えて走査を省く実装を捕まえる。
+		// bluemonday は object を中身ごと捨てるため GFM のタスク 1 つが消え、
+		// 生 HTML の input 1 つと数が合う。
+		{"ケース24_objectの中のタスクと生HTMLのinput", "<object>\n\n- [ ] a\n\n</object>\n\n<input disabled>", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := New().Render([]byte(tt.in), "", "")
+			if err != nil {
+				t.Fatalf("Render がエラーを返した: %v", err)
+			}
+			inputs := byTag(scanElements(t, res.HTML), "input")
+
+			if len(inputs) != tt.checkbox {
+				t.Errorf("input が %d 個, want %d 個\n出力: %s", len(inputs), tt.checkbox, res.HTML)
+			}
+			for _, in := range inputs {
+				if v, _ := in.Attr("type"); v != "checkbox" {
+					t.Errorf("type=%q の input が残っている（checkbox 以外を残さない）\n出力: %s", v, res.HTML)
+				}
+			}
+		})
+	}
+}
+
+// TestRender_Sanitize_Markers は、目印の属性を値の形と要素で縛って通すことを
+// 検証する（UT-209 ケース 17〜19・21・22。根拠: NFR-030 / IMP-116, IMP-120）。
+//
+// **ケース 21 と 22 は対で意味を持つ。** 21 を欠くと図のブロックの目印を落とす
+// 実装で図が 1 つも描かれず、22 を欠くとどの要素にも図の目印を通す実装が通る。
+// **形を縛っても偽装は防げない**——防ぐのは鍵であり、それはフロントエンドの
+// 照合（UT-815）が見る。
+func TestRender_Sanitize_Markers(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		tag  string // 検査する要素（文書の中で最初のもの）
+		attr string
+		want string // 残るべき値。空なら属性が落ちること
+	}{
+		// UT-209 ケース 17: 値の形が違う・要素が違う
+		{"ケース17_形の違うdata-ref", `<input type="checkbox" data-ref="bad">`, "input", "data-ref", ""},
+		{"ケース17_鍵が15文字", `<input type="checkbox" data-ref="0123456789abcde:task:0">`, "input", "data-ref", ""},
+		{"ケース17_p要素のdata-ref", `<p data-ref="0123456789abcdef:task:0">x</p>`, "p", "data-ref", ""},
+
+		// UT-209 ケース 18: data-link は a に限る
+		{"ケース18_aのdata-link", `<a href="https://example.com/" data-link="0123456789abcdef:x">x</a>`, "a", "data-link", "0123456789abcdef:x"},
+		{"ケース18_divのdata-link", `<div data-link="0123456789abcdef:x">x</div>`, "div", "data-link", ""},
+
+		// UT-209 ケース 19: 目印以外の data- 属性
+		{"ケース19_data-foo", `<div data-foo="1">x</div>`, "div", "data-foo", ""},
+
+		// UT-209 ケース 21: 図のブロックの目印は div で残る
+		{"ケース21_divのmermaid", `<div data-ref="0123456789abcdef:mermaid:0">x</div>`, "div", "data-ref", "0123456789abcdef:mermaid:0"},
+		{"ケース21_divのplantuml", `<div data-ref="0123456789abcdef:plantuml:2">x</div>`, "div", "data-ref", "0123456789abcdef:plantuml:2"},
+
+		// UT-209 ケース 22: 要素と種類の組み合わせを縛る
+		{"ケース22_divのtask", `<div data-ref="0123456789abcdef:task:0">x</div>`, "div", "data-ref", ""},
+		{"ケース22_divのcode", `<div data-ref="0123456789abcdef:code:0">x</div>`, "div", "data-ref", ""},
+		{"ケース22_divのmermaid:x", `<div data-ref="0123456789abcdef:mermaid:x">x</div>`, "div", "data-ref", ""},
+		{"ケース22_divのmermaid:", `<div data-ref="0123456789abcdef:mermaid:">x</div>`, "div", "data-ref", ""},
+		{"ケース22_spanのplantuml", `<span data-ref="0123456789abcdef:plantuml:0">x</span>`, "span", "data-ref", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := New().Render([]byte(tt.in), "", "")
+			if err != nil {
+				t.Fatalf("Render がエラーを返した: %v", err)
+			}
+			els := byTag(scanElements(t, res.HTML), tt.tag)
+			if len(els) == 0 {
+				t.Fatalf("%s が出力に無い（検査の前提が崩れている）\n出力: %s", tt.tag, res.HTML)
+			}
+
+			got, ok := els[0].Attr(tt.attr)
+			switch {
+			case tt.want == "" && ok:
+				t.Errorf("%s の %s=%q が残っている（落とすこと）\n出力: %s", tt.tag, tt.attr, got, res.HTML)
+			case tt.want != "" && got != tt.want:
+				t.Errorf("%s の %s = %q（有無 %v）, want %q\n出力: %s", tt.tag, tt.attr, got, ok, tt.want, res.HTML)
+			}
+		})
+	}
+
+	// UT-209 ケース 22: input の図の目印は、type が無いため input ごと残らない（ケース 14）
+	t.Run("ケース22_inputのmermaid", func(t *testing.T) {
+		res, err := New().Render([]byte(`<input data-ref="0123456789abcdef:mermaid:0">`), "", "")
+		if err != nil {
+			t.Fatalf("Render がエラーを返した: %v", err)
+		}
+		if n := len(byTag(scanElements(t, res.HTML), "input")); n != 0 {
+			t.Errorf("input が %d 個残っている\n出力: %s", n, res.HTML)
+		}
+	})
 }
 
 // TestPolicy_RejectsSVG は、許可リストに svg が入っていないことを検証する

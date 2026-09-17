@@ -74,6 +74,7 @@ func expectQuiet(t *testing.T, w *Watcher) {
 // TestWatch_Modified は変更の検知を検証する
 // （UT-401。根拠: FR-014 / IMP-140, IMP-141）。
 func TestWatch_Modified(t *testing.T) {
+	// UT-401 ケース 1 と 4
 	t.Run("監視対象への追記を検知する", func(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(dir, "a.md")
@@ -90,8 +91,11 @@ func TestWatch_Modified(t *testing.T) {
 		if ev.Kind != Modified {
 			t.Errorf("Kind = %v, want Modified", ev.Kind)
 		}
-		if !samePath(ev.Path, target) {
-			t.Errorf("Path = %q, want %q", ev.Path, target)
+		// UT-401 ケース 4: Path は Watch に渡したパスそのもの（IMP-141）。
+		// 大文字小文字や表記を寄せて比べない。呼び出し側は Path を画面の対象と
+		// 照合するため、別の表記で返ると照合を通らない（IMP-192）。
+		if ev.Path != target {
+			t.Errorf("Path = %q, want %q（Watch に渡したパス）", ev.Path, target)
 		}
 	})
 

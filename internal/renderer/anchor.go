@@ -17,6 +17,13 @@ import (
 // 変換器にスライスを持たせると、同時に走る変換どうしが干渉する。
 var headingsKey = parser.NewContextKey()
 
+// DocumentIDPrefix は文書から生まれる id に付ける接頭辞（AR-053, IMP-117, IMP-111）。
+//
+// 見出し・脚注・生 HTML の id をこれで始め、画面（index.html）と同梱資産の id と
+// 名前空間を分ける。付けないと、`## Tooltip` のような見出しが画面の要素を乗っ取る
+// （BUG-011）。GitHub と同じ接頭辞である。
+const DocumentIDPrefix = "user-content-"
+
 // headingTransformer は見出しへ ID を付与し、一覧を集める（IMP-117, FR-040）。
 //
 // goldmark の parser.WithAutoHeadingID() は使わない。GitHub 互換のスラッグ
@@ -39,10 +46,19 @@ func (headingTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 		}
 
 		plain := plainText(h, source)
-		id := s.Slug(plain)
-		if id != "" {
+
+		// 重複の判定と連番はスラッグで行い、接頭辞は id 属性へ書くときに
+		// ここ 1 か所で付ける（IMP-117 の 6）。Slug の中で付けると UT-202 が
+		// 見ているスラッグそのものが変わり、2 か所で付けると二重になる。
+		// **スラッグが接頭辞で始まっていても必ず付ける**（`## user-content-foo`）。
+		// 「二重に付けない」は生 HTML の id だけの規則である（IMP-116）。
+		var id string
+		if slug := s.Slug(plain); slug != "" {
+			id = DocumentIDPrefix + slug
 			h.SetAttributeString("id", []byte(id))
 		}
+		// スラッグが空なら id 属性も Heading.ID も空にする。接頭辞だけの
+		// `user-content-` を並べない（IMP-117 の 6、UT-219 ケース 10）。
 		headings = append(headings, Heading{Level: h.Level, Text: plain, ID: id})
 
 		// 見出しの中に見出しは現れない。子を辿る必要はない。

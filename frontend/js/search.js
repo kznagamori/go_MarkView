@@ -138,6 +138,63 @@ export function isSearchOpen() {
   return state.search.open;
 }
 
+// syncHits は、図か数式を 1 つ描き終えたときに、検索の状態を実際の DOM へ合わせる
+// （FR-080, IMP-241。[BUG-017](../../docs/bugs/2026-09-18-bug-017-search-hits-before-rendering.md)）。
+//
+// **描画は原文の要素を置き換える。** Mermaid と PlantUML は `<pre>` を図の器へ、KaTeX は
+// 数式の要素の中身を描画結果へ置き換えるため、**描く前に包んだ `<mark>` は DOM から外れる。**
+// 外れたものを件数から除き、**描けずに原文へ戻ったブロック**（`restorePlantUML` は新しい
+// `<pre>` を作る）の中は探し直して、見えている文字にハイライトを付け直す。
+//
+// **画面は動かさない。** 読んでいる途中に描画が終わっただけでスクロールしてはならない
+// （移動は利用者の操作＝`jump` でだけ行う）。**現在位置が外れていたら、文書の順でその後ろに
+// 残っている最初のヒットへ移す**（利用者の判断。2026-09-18）。末尾だったときは先頭へ回る。
+//
+// root は描き終えたブロック（省略時は本文の全体）。
+export function syncHits(root) {
+  const { open, query, hits, index } = state.search;
+  if (!open || !query || hits.length === 0) return;
+
+  const current = index >= 0 ? hits[index] : null;
+  const dropped = Boolean(current) && !current.isConnected;
+
+  // 1. DOM から外れたヒットを落とす。現在位置が外れていたら、その後ろで生きている最初のものを覚える。
+  const kept = [];
+  let next = null;
+  hits.forEach((mark, at) => {
+    if (!mark.isConnected) return;
+
+    kept.push(mark);
+    if (next === null && dropped && at > index) next = mark;
+  });
+
+  // 2. 原文へ戻ったブロックの中を探し直す。**そのブロックのヒットが 1 つでも残っていれば触らない**
+  //    ——描けなかった Mermaid のように原文がそのまま残る場合は、二重に包むことになる。
+  const area = root && root.isConnected ? root : null;
+  const added = [];
+  if (area && !kept.some((mark) => area.contains(mark))) {
+    for (const node of textNodes(area)) {
+      for (const mark of wrap(node, query.toLowerCase())) added.push(mark);
+    }
+  }
+
+  const merged = added.length === 0 ? kept : kept.concat(added).sort(inDocumentOrder);
+  if (merged.length === hits.length && added.length === 0) return;
+
+  const target = (dropped ? next : current) ?? merged[0] ?? null;
+  for (const mark of merged) mark.classList.toggle(CURRENT, mark === target);
+
+  state.search.hits = merged;
+  state.search.index = target ? merged.indexOf(target) : -1;
+
+  updateCount();
+}
+
+// inDocumentOrder は 2 つの要素を文書の順に並べる比較関数（IMP-241）。
+function inDocumentOrder(a, b) {
+  return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+}
+
 // select は現在位置を移す（IMP-241, DSP-161）。
 //
 // **クラスの付け替えだけで済ませる。** ハイライトを作り直すと、文書が

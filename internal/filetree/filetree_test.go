@@ -371,9 +371,9 @@ func TestPathTo(t *testing.T) {
 
 // TestPathTo_OutsideRoot はツリー外の対象を検証する（UT-305 ケース 3）。
 //
-// 仕様は「エラーまたは空。どちらかに固定する」としている。**エラーに固定した。**
-// 空を返すと、ツリー外のファイルを開いたときに「展開する経路がない」のか
-// 「ツリー外なので経路がない」のかを呼び出し側が区別できない（FR-052）。
+// 期待は `errors.Is(err, ErrOutsideRoot)` が真であること（IMP-131）。**空のスライスで
+// 成功にしない。** 空を返すと、ツリー外のファイルを開いたときに「展開する経路がない」
+// のか「ツリー外なので経路がない」のかを呼び出し側が区別できない（FR-052）。
 func TestPathTo_OutsideRoot(t *testing.T) {
 	for _, tt := range []struct{ name, root, target string }{
 		{"別のディレクトリ", "/r", "/other/c.md"},

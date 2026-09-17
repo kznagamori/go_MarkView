@@ -36,7 +36,7 @@ import (
 type Heading struct {
 	Level int    `json:"level"` // 1..6
 	Text  string `json:"text"`  // インライン記法を除去したプレーンテキスト
-	ID    string `json:"id"`    // 見出しアンカー（MD-021）
+	ID    string `json:"id"`    // 見出しの id 属性の値。user-content- 付き（MD-021, AR-053）
 }
 
 // Result は 1 回の変換結果を表す（IMP-110）。
@@ -76,8 +76,12 @@ func New() *Renderer {
 				// U+21A9 + U+FE0E（異体字セレクタ付き）ではなく、GitHub と
 				// 同じ U+21A9 単独にする。セレクタが付くと白黒の記号として
 				// 描かれ、GitHub の色付きの矢印と見た目が変わる（MD-002）。
+				//
+				// id には文書の接頭辞を付ける（MD-050, AR-053）。goldmark はこの値を
+				// id 属性と相互リンクの href（#user-content-fn:1）の両方に付ける。
 				extension.NewFootnote(
 					extension.WithFootnoteBacklinkHTML("&#x21a9;"),
+					extension.WithFootnoteIDPrefix(DocumentIDPrefix),
 				),
 				emoji.Emoji, // 絵文字ショートコード（MD-051）
 				meta.Meta,   // YAML Front Matter（MD-073）
@@ -89,6 +93,8 @@ func New() *Renderer {
 				mermaidExtension{}, // Mermaid ブロックの取り出し（IMP-115, MD-080）
 
 				plantUMLExtension{}, // PlantUML ブロックの取り出し（IMP-119, MD-083）
+
+				refExtension{}, // 編集・並べ替え・リンクの目印（IMP-120）
 
 				// ハイライトは Mermaid・PlantUML・数式の後に置く。いずれも先に
 				// 専用ノードへ差し替わり、chroma には渡らない（IMP-114, IMP-115, IMP-119）。
@@ -102,6 +108,8 @@ func New() *Renderer {
 				parser.WithASTTransformers(
 					util.Prioritized(headingTransformer{}, 100),
 					util.Prioritized(imageTransformer{}, 95), // 画像 URL の書き換え（IMP-118）
+					// 生 HTML の有無。サニタイズの後処理を省いてよいかの判断（IMP-116）
+					util.Prioritized(rawHTMLTransformer{}, 90),
 				),
 			),
 
@@ -125,12 +133,15 @@ func New() *Renderer {
 //
 // baseDir は相対パス解決の基準ディレクトリ（表示中ファイルのディレクトリ。
 // AR-042）。source は正規化済みの UTF-8 テキストであることを前提とする
-// （IMP-103）。
-func (r *Renderer) Render(source []byte, baseDir string) (result Result, err error) {
+// （IMP-103）。refKey は目印の鍵（IMP-120）。空文字なら目印を付けない。
+//
+// **アプリケーションは必ず鍵を渡す**（IMP-102）。空にできるのはテストのためである。
+func (r *Renderer) Render(source []byte, baseDir, refKey string) (result Result, err error) {
 	// 変換中のパニックをエラーへ変える（IMP-022, FR-111）。
 	defer recoverRender(&result, &err)
 
-	source = normalizeFrontMatter(source)
+	// 前処理（Front Matter の扱い）。ずれの量は Locate だけが使う（IMP-121）。
+	source, _ = preprocess(source)
 
 	// Context は変換ごとに作る。見出し一覧の受け渡しに使い、同時に走る
 	// 変換どうしが干渉しないようにしている（IMP-024, IMP-117）。
@@ -138,6 +149,8 @@ func (r *Renderer) Render(source []byte, baseDir string) (result Result, err err
 	// 画像 URL の書き換えに使う（IMP-118）。AST 変換器は 1 度しか登録され
 	// ないため、変換ごとに変わる値は Context 経由で渡す。
 	pc.Set(baseDirKey, baseDir)
+	// 目印の鍵（IMP-120）。空なら目印を付けない。
+	pc.Set(refKeyKey, refKey)
 
 	var buf bytes.Buffer
 	if err := r.md.Convert(source, &buf, parser.WithContext(pc)); err != nil {
@@ -154,10 +167,19 @@ func (r *Renderer) Render(source []byte, baseDir string) (result Result, err err
 	needsKaTeX, _ := pc.Get(needsKaTeXKey).(bool)
 	needsMermaid, _ := pc.Get(needsMermaidKey).(bool)
 	needsPlantUML, _ := pc.Get(needsPlantUMLKey).(bool)
+	// 値が無い（変換器が走らなかった）ときは真とみなし、後処理を省かない。
+	hasRawHTML, ok := pc.Get(hasRawHTMLKey).(bool)
+	if !ok {
+		hasRawHTML = true
+	}
+
+	// サニタイズは変換パイプラインの最後段に固定で置く（IMP-116, AR-031）。
+	// 属性指定だけでは閉じ込められない id の接頭辞と input の除去は、その直後の
+	// 1 回の走査で行う（sanitizeAfter）。
+	sanitized := sanitizeAfter(r.policy.SanitizeBytes(buf.Bytes()), hasRawHTML)
 
 	return Result{
-		// サニタイズは変換パイプラインの最後段に固定で置く（IMP-116, AR-031）。
-		HTML:          string(r.policy.SanitizeBytes(buf.Bytes())),
+		HTML:          string(sanitized),
 		Headings:      headings,
 		NeedsKaTeX:    needsKaTeX,
 		NeedsMermaid:  needsMermaid,
@@ -171,7 +193,15 @@ const (
 	tomlFence = "+++"
 )
 
-// normalizeFrontMatter は Front Matter の扱いを MD-073 の規定に揃える。
+// preprocess は Front Matter の扱いを MD-073 の規定に揃え、前処理後の本文と、
+// 本文の位置を元のソースの位置へ戻すために足す量（shift）を返す（IMP-111, IMP-121）。
+//
+// **前処理とずれの量はこの 1 つの関数が返す。** Render と Locate の 2 か所に書くと、
+// 片方だけが変わったときに書き換える位置がずれる（IMP-121）。
+//
+//   - TOML の Front Matter を除いた場合: 除いた長さ（正）
+//   - 1 行目が `---` で閉じの無い YAML の場合: 先頭に足した改行の分（-1）
+//   - それ以外（閉じた YAML は meta.Meta がパーサの中で読み飛ばす）: 0
 //
 // 規則を次に固定する。**開きの区切りが 1 行目にあり、かつ対応する閉じの
 // 区切りがある場合にのみ Front Matter とみなす。閉じがない場合は本文として
@@ -185,18 +215,19 @@ const (
 //     ときだけ先頭に空行を 1 つ加え、Front Matter と認識させない。meta.Meta
 //     が見るのは 1 行目だけであり、Markdown では先頭の空行は描画に影響しない。
 //     この 1 行がないと、閉じのない YAML で文書全体が失われる。
-func normalizeFrontMatter(source []byte) []byte {
+func preprocess(source []byte) (body []byte, shift int) {
 	if body, ok := cutFrontMatter(source, tomlFence); ok {
-		return body
+		// body は source の末尾の部分スライスである。
+		return body, len(source) - len(body)
 	}
 
 	if firstLineIs(source, yamlFence) {
 		if _, ok := cutFrontMatter(source, yamlFence); !ok {
-			return append([]byte{'\n'}, source...)
+			return append([]byte{'\n'}, source...), -1
 		}
 	}
 
-	return source
+	return source, 0
 }
 
 // cutFrontMatter は開きと閉じが揃った Front Matter を取り除いた本文を返す。

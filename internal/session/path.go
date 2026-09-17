@@ -22,6 +22,29 @@ func SamePath(a, b string) bool {
 	return a == b
 }
 
+// SameFile は a と b が同じファイル（1.7）かを返す（IMP-191）。
+//
+// 両方を filepath.EvalSymlinks で解決し、SamePath で比べる。解決に失敗した側は、
+// 解決前のパスのまま比べる（IMP-192）。同じ文書の再描画として状態を引き継ぐか
+// （DocumentDTO.SameDocument）の判断そのものであり、desktop に置かない（UT-809）。
+//
+//   - **シンボリックリンクを解決した実体で比べる**（1.7）。リンク経由で開き直しただけで
+//     編集モードや原寸表示が解除されないようにする（UT-809 ケース 8・9）
+//   - **解決に失敗しても偽にしない。** 削除された文書の表記が一致すれば同じとみなす
+//     （UT-809 ケース 10）。存在する側と存在しない側は、解決後と解決前の表記が違うため偽になる
+//   - DisplayPath と違いファイルシステムに触れる（IMP-191）
+func SameFile(a, b string) bool {
+	return SamePath(resolveLinks(a), resolveLinks(b))
+}
+
+// resolveLinks はシンボリックリンクを解決したパスを返す。解決に失敗したら p のまま返す。
+func resolveLinks(p string) string {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	return p
+}
+
 // DisplayPath はステータス領域に出すパスと、ツリー外かどうかを返す
 // （UI-060, FR-052, IMP-025）。
 //

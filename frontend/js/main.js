@@ -2,6 +2,9 @@
 //
 // 各モジュールが export する初期化関数をここから順に呼ぶ（IMP-201）。
 // グローバル変数を作らない。window への代入を行わない。
+//
+// **文書を開く経路と結果の反映（状態画面を出すことを含む）は navigate.js にある**（IMP-250）。
+// ここは起動・Go からのイベントの購読・ショートカットとダイアログの配線だけにする。
 
 import * as api from "./api.js";
 import { state } from "./state.js";
@@ -11,14 +14,25 @@ import { initTooltip } from "./tooltip.js";
 import { applyTheme, toggleTheme } from "./theme.js";
 import { initZoom, setZoom, stepZoom } from "./zoom.js";
 import { applyPanes, initPanes, togglePane } from "./panes.js";
-import { initFileTree, loadTreeRoot, revealCurrent } from "./filetree.js";
+import { initFileTree, loadTreeRoot } from "./filetree.js";
+import {
+  enterStateScreen,
+  followLink,
+  goBack,
+  goForward,
+  isStateScreenError,
+  openFromTree,
+  openViaDialog,
+  reloadCurrent,
+  showDocument,
+  showError,
+} from "./navigate.js";
 import { initOutline } from "./outline.js";
-import { initViewer, renderDocument, scrollToAnchor } from "./viewer.js";
+import { focusViewer, initViewer } from "./viewer.js";
 import { initSearch, openSearch, closeSearch, isSearchOpen, jump } from "./search.js";
 import { initShortcuts } from "./shortcuts.js";
 import {
   initOverlay,
-  showStateScreen,
   showAbout,
   hideAbout,
   isAboutOpen,
@@ -27,21 +41,38 @@ import {
   isEditorsOpen,
 } from "./overlay.js";
 import { initDnd } from "./dnd.js";
-import { updateStatus, showMessage } from "./status.js";
-import { $ } from "./util.js";
-
-// ErrorDTO.Kind と状態画面の対応（IMP-315 の「表示先」）。
-// ここにない Kind はステータス領域に 1 行で出す。
-const STATE_SCREENS = {
-  "needs-confirm": "confirm-large",
-  "too-large": "too-large",
-  "render-error": "render-error",
-};
+import {
+  closeExpand,
+  initExpand,
+  isExpandOpen,
+  onAllDiagramsSettled,
+  onImagesNumbered,
+  onTargetSettled,
+  openExpand,
+} from "./expand.js";
+import { initMedia } from "./media.js";
+import { initTableSort } from "./tablesort.js";
+import { closeContextMenu, initContextMenu } from "./contextmenu.js";
+import {
+  cancelCellEdit,
+  initEditMode,
+  isCellEditing,
+  leaveEditMode,
+  redoEdit,
+  toggleEditMode,
+  undoEdit,
+} from "./editmode.js";
+import { showMessage } from "./status.js";
 
 // SHORTCUTS の id と処理の対応（UI-090, IMP-244）。
 //
 // **未実装のものは載せない。** copySelection（Ctrl+C）は WebView の既定に
 // 任せるためここには現れない（FR-062）。Alt+F4 と閉じるボタンは OS が処理する。
+//
+// editMode はツールバーのボタンと同じ入口（toggleEditMode。IMP-260）を通し、開始できない状態なら false を
+// 返す。undo / redo は編集モードでなければ false を返し、既定の動作を止めない（IMP-263）。**入力欄では
+// shortcuts.js が素通しする**（FR-144）。**右クリックメニューと拡大画面を開いている間のキーは
+// shortcuts.js が扱う**（IMP-244, IMP-249, IMP-253）。
 const SHORTCUT_HANDLERS = guardAll({
   open: () => openViaDialog(),
   reload: () => reloadCurrent(),
@@ -60,6 +91,9 @@ const SHORTCUT_HANDLERS = guardAll({
   about: () => showAboutDialog(),
   edit: () => showEditorDialog(),
   quit: () => api.quit(),
+  editMode: () => toggleEditMode(),
+  undo: () => undoEdit(),
+  redo: () => redoEdit(),
 });
 
 // ダイアログ表示中に**既定の動作を奪ってはならない**割り当て（UI-103）。
@@ -128,6 +162,7 @@ async function boot() {
     onOutline: () => togglePane("outline"),
     onFileTree: toggleFileTree,
     onEdit: showEditorDialog,
+    onEditMode: () => toggleEditMode(),
     onAbout: showAboutDialog,
   });
   initTooltip();
@@ -139,6 +174,21 @@ async function boot() {
   initZoom();
   initOverlay({ onLink: followLink, onBrowse: browseEditor, onOpenEditor: openInEditor });
   initDnd();
+  // 図と画像のボタンから拡大画面を開き、対象の準備と数を拡大画面へ知らせる（IMP-228, IMP-253）
+  initMedia({ onExpand: openExpand, onTargetSettled, onImagesNumbered, onAllDiagramsSettled });
+  initExpand({ focusViewer });
+  initTableSort({ closeSearch });
+  // 編集モード（IMP-260〜IMP-263）。書き込みの失敗はステータス領域に出す（DSP-321）
+  initEditMode({ api, notify: (error) => showMessage(errorText(error), "error"), focusViewer });
+  // 右クリックメニュー（IMP-249）。Copy は WebView 自身のコピー（execCommand）であり、Go を通すのは
+  // Copy link address・execCommand が効かなかったときの代わりの経路・Paste の読み取りだけ（AR-062）。
+  // セルの編集欄から開いてメニューの外を押したら、フォーカスが外れたものとして取り消す（IMP-262）。
+  initContextMenu({
+    copyText: api.copyToClipboard,
+    readClipboard: api.readClipboard,
+    notify: (error) => showMessage(errorText(error), "error"),
+    cancelCellEdit,
+  });
   initShortcuts(SHORTCUT_HANDLERS);
 
   subscribe();
@@ -148,11 +198,10 @@ async function boot() {
   if (init.document) {
     showDocument(init.document);
   } else {
-    showStateScreen(init.stateKind || "welcome", withConfirm(init.error));
-    updateStatus();
+    enterStateScreen(init.stateKind || "welcome", init.error);
     // 起動時のパスが読めなかった場合、操作案内はそのままに理由を添える
     // （FR-012, IMP-193）。
-    if (init.error && !STATE_SCREENS[init.error.kind]) {
+    if (init.error && !isStateScreenError(init.error)) {
       showMessage(errorText(init.error), "error");
     }
   }
@@ -165,8 +214,12 @@ function subscribe() {
   api.on(api.EVENT.documentOpened, showDocument);
   api.on(api.EVENT.documentChanged, showDocument);
 
-  // 削除されても本文とタイトルは維持する（FR-110, UI-013）。
-  api.on(api.EVENT.documentRemoved, (error) => showMessage(errorText(error), "error"));
+  // 削除されても本文とタイトルは維持する（FR-110, UI-013）。**編集モードは終える**——Go 側は既に終えており、
+  // 次に読み込めるまで開始させない（IMP-260, IMP-320, FR-140 の表）。
+  api.on(api.EVENT.documentRemoved, (error) => {
+    leaveEditMode();
+    showMessage(errorText(error), "error");
+  });
 
   api.on(api.EVENT.treeRootChanged, async (root) => {
     state.treeRoot = root;
@@ -174,72 +227,6 @@ function subscribe() {
   });
 
   api.on(api.EVENT.error, showError);
-}
-
-// showDocument は本文を描画し、ツリーの選択と展開を合わせる（DSP-331）。
-//
-// **描画とツリーの追随を 1 か所にまとめる。** 経路ごとに呼び分けると、
-// どれか 1 つで追随を書き忘れたときに気付けない。
-function showDocument(doc) {
-  renderDocument(doc);
-  revealCurrent();
-}
-
-// handleResult は OpenResultDTO を描画へ落とす（IMP-308）。
-//
-// document も error も null のときは何も起きなかったことを意味する。
-// 表示を変えない（履歴の端、ダイアログの取り消しなど）。
-function handleResult(result) {
-  if (!result) return;
-
-  if (result.error) {
-    showError(result.error);
-    return;
-  }
-  if (result.document) {
-    showDocument(result.document);
-  }
-}
-
-// showError は ErrorDTO を表示先へ振り分ける（IMP-315）。
-function showError(error) {
-  if (!error) return;
-
-  const screen = STATE_SCREENS[error.kind];
-  if (screen) {
-    showStateScreen(screen, withConfirm(error));
-    return;
-  }
-
-  showMessage(errorText(error), "error");
-}
-
-// withConfirm は確認画面のボタンに処理を結び付ける（FR-016, IMP-314）。
-function withConfirm(error) {
-  if (!error) return null;
-
-  return Object.assign({}, error, { onConfirm: openConfirmed });
-}
-
-async function openConfirmed(path) {
-  handleResult(await api.openConfirmed(path));
-}
-
-async function openViaDialog() {
-  await leaveDocument();
-  handleResult(await api.openFileDialog());
-}
-
-async function reloadCurrent() {
-  await leaveDocument();
-  handleResult(await api.reload());
-
-  // **ツリーも読み直す**（FR-035 の 2 番目の契機。IMP-240）。
-  //
-  // Reload() は表示中の文書を開き直すだけでツリーに触れない（IMP-310）ため、
-  // ここで続けて呼ぶ。**文書の再読み込みが失敗しても行う**——FR-035 が契機と
-  // 定めているのは「再読み込み操作を行ったとき」であり、その成否ではない。
-  await loadTreeRoot(state.treeRoot);
 }
 
 // toggleFileTree はツリーペインを開閉し、**表示になったらツリーを読み直す**
@@ -261,31 +248,36 @@ async function toggleFileTree() {
   await loadTreeRoot(state.treeRoot);
 }
 
-// goBack / goForward は表示履歴をたどる（FR-051, UI-090）。
-//
-// ツールバーにボタンはなく（UI-020）、Alt+← / Alt+→ が唯一の経路である。
-// 端に居るときは document も error も null が返り、表示は変わらない
-// （IMP-308）。
-async function goBack() {
-  await leaveDocument();
-  handleResult(await api.historyBack());
-}
-
-async function goForward() {
-  await leaveDocument();
-  handleResult(await api.historyForward());
-}
-
 // closeTop は Esc の受け口（UI-090）。**上に重なっているものから閉じる。**
 //
-// 順序は重なり順（DSP-015）に従う。ダイアログのほうが検索バーより上に
-// あるため先に閉じる。閉じるものがなければ false を返す（IMP-244）。
+// **振り分けは UI-090 の順序に固定し、この 1 か所に書く**（IMP-244）。1 回の押下で 1 つだけに働かせ、
+// 最初に当てはまったところで戻る。**他のモジュールは Esc を扱わない**——2 か所に書くと、
+// stopPropagation の有無で順序が入れ替わる。閉じるものがなければ false を返す。
+//
+//   (1) 右クリックメニュー
+//   (2) 拡大画面・情報ダイアログ・エディタ選択ダイアログ
+//   (3) セルの編集欄（取り消して、本文ペインへフォーカスを戻す）
+//   (4) 検索バー
 //
 // **2 つのダイアログは同時に開かない**（IMP-252）ため、どちらを先に見ても
 // 結果は変わらない。開いていないほうは false を返して素通りする。
 function closeTop() {
+  // (1) 開く前のフォーカスへ戻す（IMP-249）
+  if (closeContextMenu()) return true;
+
+  // (2) 拡大画面は情報ダイアログ・エディタ選択ダイアログと同時に開かない（IMP-251, IMP-253）
+  if (closeExpand()) return true;
   if (hideAbout()) return true;
   if (hideEditors()) return true;
+
+  // (3) 取り消して本文ペインへ戻す（IMP-262, UI-055）
+  if (isCellEditing()) {
+    cancelCellEdit();
+    focusViewer();
+    return true;
+  }
+
+  // (4)
   if (!isSearchOpen()) return false;
 
   closeSearch();
@@ -297,7 +289,12 @@ function closeTop() {
 // **Go を呼ぶのはここだけとし、overlay.js は受け取った値を描くだけにする**
 // （IMP-201）。
 async function showAboutDialog() {
-  showAbout(await api.getAbout());
+  const about = await api.getAbout();
+
+  // **応答を待つ間に拡大画面が開いていれば出さない**（IMP-251）。同じ層（DSP-015）で #expand-view が
+  // #overlay より後ろにあるため、出すと拡大画面の下に隠れる。
+  if (isExpandOpen()) return;
+  showAbout(about);
 }
 
 // --- エディタで開く（FR-090, FR-091, IMP-331） ---
@@ -322,6 +319,8 @@ async function showEditorDialog() {
     return;
   }
 
+  // 応答を待つ間に拡大画面が開いていれば出さない（IMP-252。情報ダイアログと同じ理由）
+  if (isExpandOpen()) return;
   showEditors(list);
 }
 
@@ -354,52 +353,6 @@ async function openInEditor(id) {
   }
 
   showMessage(S.statusEditor(result.name), "info");
-}
-
-// openFromTree はツリーで選ばれたファイルを開く（FR-033）。
-// **ツリールートは変わらない**（FR-030）。判断は Go 側にある。
-async function openFromTree(path) {
-  await leaveDocument();
-  handleResult(await api.openFromTree(path));
-}
-
-// followLink は本文中のリンクをたどる（FR-050, IMP-330）。
-//
-// 判断は Go 側にある。ここは結果を描画へ落とすだけとする。
-async function followLink(href) {
-  await leaveDocument();
-  handleLink(await api.followLink(href));
-}
-
-// handleLink は LinkResultDTO を種類ごとに振り分ける（IMP-305）。
-function handleLink(result) {
-  if (!result) return;
-
-  switch (result.kind) {
-    case "document":
-      showDocument(result.document);
-      return;
-
-    case "anchor":
-      scrollToAnchor(result.anchor);
-      return;
-
-    case "external":
-      // Go 側が既に OS へ委譲済み。表示は変えない（FR-053）。
-      return;
-
-    default:
-      showError(result.error);
-  }
-}
-
-// leaveDocument は現在のスクロール位置を履歴へ記録する（IMP-311）。
-//
-// **文書を離れる直前に 1 回だけ呼ぶ。** スクロールのたびには呼ばない。
-async function leaveDocument() {
-  if (!state.doc) return;
-
-  await api.setScrollTop($("viewer").scrollTop);
 }
 
 boot();

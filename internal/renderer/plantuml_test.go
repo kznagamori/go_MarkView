@@ -163,7 +163,7 @@ func TestRender_NeedsPlantUML(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := New().Render([]byte(tt.in), "")
+			res, err := New().Render([]byte(tt.in), "", "")
 			if err != nil {
 				t.Fatalf("Render がエラーを返した: %v", err)
 			}
@@ -251,7 +251,7 @@ func TestRender_NeedsPlantUML_WithIncludeDirective(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := New().Render([]byte(tt.in), "")
+			res, err := New().Render([]byte(tt.in), "", "")
 			if err != nil {
 				t.Fatalf("Render がエラーを返した: %v", err)
 			}

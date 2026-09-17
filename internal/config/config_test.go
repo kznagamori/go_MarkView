@@ -68,7 +68,7 @@ func TestDefault(t *testing.T) {
 }
 
 // TestConfig_NoWindowPosition は、保存してはならない項目が構造体にないことを
-// 検証する（UT-505。根拠: UI-111, NFR-042 / IMP-150）。
+// 検証する（UT-505。根拠: FR-140, UI-111, NFR-042 / IMP-150）。
 //
 // **将来フィールドが追加されたら落ちるテストであることに意味がある。**
 // 構造体にフィールドがなければ保存も復元も起こり得ない、という構造的な保証を
@@ -114,6 +114,15 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 	} {
 		if _, ok := m[ng]; ok {
 			t.Errorf("保存してはならないキー %q がある（UI-111, NFR-042）", ng)
+		}
+	}
+
+	// UT-505 ケース 6: 編集モードの状態を保存しない（UI-111, FR-140）。
+	// 起動時は常に編集モードでなく、多重起動で後勝ちになる値にしない。
+	// 表記の揺れで見落とさないよう、大文字小文字を区別せずに探す。
+	for k := range m {
+		if strings.EqualFold(k, "editMode") {
+			t.Errorf("保存してはならないキー %q がある（UI-111, FR-140）", k)
 		}
 	}
 }

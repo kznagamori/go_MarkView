@@ -7,6 +7,10 @@
 #
 # タグは対象にしない。v で始まるタグはリリース CI が受け持つ（BR-050）。
 #
+# **ビルドとテストに使う Go の版は go.mod の toolchain が決める**（BR-001, IMP-010）。setup-go は
+# toolchain があればその版を入れる。go の行（1.25.0）は下限であり、そのまま使うと修正版の出る前の
+# 標準ライブラリでビルドすることになる（2026-09-18 に govulncheck で 33 件を確かめた）。
+#
 # アクションはメジャータグで参照する。修正が自動で流れてくる一方、
 # 破壊的変更は取り込まれない。**Node.js 20 を対象とする版（checkout@v4、
 # setup-go@v5）は使わない。** ランナーが Node.js 24 で強制実行し、
@@ -81,6 +85,17 @@ jobs:
       - name: Unit tests
         run: go test -race -tags webkit2_41 ./...
 
+      # 依存と標準ライブラリの既知の脆弱性（NFR-034, BR-052）。**見つかったら失敗にする**（利用者の判断）。
+      #
+      # govulncheck は実際に呼んでいる関数に届く脆弱性だけを報告するため、ここが赤になったら
+      # 依存か go.mod の toolchain を上げる。**版を固定する**（Wails CLI と同じ）。v1.8.0 は
+      # Go 1.26 以上を要求するため、toolchain を 1.26 未満へ下げると動かない。
+      #
+      # **Windows のジョブでも実行する。** ビルド制約で片方の OS にしか入らない依存
+      # （go-webview2 と golang.org/x/sys/windows など）は、こちらでは調べられない。
+      - name: Vulnerability check (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -tags webkit2_41 ./...
+
       # 生成物が古いままコミットされていないことを見る（BR-041）。
       #
       # **生成してから git diff で比べる。** 生成スクリプトを直したのに
@@ -131,7 +146,15 @@ jobs:
             exit 0
           fi
 
-          paths="frontend/vendor/ frontend/js/lazy.js frontend/js/viewer.js frontend/css/markdown.css scripts/smoke/ testdata/smoke.md testdata/e2e/plantuml-limits.md"
+          # **BR-052 の表と同じ並びで書く。** スモークが読むもの（本番のモジュール・CSS・変換とその依存・
+          # 検証用の文書と画像・goldmark と bluemonday の版）をすべて含める。含めないと、検査の対象を
+          # 直した PR でスモークが走らない。
+          #   - frontend/js/ は全体。スモークが動的に読む viewer.js / lazy.js / tablesort.js / refs.js は
+          #     他のモジュールを import しており、どれか 1 つが壊れても読み込みが失敗する
+          #   - CSS はスモークのページ（scripts/smoke/harness.html）が読む 2 つ
+          #   - internal/ は renderer とその依存（go list -deps ./scripts/smoke で確かめる）
+          #   - testdata/e2e/docs/img/sample.png は testdata/smoke.md の「読める画像」
+          paths="frontend/vendor/ frontend/js/ frontend/css/tokens.css frontend/css/markdown.css internal/renderer/ internal/localurl/ internal/applog/ scripts/smoke/ testdata/smoke.md testdata/e2e/plantuml-limits.md testdata/e2e/docs/img/sample.png go.mod go.sum"
           if git diff --quiet "$base" "$head" -- $paths; then
             echo "描画に関わる変更なし"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -164,26 +187,30 @@ jobs:
 
       # **閾値を超えても失敗させない**（BR-060）。資産の更新でリリースが
       # 機械的に止まると、利用者へ新しい版を届けられなくなる。
+      #
+      # 閾値は NFR-021 の 30 MB（2 進接頭辞。1 MB = 1,048,576 バイト）。PlantUML の同梱で 25 MB から
+      # 引き上げた。配布アーカイブの 12 MB はリリース CI の E2E-107 が見る。
       - name: Binary size (record only)
         run: |
           size=$(stat -c%s build/bin/MarkView)
-          limit=$((25 * 1024 * 1024))
+          limit=$((30 * 1024 * 1024))
           {
             echo "## Binary size (linux/amd64)"
             echo
             echo "| Item | Bytes | MiB | Limit |"
             echo "| --- | ---: | ---: | ---: |"
-            printf '| MarkView | %s | %s | 25 MiB |\n' "$size" "$(awk -v s="$size" 'BEGIN{printf "%.1f", s/1048576}')"
+            printf '| MarkView | %s | %s | 30 MiB |\n' "$size" "$(awk -v s="$size" 'BEGIN{printf "%.1f", s/1048576}')"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$size" -gt "$limit" ]; then
-            echo "::warning::実行ファイルが 25 MiB を超えている（${size} バイト）。NFR-021 を再評価する"
+            echo "::warning::実行ファイルが 30 MiB を超えている（${size} バイト）。NFR-021 を再評価する"
           fi
 
-  # Windows 側。ビルドが通ることだけを見る（BR-052）。
+  # Windows 側。ビルドが通ることと、Windows にしか入らない依存の脆弱性を見る（BR-052）。
   #
   # 検査を重ねないのは、gofmt・vet・テストの結果が OS で変わらないため。
   # 変わりうるのは「ビルドが通るか」であり、そこは _windows.go の分岐
-  # （IMP-031）があるため実際に確かめる価値がある。
+  # （IMP-031）があるため実際に確かめる価値がある。**govulncheck は OS で結果が変わる**
+  # （ビルド制約で調べる依存が違う）ため、こちらでも実行する（NFR-034）。
   build-windows:
     name: Build (Windows)
     runs-on: windows-latest
@@ -210,6 +237,11 @@ jobs:
       - name: Unit tests
         run: go test ./...
 
+      # Windows にしか入らない依存（go-webview2 と golang.org/x/sys/windows など）の既知の脆弱性
+      # （NFR-034, BR-052）。Linux のジョブと同じ版で、見つかったら失敗にする。
+      - name: Vulnerability check (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
       - name: Binary size (record only)
         shell: bash
         run: |
@@ -219,8 +251,8 @@ jobs:
             echo
             echo "| Item | Bytes | MiB | Limit |"
             echo "| --- | ---: | ---: | ---: |"
-            printf '| MarkView.exe | %s | %s | 25 MiB |\n' "$size" "$(awk -v s="$size" 'BEGIN{printf "%.1f", s/1048576}')"
+            printf '| MarkView.exe | %s | %s | 30 MiB |\n' "$size" "$(awk -v s="$size" 'BEGIN{printf "%.1f", s/1048576}')"
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$size" -gt $((25 * 1024 * 1024)) ]; then
-            echo "::warning::実行ファイルが 25 MiB を超えている（${size} バイト）。NFR-021 を再評価する"
+          if [ "$size" -gt $((30 * 1024 * 1024)) ]; then
+            echo "::warning::実行ファイルが 30 MiB を超えている（${size} バイト）。NFR-021 を再評価する"
           fi

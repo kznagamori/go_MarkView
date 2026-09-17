@@ -1,6 +1,6 @@
 // Package session は、Wails に依存しない起動時の判断・表示履歴・パス算出を担う。
 //
-// これらを app.go ではなくここへ置くのは、app.go のロジックが package main の
+// これらを desktop/app.go ではなくここへ置くのは、app.go のロジックが desktop の
 // テストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）が
 // リンクされてしまうためである（IMP-012, UT-002）。
 package session

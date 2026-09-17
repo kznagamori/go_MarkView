@@ -9,6 +9,11 @@
 // 表示対象とツリールートを決める判断は internal/session が持つ（IMP-193）。
 // ここに判断を書くと package main のテストとなり、テストバイナリに Wails
 // （Linux では cgo と WebKitGTK）がリンクされてしまう（IMP-012, UT-002）。
+//
+// Wails にバインドする App 型と、その周り（バインドメソッド・境界の型・エラーの分類）は
+// desktop パッケージにある（IMP-011）。ここに残すのは go:embed と、Wails に依存しない
+// 起動前の処理と、options.App の組み立てである。go:embed はパッケージのディレクトリより
+// 上を参照できないため、埋め込みはルートのこのファイルに置く（IMP-030）。
 package main
 
 import (
@@ -27,6 +32,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
+	"github.com/kznagamori/go_MarkView/desktop"
 	"github.com/kznagamori/go_MarkView/internal/applog"
 	"github.com/kznagamori/go_MarkView/internal/assetsrv"
 	"github.com/kznagamori/go_MarkView/internal/buildinfo"
@@ -125,10 +131,11 @@ func launch(startup session.Startup, startupErr error) error {
 	cfg := config.Load()
 
 	buildinfo.SetVendorJSON(readVendorJSON())
-	app := NewApp(startup, startupErr, cfg)
+	app := desktop.NewApp(startup, startupErr, cfg, thirdPartyLicenses)
+	hooks := desktop.LifecycleOf(app)
 
 	return wails.Run(&options.App{
-		Title:     AppTitle, // 文書未表示時のタイトル（UI-013）
+		Title:     desktop.AppTitle, // 文書未表示時のタイトル（UI-013）
 		Width:     cfg.WindowWidth,
 		Height:    cfg.WindowHeight,
 		MinWidth:  640, // UI-011
@@ -136,6 +143,13 @@ func launch(startup session.Startup, startupErr error) error {
 
 		// WindowStartState は指定しない。最大化状態も位置も復元しないため、
 		// 常に既定の options.Normal で開く（UI-111, UI-115）。
+
+		// **EnableDefaultContextMenu は指定しない（偽のまま）**（AR-060, FR-063, IMP-193）。
+		// Wails v2.15.0 はリリースビルドでこれが偽なら、Windows では WebView2 の
+		// AreDefaultContextMenusEnabled を偽にし、Linux では WebKitGTK のメニューを止める。
+		// **真にしてはならない**——標準のメニューには「戻る」「再読み込み」「検証」が含まれる。
+		// 開発ビルド（wails dev、-debug）では、Wails はこの指定に関わらず標準のメニューを出す
+		// ため、フロントエンドが contextmenu を常に preventDefault() する（IMP-249）。
 
 		AssetServer: &assetserver.Options{
 			// Assets を渡さず Handler だけを使う。埋め込み資産の
@@ -151,13 +165,16 @@ func launch(startup session.Startup, startupErr error) error {
 		// #app に指定してウィンドウ全体を対象にする（UI-070）。
 		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true},
 
-		OnStartup: app.onStartup,
+		OnStartup: hooks.OnStartup,
 
 		// ウィンドウの大きさは閉じる直前に取り込む。OnShutdown では
 		// ウィンドウが既に破棄されており、読み出すと落ちる（IMP-194）。
-		OnBeforeClose: app.onBeforeClose,
-		OnShutdown:    app.onShutdown,
+		OnBeforeClose: hooks.OnBeforeClose,
+		OnShutdown:    hooks.OnShutdown,
 
+		// **バインドするのは App だけ**（IMP-190）。App の公開メソッドはすべてフロントエンドから
+		// 呼べるため、ライフサイクルの関数は公開メソッドにせず desktop.LifecycleOf で取り出す
+		// （IMP-300）。
 		Bind: []any{app},
 
 		// Windows は実行ファイルのリソースからアイコンを取るため指定不要。

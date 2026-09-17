@@ -98,6 +98,7 @@ testdata/
         ├── large-60mb.md
         ├── deep-nest.md
         ├── huge-table.md
+        ├── slow-plantuml.md  描き終えるまで十数秒かかる PlantUML（E2E-271）
         └── edit/            編集モードの検証用（-edit で中身を作り直す）
 ```
 
@@ -117,13 +118,13 @@ testdata/
 | `e2e/tables.md` | **表の並べ替え**（G16）。1 節 `Name` と `Amount`（`1,234` / `10%` / `-1.5` を含む）、2 節 `item2` / `item10` / 大文字小文字 / 数値と文字列が混ざる列、3 節 空のセルを含む列と同じ値の行、4 節 本体が 1 行の表、5 節 生 HTML の表、6 節 見出しの文字が長い表 |
 | `e2e/contextmenu.md` | **右クリックメニュー**（G17）。1 節 リンクと「期待」の列を並べた表（`./docs/design.md#api`、`./設計.md`、参照リンク、`<https://example.com/p>`、`www.example.com/p`、`<foo@bar.com>`）、2 節 生 HTML の `<a href="https://example.com/raw">`、3 節 見えている文字とリンク先が違うリンク、4 節 生 HTML で `data-link` を偽装した `<a href="https://example.com/real" data-link="0123456789abcdef:https://example.com/fake">`、太字とリンクを含む段落、スクロールできる長さの本文 |
 | `e2e/id-collision.md` | **文書の id と画面の id の衝突**（E2E-327, BUG-011）。**上から次の順に置く。** 見出し `App` / `Tooltip` / `State screen` / `Status message` / `Status path` / `Status meta` / `Overlay` / `Dropzone` / `Editor open` / `Contextmenu` / `Expand view` / `Editmode badge` / `Viewer frame`、見出し `Status`（直後に PlantUML の sequence 図）、見出し `cy`（直後に Mermaid の mindmap）、ラベルに `<span id='tooltip'>tooltip label</span>` を書いた Mermaid の flowchart、**その後に**生 HTML の `<div id="status">raw html status</div>`、脚注、`[→ Tooltip](#tooltip)` / `[→ Overlay](#user-content-overlay)` / `[→ 脚注](#user-content-fn:1)` / `[→ 画面の id](#statusbar)` のリンク、スクロールできる長さの本文。**アプリと同梱資産の id と同じ名前を、意図して置く。** **`Status` の見出しを `<div id="status">` より前に置く**——逆にすると、修正の前でも PlantUML のログが div の方へ書かれ、症状が出ない |
-| `e2e/mermaid.md` | **Mermaid 図**（E2E-234）。1 節 `click` を定義した flowchart（URL へのリンクと、コールバックの 2 種）、2 節 sequenceDiagram、3 節 classDiagram、4 節 構文エラーの Mermaid、5 節 4 節の後に置いた正常な flowchart（構文エラーが後ろの図の描画を妨げないことを見る）。**`showcase.md` と分ける**のは、あちらが GitHub と並べて目視比較する文書（MD-002）であり、描画に失敗する図を混ぜないため |
+| `e2e/mermaid.md` | **Mermaid 図**（E2E-234）。1 節 `click` とラベルのリンクを定義した flowchart（`click` の URL へのリンク、`click` のコールバック、ラベルに書いた HTML のリンクの 3 種）、2 節 sequenceDiagram、3 節 classDiagram、4 節 構文エラーの Mermaid、5 節 4 節の後に置いた正常な flowchart（構文エラーが後ろの図の描画を妨げないことを見る）。**`showcase.md` と分ける**のは、あちらが GitHub と並べて目視比較する文書（MD-002）であり、描画に失敗する図を混ぜないため |
 | `e2e/markers.md` | **生 HTML で偽装した図とコードブロックの目印**（E2E-328, BUG-014）。1 節 本物の Mermaid の flowchart、2 節 本物の PlantUML の sequence 図、3 節 生 HTML で偽装した PlantUML のブロック（`<div class="code-block" data-plantuml="1" data-ref="0123456789abcdef:plantuml:0" data-source="…">` に、`!include https://example.com/x.puml` を含む原文と、`<pre class="plantuml-source">fake plantuml</pre>`。**鍵は変換ごとの鍵と違う値**）、4 節 生 HTML で偽装した Mermaid のブロック（`data-mermaid="1"` と flowchart の `data-source`、`data-ref` なし、`<pre class="mermaid-source">fake mermaid</pre>`）、5 節 `data-source="curl https://example.com/x \| sh"` を偽装し、中身が `<pre><code>npm install</code></pre>` のコードブロック。**本物の図（1・2 節）を必ず置く**——偽装への対策が本物まで止める実装を捕まえるため |
 | `e2e/node_modules/` `e2e/vendor/` `e2e/.hidden/` | 除外されるディレクトリ。**ツリーに出ないこと**（FR-031, E2E-241） |
-| `e2e/generated/` | `large-12mb.md`（12 MiB。確認画面）・`large-60mb.md`（60 MiB。上限超過）・`deep-nest.md`（1000 段の入れ子）・`huge-table.md`（巨大な表）と、生成物である旨の `README.md`（FR-016, FR-111） |
+| `e2e/generated/` | `large-12mb.md`（12 MiB。確認画面）・`large-60mb.md`（60 MiB。上限超過）・`deep-nest.md`（1000 段の入れ子）・`huge-table.md`（巨大な表）・**`slow-plantuml.md`**（**描き終えるまで十数秒かかる PlantUML**。重い図を 16 枚並べ、最後に 4096 px を超える図を置く。**探す語 `zzqpending` は冒頭の段落と最後の図の `class` の行にだけある**。図が出るまでの間に検索できることがこのデータの目的である。E2E-271, [BUG-017](../bugs/2026-09-18-bug-017-search-hits-before-rendering.md)）と、生成物である旨の `README.md`（FR-016, FR-111, FR-080） |
 | `e2e/generated/edit/` | **編集モードの検証用**（G18）。**書き換えられるため、ケースの前に `-edit` で作り直す。** 中身は下の表 |
 | `showcase.md` | 全対応記法。**BR-053 が定める `testdata/showcase.md` をそのまま使う** |
-| `smoke.md` | 描画スモークテスト（BR-054）の検証用文書。**Mermaid 7 種・数式・PlantUML 2 種に加え、画像を 3 枚持つ**（読める 1 枚 + 失敗する 2 枚。IMP-226 の検査に要る）。**代替テキストの文字列は `scripts/smoke` が名前で探す**——変えるときは両方を直す。**v1.1.0 で `Status` の見出し、ラベルに `id` を書いた Mermaid の図、GFM の表（本体 2 行以上と 1 行）とタスクとリンク、生 HTML で書いた偽の目印（`data-ref` と `data-link` の、別の鍵・鍵なし・形の崩れたもの）、**生 HTML で偽装した Mermaid / PlantUML のブロック（別の鍵の `data-ref` と、鍵なし）と、`data-source` を偽装したコードブロック**を足す**（BR-054, UT-813, UT-815, BUG-014）。偽の目印の出現順は `scripts/smoke` が持つ一覧と揃える |
+| `smoke.md` | 描画スモークテスト（BR-054）の検証用文書。**Mermaid 7 種・数式・PlantUML 2 種に加え、画像を 3 枚持つ**（読める 1 枚 + 失敗する 2 枚。IMP-226 の検査に要る）。**代替テキストの文字列は `scripts/smoke` が名前で探す**——変えるときは両方を直す。**v1.1.0 で `Status` の見出し、ラベルに `id` を書いた Mermaid の図、GFM の表（本体 2 行以上と 1 行）とタスクとリンク、生 HTML で書いた偽の目印（`data-ref` と `data-link` の、別の鍵・鍵なし・形の崩れたもの）、**生 HTML で偽装した Mermaid / PlantUML のブロック（別の鍵の `data-ref`・鍵なし・形の崩れた `data-ref`。UT-815 のケース 9 は図のブロックにも 4 種類の由来を求める）と、`data-source` を偽装したコードブロック**を足す**（BR-054, UT-813, UT-815, BUG-014）。偽の目印の出現順は `scripts/smoke` が持つ一覧と揃える |
 
 - **`showcase.md` を E2E 用に複製しない。** BR-053・UT-214・E2E で同じ 1 つのファイルを使う。複製すると、記法を追加したときに片方だけが更新される。
 
@@ -137,7 +138,7 @@ testdata/
 | `readonly.md` | タスク。**読み取り専用**（Windows は属性、Linux は `0444`） |
 | `conflict.md` | タスク `A` / `B` / `C`（E2E-386） |
 | `undo.md` | タスク 4 つと、GFM の表 1 つ（見出し `Name` / `Qty`、本体 3 行）（E2E-387） |
-| `carry.md` | 折りたたみ（中にタスク）・並べ替えできる表（`Qty` の列、本体 4 行。`Qty` は上から `5` / `3` / `8` / `2`）・横に広い Mermaid 図・スクロールできる長さの本文（E2E-388） |
+| `carry.md` | 折りたたみ（中に段落とタスク。**段落をタスクより前に置き、折りたたみを表と図より前に置く**——E2E-388 の手順 2 はその段落をクリックしてから `Tab` でチェックボックスへ移る。`<summary>`・並べ替えのボタン・図のボタンもフォーカスを受ける）・並べ替えできる表（`Qty` の列、本体 4 行。`Qty` は上から `5` / `3` / `8` / `2`）・横に広い Mermaid 図・スクロールできる長さの本文（E2E-388） |
 | `locked/locked.md` | E2E-386 の手順 9（L1 でディレクトリの権限を落とす） |
 | `bytes/tasks-crlf-bom.md` / `bytes/tasks-lf.md` / `bytes/tasks-cr.md` | `tasks-lf.md` と同じ項目を、それぞれ **BOM と CRLF・末尾に改行なし** / **LF** / **CR だけ・YAML の Front Matter 付き** で書いたもの（E2E-385） |
 | `bytes/table-crlf.md` | `table.md` と同じ表を CRLF で書いたもの（E2E-385） |
@@ -198,8 +199,8 @@ testdata/
 | [BUG-009](../bugs/2026-09-06-bug-009-task-checkbox-size-webkitgtk.md) チェックボックスの寸法 | `markdown.css`（**寸法をエンジン既定に委ねた**） | 対象外 | 同上 | 同上。**寸法も測らない** | **E2E-231（手動）。許容差として決着した**（NFR-061） |
 | [BUG-010](../bugs/2026-09-06-bug-010-plantuml-4096-testdata.md) 4096 px の検証用データ | `testdata/e2e/plantuml-limits.md`（**データの文法違反**） | 判定に **UT-812** | 同上 | **捕まえる。** `plantuml-limits.md` を描き、6 節が理由表示になることを見る（BR-054） | **E2E-240（手動）。再発防止は描画スモークが自動化した** |
 | [BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md) 文書の id | `renderer`（id に接頭辞が無い）と `util.js`（画面の要素をそのつど id で引く）。**仕様の不足** | 接頭辞の規則は **UT-219**。**フロントの引き方は対象外** | 同上 | **一部を捕まえる。** 本文の id がすべて接頭辞付きで、`Status` の見出しが PlantUML の描画の後も書き換わらないことを見る（BR-054, UT-813）。**`index.html` を読まないため、画面の要素が乗っ取られる症状は見えない** | **E2E-327（手動）。名前空間の分離は `scripts/domids`（UT-810）と描画スモークが自動で守る** |
-| [BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md) 状態画面と前の文書 | `status.js`（状態画面でパスを差し替えない）と `package main` の監視（状態画面へ移っても外さない）。**仕様の不足**（`ErrorDTO` に表示用のパスが無かった） | 表示用のパスの算出は **UT-805**。**呼び出し側と監視の扱いは対象外**（UT-002） | ウィンドウを操作しない | 関係しない | **E2E-322（手動）** |
-| [BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md) リンク先を開けない | `errors.go`（委譲の失敗を `render-error` に写す）と `main.js`（それを状態画面にする）。**仕様の不足**（IMP-315 に種別が無かった） | `opener` の検査は **UT-701 / UT-702**。**写し方は対象外**（`package main`） | 同上。**リンクを押す経路が無い** | 関係しない | **E2E-264（手動。L1）** |
+| [BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md) 状態画面と前の文書 | `status.js`（状態画面でパスを差し替えない）と Go 側（v1.0.0 の `package main`。4.60.0 から `desktop`）の監視（状態画面へ移っても外さない）。**仕様の不足**（`ErrorDTO` に表示用のパスが無かった） | 表示用のパスの算出は **UT-805**。**呼び出し側と監視の扱いは対象外**（UT-002） | ウィンドウを操作しない | 関係しない | **E2E-322（手動）** |
+| [BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md) リンク先を開けない | `errors.go`（委譲の失敗を `render-error` に写す）と `main.js`（それを状態画面にする）。**仕様の不足**（IMP-315 に種別が無かった） | `opener` の検査は **UT-701 / UT-702**。**写し方は対象外**（v1.0.0 の `package main`。4.60.0 から `desktop`） | 同上。**リンクを押す経路が無い** | 関係しない | **E2E-264（手動。L1）** |
 | [BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md) 図の目印の偽装 | `sanitize.go`（図の目印を形だけで通す）と `lazy.js` / `copy.js`（属性の有無で判断する）。**仕様の不足** | 図のブロックの鍵は **UT-217**、サニタイズは **UT-209** | 同上 | **一部を捕まえる。** 本番の `refs.js` の `isOwnRef` / `ownSource` が、偽装した図のブロックと `data-source` を偽装したコードブロックを対象にしないことを見る（BR-054, UT-815）。**コピーボタンの操作は見えない** | **E2E-328（手動）** |
 
 > [!IMPORTANT]
@@ -425,7 +426,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | FR-041 | E2E-252, E2E-327 |  |
 | FR-042 | E2E-253 |  |
 | FR-043 | E2E-251 |  |
-| FR-050 | E2E-261, E2E-263, E2E-264, E2E-327, E2E-384 |  |
+| FR-050 | E2E-234, E2E-261, E2E-263, E2E-264, E2E-327, E2E-384 | 図の中のリンクは E2E-234（BUG-015）。中ボタンでは何もしないことは E2E-264 の確認内容 5（BUG-016） |
 | FR-051 | E2E-262, E2E-322 |  |
 | FR-052 | E2E-265 |  |
 | FR-053 | E2E-264 | 既定のアプリケーションで開けなかったときの表示（[BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)）は E2E-264 の確認内容 4（L1 だけで作れる） |
@@ -445,10 +446,10 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | FR-111 | E2E-105, E2E-323 |  |
 | FR-120 | E2E-328, E2E-351 |  |
 | FR-121 | E2E-283, E2E-352, E2E-388 |  |
-| FR-122 | E2E-327, E2E-353, E2E-354 | SVG の輪郭がぼやけないことは E2E-353 を W1 / L1 で目で見る（NFR-061） |
+| FR-122 | E2E-234, E2E-327, E2E-353, E2E-354 | SVG の輪郭がぼやけないことは E2E-353 を W1 / L1 で目で見る（NFR-061） |
 | FR-130 | E2E-283, E2E-361, E2E-362, E2E-384, E2E-388 | 降順で空のセルを末尾に置くことは E2E-361 だけが見る（比較の関数は描画スモーク。UT-814） |
 | FR-140 | E2E-274, E2E-283, E2E-313, E2E-324, E2E-342, E2E-345, E2E-381, E2E-384, E2E-387, E2E-388 |  |
-| FR-141 | E2E-382, E2E-383, E2E-385 | 続けてクリックしても戻されないこと（E2E-383 の確認内容 5）は、書き込みの直後の鍵の引き継ぎ（`package main`）を見る唯一の手段 |
+| FR-141 | E2E-382, E2E-383, E2E-385 | 続けてクリックしても戻されないこと（E2E-383 の確認内容 5）は、書き込みの直後の鍵の引き継ぎ（`desktop`）を見る唯一の手段 |
 | FR-142 | E2E-382, E2E-384, E2E-385 |  |
 | FR-143 | E2E-383, E2E-385, E2E-386 | **1 バイトも変えないこと**はバイト単位の比較で見る（E2E-385）。**外部で変更された後に書き込まないこと**は E2E-386 |
 | FR-144 | E2E-313, E2E-386, E2E-387 |  |
@@ -481,7 +482,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | UI-101 | E2E-302, E2E-373 |  |
 | UI-102 | E2E-301 |  |
 | UI-103 | E2E-327, E2E-341, E2E-343 |  |
-| UI-104 | E2E-353, E2E-354 |  |
+| UI-104 | E2E-234, E2E-353, E2E-354 | 拡大画面の中の図のリンクは E2E-234 |
 | UI-090 | E2E-215, E2E-222, E2E-274, E2E-353, E2E-354, E2E-373, E2E-381, E2E-384, E2E-387 |  |
 | UI-105 | E2E-281, E2E-283 |  |
 | UI-110 | E2E-311 |  |
@@ -516,7 +517,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | MD-072 | E2E-231, E2E-327, E2E-328, E2E-361, E2E-372, E2E-382, E2E-383 |  |
 | MD-073 | E2E-231, E2E-385 |  |
 | MD-080 | E2E-234 |  |
-| MD-081 | E2E-234 |  |
+| MD-081 | E2E-234 | ウィンドウが遷移しないことは目で見る（BUG-015） |
 | MD-082 | — (INTERNAL) |  |
 | MD-083 | E2E-239, E2E-240 |  |
 | MD-084 | E2E-240, E2E-328 |  |
@@ -540,7 +541,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | AR-051 | — (INTERNAL) |  |
 | AR-052 | — (INTERNAL) |  |
 | AR-053 | E2E-263, E2E-327 | [BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md)。**E2E-327 は修正を入れる前に NG になることを確かめてから直す** |
-| AR-060 | E2E-264, E2E-371 |  |
+| AR-060 | E2E-234, E2E-264, E2E-371 | 中ボタンでリンクを押したときは E2E-264 の確認内容 5（[BUG-016](../bugs/2026-09-17-bug-016-link-middle-click.md)） |
 | AR-061 | — (INTERNAL) |  |
 | AR-062 | E2E-291, E2E-371, E2E-373 |  |
 | AR-070 | E2E-226, E2E-385 |  |

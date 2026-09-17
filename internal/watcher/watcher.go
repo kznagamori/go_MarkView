@@ -52,8 +52,9 @@ type Watcher struct {
 	closeOnce sync.Once
 
 	mu     sync.Mutex
-	dir    string // 監視中の親ディレクトリ。空なら監視していない
-	target string // 監視対象の絶対パス。空なら監視していない
+	dir    string // 監視中のディレクトリ（実体の親）。空なら監視していない
+	target string // Watch に渡されたパスの絶対パス。Event.Path に載せる。空なら監視していない
+	real   string // target のシンボリックリンクを解決した実体のパス。イベントの名前と比べる
 }
 
 // New は監視を開始する（IMP-140）。
@@ -67,8 +68,10 @@ func New(ctx context.Context) (*Watcher, error) {
 	}
 
 	w := &Watcher{
-		fsw:    fsw,
-		events: make(chan Event),
+		fsw: fsw,
+		// バッファは 1 とし、取り出される前に次のイベントが出たら新しい値で置き換える
+		// （IMP-140）。emit を見る。
+		events: make(chan Event, 1),
 		done:   make(chan struct{}),
 	}
 
@@ -81,31 +84,45 @@ func New(ctx context.Context) (*Watcher, error) {
 // **監視するのは対象ファイルの親ディレクトリである。** ファイル単体を監視すると、
 // エディタの「一時ファイルを作ってリネームする」保存方式で監視ハンドルが外れ、
 // 2 回目以降の保存を検知できなくなる（FR-014）。
+//
+// **親ディレクトリは、シンボリックリンクを解決した実体のものとする**（AR-070, IMP-141）。
+// リンクの置き場所を監視すると、実体への書き込み（外部のエディタ、編集モードの
+// 書き込み。IMP-107 は実体を書き換える）が一度も届かない（UT-407。v1.0.0 はこうだった）。
+// イベントの名前も実体のパスと比べる。解決に失敗した場合は、受け取ったパスのまま監視する。
+//
+// **Event.Path は Watch に渡したパスとする**（リンクを開いていればリンクのパス）。実体の
+// パスを載せると、読み直しでウィンドウタイトルとステータスのパスが実体へ変わる（IMP-190）。
 func (w *Watcher) Watch(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("cannot resolve the path to watch: %w", err)
 	}
-	dir := filepath.Dir(abs)
+	real := abs
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		// Windows では一時ディレクトリの短い名前（8.3 形式）も長い名前へ解ける。監視する
+		// ディレクトリとイベントの名前を比べる実体のパスを、同じ表記から作る。
+		real = resolved
+	}
+	dir := filepath.Dir(real)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	// 同じディレクトリなら、対象を差し替えるだけでよい。
 	if w.dir != "" && samePath(w.dir, dir) {
-		w.target = abs
+		w.target, w.real = abs, real
 		return nil
 	}
 
 	if w.dir != "" {
 		_ = w.fsw.Remove(w.dir)
-		w.dir, w.target = "", ""
+		w.dir, w.target, w.real = "", "", ""
 	}
 
 	if err := w.fsw.Add(dir); err != nil {
 		return fmt.Errorf("cannot watch the directory: %w", err)
 	}
-	w.dir, w.target = dir, abs
+	w.dir, w.target, w.real = dir, abs, real
 	return nil
 }
 
@@ -117,12 +134,13 @@ func (w *Watcher) Unwatch() {
 	if w.dir != "" {
 		_ = w.fsw.Remove(w.dir)
 	}
-	w.dir, w.target = "", ""
+	w.dir, w.target, w.real = "", "", ""
 }
 
 // Events は通知チャネルを返す（IMP-140）。
 //
 // 流れるのはデバウンス後のイベントだけである。チャネルは監視の終了時に閉じる。
+// バッファは 1 であり、受け手が取り出す前に次のイベントが出たら新しい値で置き換える。
 func (w *Watcher) Events() <-chan Event {
 	return w.events
 }
@@ -191,6 +209,16 @@ func (w *Watcher) run(ctx context.Context) {
 // **削除と保存の区別はここで行う**（IMP-142）。エディタの「一時ファイルを作って
 // リネームする」保存では、対象が一瞬消えてから同名で現れる。イベントを受けた
 // 時点ではなく、静かになった時点で存在を確かめることで、保存を削除と誤認しない。
+//
+// **送信で止まらない**（IMP-140, IMP-024）。受け手（IMP-192 の読み直し、IMP-195 の削除）は
+// ioMu を待つため、取り出しが秒単位で遅れうる。送信で止まると、このゴルーチンが fsnotify の
+// イベントを読まなくなる。**fsnotify v1.10.1 の Windows 実装は、イベントの送信が詰まって
+// いる間、Add / Remove の要求も処理しない**——文書を開く処理が ioMu を持ったまま Watch を
+// 呼ぶと止まり、バインドメソッドがすべて止まる（UT-405 ケース 4）。
+//
+// 取り出されていない古い値は捨てて置き換える。監視対象は常に 1 つであり（NFR-020）、受け手が
+// 必要とするのは「いまファイルがあるか」の最新の状態だけである。Modified の後の Removed も、
+// その逆も、後の値だけで正しく扱える（UT-404 ケース 3）。
 func (w *Watcher) emit() bool {
 	w.mu.Lock()
 	target := w.target
@@ -200,28 +228,48 @@ func (w *Watcher) emit() bool {
 		return true
 	}
 
+	// os.Stat はシンボリックリンクを辿る。リンクを監視していれば、実体が無くなった時点で
+	// Removed になる。
 	kind := Modified
 	if _, err := os.Stat(target); err != nil {
 		kind = Removed
 	}
 
-	select {
-	case w.events <- Event{Path: target, Kind: kind}:
-		return true
-	case <-w.done:
-		return false
+	ev := Event{Path: target, Kind: kind}
+	for {
+		select {
+		case <-w.done:
+			return false
+		default:
+		}
+
+		select {
+		case w.events <- ev:
+			return true
+		default:
+			// バッファに取り出されていない値がある。捨ててから入れ直す。受け手が同時に
+			// 取り出していれば、ここでは何も取れず、次の周回で入る。
+			select {
+			case <-w.events:
+			default:
+			}
+		}
 	}
 }
 
 // matches はイベントのパスが監視対象かを返す。
+//
+// **実体の名前と比べる**（IMP-141）。監視しているのは実体のディレクトリであり、リンクと
+// 同じ名前の別のファイルがそこにあっても対象ではない（UT-407 ケース 4）。編集モードの
+// 一時ファイル（`.<名前>.markview-*.tmp`。IMP-107）もここで捨てる。
 func (w *Watcher) matches(name string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.target == "" {
+	if w.real == "" {
 		return false
 	}
-	return samePath(name, w.target)
+	return samePath(name, w.real)
 }
 
 // samePath は 2 つのパスが同じ場所を指すかを判定する（IMP-025）。

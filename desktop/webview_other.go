@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package desktop
 
 /*
 #cgo !webkit2_41 pkg-config: webkit2gtk-4.0

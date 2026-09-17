@@ -3,6 +3,7 @@
 // --zoom は #markdown にだけ設定する。ツールバー・ペイン・ステータスへ
 // 波及させない（FR-081）。
 
+import { isExpandOpen } from "./expand.js";
 import { state } from "./state.js";
 import { updateStatus } from "./status.js";
 import { $ } from "./util.js";
@@ -67,6 +68,10 @@ function onWheel(event) {
 
   // WebView 既定の拡大を抑止する（IMP-242）。
   event.preventDefault();
+
+  // **拡大画面を開いている間は本文の倍率を変えない**（IMP-242, UI-104）。拡大画面の倍率は expand.js の
+  // 舞台が受け持つ。
+  if (isExpandOpen()) return;
 
   // deltaY は下方向が正。手前へ回す（負）と拡大する。
   stepZoom(event.deltaY < 0 ? 1 : -1);
