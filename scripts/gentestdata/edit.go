@@ -42,16 +42,17 @@ func editFiles() []editFile {
 		{path: "locked/locked.md", content: lockedMD},
 
 		// E2E-385: BOM と CRLF・末尾に改行なし / LF / CR だけ・Front Matter / CRLF の表
-		{path: "bytes/tasks-crlf-bom.md", content: withNewlines(tasksBytes, "\r\n", true, false)},
-		{path: "bytes/tasks-lf.md", content: withNewlines(tasksBytes, "\n", false, true)},
-		{path: "bytes/tasks-cr.md", content: withNewlines(frontMatter+tasksBytes, "\r", false, true)},
-		{path: "bytes/table-crlf.md", content: withNewlines(tableGFM, "\r\n", false, true)},
+		// **4 つとも日本語の行を持つ**（japaneseNote。E2E-237 の確認内容 1）
+		{path: "bytes/tasks-crlf-bom.md", content: withNewlines(tasksBytes+japaneseNote, "\r\n", true, false)},
+		{path: "bytes/tasks-lf.md", content: withNewlines(tasksBytes+japaneseNote, "\n", false, true)},
+		{path: "bytes/tasks-cr.md", content: withNewlines(frontMatter+tasksBytes+japaneseNote, "\r", false, true)},
+		{path: "bytes/table-crlf.md", content: withNewlines(tableGFM+japaneseNote, "\r\n", false, true)},
 
 		// E2E-385 の手順 1〜3 をした後の内容と、E2E-387 の元の内容（人が書いたリテラル）
-		{path: "expected/tasks-crlf-bom.md", content: withNewlines(tasksBytesExpected, "\r\n", true, false)},
-		{path: "expected/tasks-lf.md", content: withNewlines(tasksBytesExpected, "\n", false, true)},
-		{path: "expected/tasks-cr.md", content: withNewlines(frontMatter+tasksBytesExpected, "\r", false, true)},
-		{path: "expected/table-crlf.md", content: withNewlines(tableCRLFExpected, "\r\n", false, true)},
+		{path: "expected/tasks-crlf-bom.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\r\n", true, false)},
+		{path: "expected/tasks-lf.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\n", false, true)},
+		{path: "expected/tasks-cr.md", content: withNewlines(frontMatter+tasksBytesExpected+japaneseNote, "\r", false, true)},
+		{path: "expected/table-crlf.md", content: withNewlines(tableCRLFExpected+japaneseNote, "\r\n", false, true)},
 		{path: "expected/undo-original.md", content: undoMD},
 	}
 

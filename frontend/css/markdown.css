@@ -248,6 +248,10 @@
      右と下は 2〜3px であり、ずれても目に見えないため em のままとする。 */
   margin: 0 0.2em 0.25em calc(var(--md-em) * -1.1667);
   vertical-align: middle;
+  /* **塗りの色をエンジンの既定に委ねない**（NFR-061, DSP-121）。WebKitGTK は
+     GTK テーマのアクセント色で描くため、Ubuntu の既定ではオレンジになる
+     （BUG-018）。テーマのトークンで明示し、W1 と L1 で同じ色にする。 */
+  accent-color: var(--accent-emphasis);
   /* 読み取り専用であることを見た目でも示す（MD-022）。ファイルを書き換えない */
   cursor: default;
   pointer-events: none;

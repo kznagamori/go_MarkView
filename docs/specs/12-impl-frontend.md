@@ -49,6 +49,7 @@ frontend/
 │   ├── media.js            図と画像のボタン・原寸表示（IMP-228）
 │   ├── tablesort.js        表の表示上の並べ替え（IMP-229）
 │   ├── contextmenu.js      右クリックメニュー（IMP-249）
+│   ├── menuactions.js      右クリックメニューの項目の実行（IMP-249。4.70.0）
 │   ├── expand.js           拡大画面（IMP-253）
 │   ├── editmode.js         編集モード・チェックボックス・セルの編集欄・取り消し（IMP-260〜IMP-263）
 │   ├── refs.js             目印の鍵の照合（IMP-260。state.js 以外を import しない）
@@ -1046,8 +1047,14 @@ export function initDnd()   // Wails の drop リスナの取り付けと、ド�
 - **受け口となる要素は CSS で宣言する。** ドロップ地点の要素の計算済みスタイルに `--wails-drop-target: drop`（既定のプロパティ名と値）があるかで、Wails の**JS 側のコールバック**が呼ばれるかが決まる。カスタムプロパティは継承するため、`#app` に 1 度だけ置けばウィンドウ全体が対象になる（UI-070, FR-011）。**この宣言は Go 側のコールバックの条件ではない**（上記のとおり検査を通らない）。宣言を残すのは UI-070 の意図を DOM 上に残すためである。
 - **`#dropzone` は `pointer-events: none` とする。** Wails は `document.elementFromPoint` でドロップ地点の要素を求めるため、全面を覆うオーバーレイがマウスイベントを受け取ると、その下の要素を検出できずドロップが無効になる。
 - `dragenter` / `dragover` / `dragleave` は、オーバーレイ（`#dropzone`）の表示制御にのみ使う。
-- `dragover` と `drop` では自分でも `preventDefault()` を呼ぶ。Wails のランタイムも同じことを行うが、**WebView 内でページ遷移を起こさないという規約（AR-060）を外部のランタイムの実装に委ねない。**
-- OS からのファイルのドラッグかを `dataTransfer.types` に `Files` が含まれるかで判定する。本文中のテキストを選択して動かした場合など、ウィンドウ内で完結するドラッグではオーバーレイを出さない。
+- **`dragover` と `drop` では、条件を付けずに自分でも `preventDefault()` を呼ぶ**（4.70.0。[BUG-020](../bugs/2026-09-21-bug-020-file-drop-webview-navigation.md)）。Wails のランタイムも同じことを行うが、**WebView 内でページ遷移を起こさないという規約（AR-060）を外部のランタイムの実装に委ねない。**
+  - **下のファイルの見分けに掛けない。** 見分けはオーバーレイを出すためのものであり、**遷移を止める条件ではない。**掛けると、見分けられないエンジンで**画面がファイルの中身に置き換わり、戻す手段が無くなる**（Wails の Linux の実装は `onDragDrop` が `FALSE` を返し、WebKitGTK の既定の処理を止めない）。ウィンドウ内のドラッグでも、リンクを落とせば遷移しうる
+  - **`DisableWebViewDrop` は使わない。** `gtk_drag_dest_unset` を呼ぶだけであり、真にすると**ドロップ自体が届かなくなる**（FR-011）
+  - **入力欄（検索欄・セルの編集欄）へのドロップも受け付けない**（4.70.0。利用者の判断）。条件を付けずに止める以上、文字列のドロップも入らなくなる。**セルの編集欄ではむしろ正しい**——ドロップは IMP-262 の改行の正規化を通らず、表のセルに生の改行が入る（FR-142）
+- **OS からのファイルのドラッグかは、`dataTransfer.types` と、ウィンドウ内で始まったかどうかで判定する**（4.70.0。BUG-020）。**オーバーレイの出し分けにだけ使う。**
+  - **`Files` か `text/uri-list` のどちらかがあればファイルとみなす。** **WebKitGTK は `Files` を入れず `text/uri-list` だけを渡す**——`Files` だけを見ると L1 で案内が出ない（UI-070）
+  - **`dragstart` が出ていたら（ウィンドウ内で始まったドラッグなら）出さない。** `dragend` と `drop` で下ろす。**本文のリンクをドラッグすると `text/uri-list` が付く**ため、型だけでは本文中のドラッグと区別できない
+  - **既定の動作を止められた `dragstart` では旗を立てない**（`internal = !event.defaultPrevented`）。**中止された `dragstart` には `dragend` が続かない**ため（拡大画面の台紙が止めている。IMP-253）、立てたままにすると**旗が固定され、以後ドロップの案内が二度と出なくなる。** 台紙のリスナは対象の段階で動き、`window`（泡立ちの段階）へ来たときには既に止まっている
 - `dragleave` はウィンドウ内の要素間移動でも発生するため、カウンタ方式で入れ子の出入りを数え、0 になったときだけオーバーレイを隠す。
 - 受け取ったパスの判定（Markdown か、ディレクトリか）は Go 側で行う（IMP-313）。
 - **拡大画面・右クリックメニュー・ダイアログの表示中もドロップを受け付ける**（UI-090）。ドロップで文書が切り替わると `document:opened` が届き、`renderDocument` の手順 0a（IMP-220）が拡大画面と右クリックメニューを閉じる。**ダイアログは閉じない。** このモジュールで個別に閉じない（経路を 1 つに保つ）。
@@ -1155,11 +1162,18 @@ UI-031 を実装する。
 FR-063 / UI-085 / AR-060 / AR-062 / DSP-140 を実装する。
 
 ```js
-// js/contextmenu.js
+// js/contextmenu.js — 場所の判定・メニューの組み立て・開閉
 export function initContextMenu(deps)  // { copyText(text), readClipboard(), notify(error), cancelCellEdit() }
 export function isContextMenuOpen()
 export function closeContextMenu()     // フォーカスを戻して閉じ、true を返す。開いていなければ何もせず false
+
+// js/menuactions.js — 項目の実行（4.70.0。IMP-011 の 400 行の目安で分けた）
+export function hasAction(action)              // 実行できる項目か
+export function runAction(action, current, deps)  // 項目を実行する
+export function restoreRange(current)          // 控えた選択範囲を当て直す（BUG-019）
 ```
+
+- **`menuactions.js` は「押されたときに何をするか」だけを持つ**（4.70.0）。場所の判定・メニューの組み立て・開閉・フォーカスの扱いは `contextmenu.js` が持つ。**Go は直接呼ばない**——クリップボードへの格納は `deps`（`contextmenu.js` が受け取ったもの）を引数で渡す。
 
 - `deps.notify(error)` の `error` は `ErrorDTO`（IMP-307）の形とする。Go を経由しない失敗は `{ kind: 'clipboard' }` のように `kind` だけを持つ値で渡す。文言は `strings.js` の `errorText` が `kind` から選ぶ（IMP-290, IMP-315）。**IMP-261 / IMP-262 / IMP-263 の `notify` も同じ形とする。**
 - `deps.cancelCellEdit` は IMP-262 の `cancelCellEdit`（`main.js` が配線する。`contextmenu.js` は `editmode.js` を import しない）。
@@ -1210,7 +1224,13 @@ export function closeContextMenu()     // フォーカスを戻して閉じ、tr
 
 - **メニューの項目は `pointerdown` で `preventDefault()` する。** 項目を押した瞬間に本文の選択範囲が外れるのを防ぐ。**`mousedown` でも止める**——`pointerdown` を止めたときに `mousedown` の既定の動作（フォーカスの移動と選択の開始）まで止まるかをエンジンに委ねない（NFR-061）。`click` はどちらを止めても届く。
 - 開くときに、開く前のフォーカス要素と、入力欄なら `selectionStart` / `selectionEnd` を控える。
-- 開いたらメニューの最初の使える項目へ `focus({ preventScroll: true })` する。本文の選択範囲はフォーカスの移動では消えない。
+- **開く前に本文の選択範囲（`Range`）を控え、開いたらメニューの最初の使える項目へ `focus({ preventScroll: true })` し、その直後に控えた `Range` を当て直す**（4.70.0。[BUG-019](../bugs/2026-09-21-bug-019-context-menu-copy-webkitgtk.md)）。**「選択範囲はフォーカスの移動では消えない」と考えてはならない**——**WebKit は要素へフォーカスを移すと文書の選択範囲を解除する。**当て直さないと、右クリックした時点で選択が画面から消え、`Copy` が空のままになる（NFR-061）。
+  - 控えるのは**項目の可否を決めるより前**とし、`Copy` の可否もその控えで判断する
+  - **控えた位置が DOM から外れていたら当て直さない**（再描画・文書の切り替え）
+  - 入力欄の `start` / `end` を控えているのと同じ扱いである。**片方だけ用心しない**
+  - **当て直しは、フォーカスを移すすべての場所で行う**（4.70.0）。**`closeContextMenu()` の中（フォーカスを戻した直後）に置く**——`Esc`・スクロール・`blur`・`resize`・項目の実行・開き直しの**6 つの経路がここを通る**。呼び出し側ごとに書くと、1 か所でも忘れたときに選択が消える。**項目の間の移動（`↑` / `↓`）でも当て直す**
+  - **位置を決めるときも控えた `Range` を使う**（`keyboardPoint`。UI-085）。選択を引き直すと、開き直しの経路では既に解除されていることがある
+  - **当て直せないことは失敗ではない。** 要素が残っていても文字が短くなっていれば例外を投げるため、握りつぶして当て直さないだけにする（`open()` の途中で投げると、メニューを出したまま残りの処理が飛ぶ）
 
 **実行**
 
@@ -1224,8 +1244,8 @@ export function closeContextMenu()     // フォーカスを戻して閉じ、tr
 | `Select all`（入力欄） | 控えた入力欄へフォーカスを戻して `select()` |
 | `Copy link address` | 上で求めた文字列を `deps.copyText` |
 
-- **項目を実行するときは、先に `closeContextMenu()` でメニューを閉じてフォーカスを開く前の位置へ戻し、それから上の表の処理を行う。** 本文の `Copy` は、戻したフォーカスのまま（選択範囲は保たれている）コピーする。
-- **`execCommand('copy')` が `false` を返した場合は、選択範囲の `toString()`（入力欄では控えた範囲の文字列）を `deps.copyText` で格納する。** 書式は失われるが、コピーそのものが失敗するよりよい。**入力欄の `Cut` で `execCommand('cut')` が `false` を返した場合も、同じく格納し、格納できたら控えた範囲を取り除いて `input` イベントを発火する**（`Paste` と同じ置き換え）。**これは本来の経路ではない**——WebView2 と WebKitGTK の両方で `true` が返ることを実機で確かめる（AR-062, NFR-061）。
+- **項目を実行するときは、先に `closeContextMenu()` でメニューを閉じてフォーカスを開く前の位置へ戻し、それから上の表の処理を行う。****本文の `Copy` は、その直前にもう一度、控えた `Range` を当て直してからコピーする**（4.70.0。BUG-019）——**フォーカスを戻す処理そのものが、選択範囲を解除するエンジンがある。**
+- **`execCommand('copy')` が `false` を返した場合は、選択範囲の `toString()`（入力欄では控えた範囲の文字列）を `deps.copyText` で格納する。** 書式は失われるが、コピーそのものが失敗するよりよい。**入力欄の `Cut` で `execCommand('cut')` が `false` を返した場合も、同じく格納し、格納できたら控えた範囲を取り除いて `input` イベントを発火する**（`Paste` と同じ置き換え）。**これは本来の経路ではない**——WebView2 と WebKitGTK の両方で `true` が返ることを実機で確かめる（AR-062, NFR-061）。**格納する文字列が空のときは `deps.copyText` を呼ばない**（4.70.0。BUG-019）——**空文字を渡すと利用者のクリップボードの中身を消す。****選択が空なら `execCommand` も呼ばない**（当て直せなかったとき）——**空のまま実行すると、エンジンによっては成功を返し、同じようにクリップボードを消す。**
 - **格納に失敗したら `deps.notify({ kind: 'clipboard' })` を、読み取りに失敗したら `deps.notify({ kind: 'paste' })` を呼ぶ**（IMP-315）。`deps.copyText` が `ErrorDTO` を返したときは、それをそのまま渡す。
 - **`Copy` を Go 側の `CopyToClipboard` で実装しない。** Go 側のクリップボード機能はプレーンテキストしか扱わず、`Ctrl+C`（書式付き）と結果が変わる（FR-063, AR-062）。
 

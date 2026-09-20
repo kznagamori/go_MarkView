@@ -11,6 +11,7 @@ import { S } from "./strings.js";
 import { $, linkHref } from "./util.js";
 import { ownLinkTarget } from "./refs.js";
 import { isExpandOpen } from "./expand.js";
+import { hasAction, restoreRange, runAction } from "./menuactions.js";
 
 // PLACES は場所の判定（IMP-249 の表）。**上から順に見て、最初に当たったものを採る**——入力欄は本文ペインの
 // 中にもある（セルの編集欄。FR-063）。kind が null の行（検索バーの入力欄以外の部分と本文中のボタン）では
@@ -84,6 +85,12 @@ export function closeContextMenu() {
 
   const { focus } = menu;
   if (focus && focus.isConnected) focus.focus({ preventScroll: true });
+
+  // **フォーカスを戻したら選択範囲を当て直す**（BUG-019）。**WebKit は要素へフォーカスを移すと
+  // 文書の選択範囲を解除する。** ここは戻す処理が集まる唯一の場所であり、`Esc`・スクロール・`blur`・
+  // 開き直しのどの経路もここを通る。**呼び出し側ごとに当て直さない**——1 か所でも忘れると消える。
+  restoreRange(menu);
+
   hide();
   return true;
 }
@@ -123,6 +130,12 @@ function open(kind, place, target, event, fromKeyboard) {
   current.focus = active instanceof HTMLElement && active !== document.body ? active : null;
   current.link = kind === "viewer" ? linkTargetOf(target.closest("a")) : null;
 
+  // **フォーカスを移す前に、本文の選択範囲を控える**（BUG-019）。**WebKit は要素へフォーカスを移すと
+  // 文書の選択範囲を解除する**ため、下の first.focus() で消える。入力欄が start / end を控えているのと
+  // 同じ扱いを Range にも与える。控えたものは restoreRange で当て直す。
+  const selected = kind === "input" ? null : selectionIn(place);
+  current.range = selected ? selected.cloneRange() : null;
+
   const root = $("contextmenu");
   if (current.link !== null) root.append(createItem("copyLink", S.menuCopyLink, true), createSeparator());
 
@@ -139,7 +152,7 @@ function open(kind, place, target, event, fromKeyboard) {
     );
   } else {
     root.append(
-      createItem("copy", S.menuCopy, selectionIn(place) !== null),
+      createItem("copy", S.menuCopy, current.range !== null),
       createItem("selectAll", S.menuSelectAll, true),
     );
   }
@@ -148,9 +161,12 @@ function open(kind, place, target, event, fromKeyboard) {
   root.hidden = false;
   placeAt(root, fromKeyboard ? keyboardPoint(current) : { x: event.clientX, y: event.clientY });
 
-  // 最初の使える項目へ移す。**本文の選択範囲はフォーカスの移動では消えない**（IMP-249）
+  // 最初の使える項目へ移す（IMP-249）。**移した直後に選択範囲を当て直す**——
+  // **WebKit はフォーカスの移動で文書の選択範囲を解除する**（BUG-019）。当て直さないと、
+  // 右クリックした時点で選択が画面から消え、Copy が空のままになる。
   const first = root.querySelector(".contextmenu-item:not(:disabled)");
   if (first) first.focus({ preventScroll: true });
+  restoreRange(current);
 
   if (kind === "input") loadPaste(current);
 }
@@ -180,7 +196,9 @@ function selectionIn(place) {
 // keyboardPoint はキーボードから開いたときの位置を返す（UI-085）。選択範囲の矩形、無ければフォーカス要素の
 // 矩形の左下とする。**入力欄では文書の選択範囲を見ない**——入力欄の外に残る選択範囲の近くへ出てしまう。
 function keyboardPoint(current) {
-  const range = current.kind === "input" ? null : selectionIn(current.place);
+  // **控えた Range を使う**（BUG-019）。**選択を引き直さない**——`closeContextMenu()` を通って
+  // 開き直したときは、そこで解除されていることがある（WebKit）。項目の可否と位置の根拠を 1 つにする。
+  const range = current.kind === "input" ? null : current.range;
   let rect = range ? range.getBoundingClientRect() : null;
   if (!rect || (rect.width === 0 && rect.height === 0)) rect = (current.focus || current.place).getBoundingClientRect();
   return { x: rect.left, y: rect.bottom };
@@ -269,6 +287,8 @@ function onMenuKey(event) {
     const step = event.key === "ArrowDown" ? 1 : -1;
     const next = index < 0 ? (step > 0 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
     if (items[next]) items[next].focus({ preventScroll: true });
+    // 項目の間を移るたびに当て直す（BUG-019。**このモジュールのフォーカス移動はすべて選択範囲を消しうる**）
+    restoreRange(menu);
   } else if (event.key === "Enter" || event.key === " ") {
     if (index >= 0) run(items[index].dataset.action);
   } else if (event.key !== "Tab") {
@@ -282,90 +302,10 @@ function onMenuKey(event) {
 // run は項目を実行する。**先にメニューを閉じてフォーカスを開く前の位置へ戻し、それから実行する**（UI-085）。
 async function run(action) {
   const current = menu;
-  if (!current || !ACTIONS[action]) return;
+  if (!current || !hasAction(action)) return;
 
   closeContextMenu();
-  await ACTIONS[action](current);
-}
-
-const ACTIONS = {
-  copyLink: (current) => store(current.link),
-  copy: (current) => (current.kind === "input" ? inputCommand(current, "copy") : copySelection()),
-  cut: (current) => inputCommand(current, "cut"),
-  paste: (current) => paste(current),
-  selectAll: (current) => selectAll(current),
-};
-
-// copySelection は本文・ライセンス欄の選択範囲をコピーする。
-//
-// **execCommand('copy') を使う**——WebView 自身のコピー処理であり、Ctrl+C と同じ内容（書式付き）が入る
-// （FR-063, AR-062）。**Go 側の CopyToClipboard で実装しない**（プレーンテキストしか扱わない）。
-// false が返ったときだけ、書式を失っても文字列を格納する（本来の経路ではない。IMP-249）。
-function copySelection() {
-  if (command("copy")) return;
-  return store(String(getSelection()));
-}
-
-// inputCommand は入力欄の選択範囲をコピー・切り取りする。控えた選択範囲を当て直してから実行する。
-async function inputCommand(current, name) {
-  const input = current.place;
-  input.focus({ preventScroll: true });
-  input.setSelectionRange(current.start, current.end);
-  if (command(name)) return;
-
-  // execCommand が効かなかったときは Go 側で文字列だけを格納する（copySelection と同じ扱い）
-  const stored = await store(input.value.slice(current.start, current.end));
-  if (stored && name === "cut") replaceRange(input, "", current.start, current.end);
-}
-
-// paste は控えた文字列を、入力欄の控えた範囲へ入れる。**書式は持ち込まない**（FR-063）。
-// **セルの編集欄では改行を半角空白へ置き換える**（FR-142。編集欄の paste と同じ置き換え。IMP-262）。
-function paste(current) {
-  const input = current.place;
-  const text = input.matches(CELL_EDITOR) ? current.pasteText.replace(/\r\n|\r|\n/g, " ") : current.pasteText;
-  input.focus({ preventScroll: true });
-  replaceRange(input, text, current.start, current.end);
-}
-
-// replaceRange は入力欄の範囲を置き換え、input を発火する（検索はインクリメンタルなため。IMP-241）。
-function replaceRange(input, text, start, end) {
-  input.setRangeText(text, start, end, "end");
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-// selectAll はその場所の全体を選ぶ（FR-063）。本文ペインは、文書を表示していれば #markdown、状態画面なら
-// #state-screen とする（検索バーや本文中のボタンを含めない）。
-function selectAll(current) {
-  if (current.kind === "input") {
-    current.place.focus({ preventScroll: true });
-    current.place.select();
-    return;
-  }
-
-  let target = current.place;
-  if (current.kind === "viewer") target = $("state-screen").hidden ? $("markdown") : $("state-screen");
-  getSelection().selectAllChildren(target);
-}
-
-// store は Go 側のクリップボードへ文字列を格納する。格納できたら true。
-async function store(text) {
-  let error;
-  try {
-    error = await deps.copyText(text);
-  } catch {
-    error = { kind: "clipboard" };
-  }
-  if (error) deps.notify(error);
-  return !error;
-}
-
-// command は execCommand を呼ぶ。例外は false として扱う。
-function command(name) {
-  try {
-    return document.execCommand(name);
-  } catch {
-    return false;
-  }
+  await runAction(action, current, deps);
 }
 
 function createItem(action, label, enabled) {

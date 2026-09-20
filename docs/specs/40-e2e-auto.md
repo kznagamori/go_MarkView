@@ -142,6 +142,7 @@ testdata/
 | `locked/locked.md` | E2E-386 の手順 9（L1 でディレクトリの権限を落とす） |
 | `bytes/tasks-crlf-bom.md` / `bytes/tasks-lf.md` / `bytes/tasks-cr.md` | `tasks-lf.md` と同じ項目を、それぞれ **BOM と CRLF・末尾に改行なし** / **LF** / **CR だけ・YAML の Front Matter 付き** で書いたもの（E2E-385） |
 | `bytes/table-crlf.md` | `table.md` と同じ表を CRLF で書いたもの（E2E-385） |
+| `bytes/` の 4 つの末尾 | **日本語の行を 1 つ持つ**（4.70.0。E2E-237 の確認内容 1）。**BOM・CRLF・CR と多バイト文字の組み合わせ**を実機で見るため。**行を足すだけにする**——チェックボックスや表のセルを増やすと E2E-384 / E2E-385 の手順が指す番号が変わる。`expected/` にも同じ行を付ける |
 | `bytes/perm.md` / `bytes/link.md` → `bytes/real/linked.md` | **Linux で作ったときだけ作る。** 権限 `0640` のファイルと、シンボリックリンク（E2E-385 の手順 6〜8） |
 | `expected/` | `bytes/` の 4 つに E2E-385 の手順 1〜3 の操作をした後の内容と、`undo-original.md`（`undo.md` を作り直した直後と同じ内容） |
 
