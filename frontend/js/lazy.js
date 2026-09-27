@@ -68,10 +68,16 @@ export async function ensureMermaid() {
   // 残り、画面の要素（#tooltip）や同梱資産の決め打ち（#status）を乗っ取る（BUG-011）。
   // この設定で DOMPurify が id / name を user-content- 付きへ書き換える（Mermaid 11.17.2 で実測）。
   // 資産を更新したら描画スモーク（BR-054）でこれが効いていることを確かめる。
+  //
+  // **look を省かない**（MD-080, DSP-270, BUG-021）。Mermaid 12.0.0 から図種別ごとの既定が
+  // neo になり、すべてのノードに灰色の影と枠のグラデーションが付く（Dark では光のにじみに見える）。
+  // 省くと同梱資産の更新だけで見た目が変わる。**値は GitHub の描画に合わせる**——GitHub が neo に
+  // 切り替えたら、ここと描画スモークの期待値（scripts/smoke の mermaidLook）を一緒に変える。
   window.mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
     theme: state.theme === "dark" ? "dark" : "default",
+    look: "classic",
     dompurifyConfig: { SANITIZE_NAMED_PROPS: true },
   });
 }

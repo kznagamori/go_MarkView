@@ -49,6 +49,7 @@ func checkAssets(rendered renderer.Result, got report) []string {
 
 	failures := checkCommon(got)
 	failures = append(failures, checkMermaid(drawn)...)
+	failures = append(failures, checkMermaidLook(drawn.Mermaid)...)
 	failures = append(failures, checkPlantUML(drawn)...)
 	failures = append(failures, checkMath(rendered, got)...)
 	failures = append(failures, checkBrokenImages(countImages(rendered.HTML), got)...)
@@ -87,6 +88,47 @@ func checkMermaid(got report) []string {
 			// 大きさのない SVG は「描けた」とは言えない。
 			failures = append(failures, fmt.Sprintf("%s: SVG の寸法が %d×%d", kind, block.Width, block.Height))
 		}
+	}
+
+	return failures
+}
+
+// checkMermaidLook は Mermaid の図が IMP-231 の look で描かれたかを検査する
+// （DSP-270, E2E-109 の 11, UT-816。BUG-021）。**空なら合格。**
+//
+// **描けていないブロックは数えない**（checkMermaid が落とす）。同じ原因を 2 度数えない。
+// **data-look を持たない図は look を見ずに通す**——classic のシーケンス図は data-look を出さない
+// （11.17.2 / 12.0.0 で実測）。**ただし、描けた図のどれも data-look を持たなければ落とす。**
+// 何も見ずに通ることになるためである（処理系が属性の名前を変えたときにここへ来る）。
+// **影は look と別に見る。** classic は影を付けない（DSP-270）。
+func checkMermaidLook(blocks []diagramBlock) []string {
+	var failures []string
+
+	drawn, seen := 0, false
+
+	for _, block := range blocks {
+		if block.SVG != 1 || block.Error != "" {
+			continue
+		}
+		drawn++
+
+		if len(block.Looks) > 0 {
+			seen = true
+		}
+
+		for _, look := range block.Looks {
+			if look != mermaidLook {
+				failures = append(failures, fmt.Sprintf("%s: look が %s（%s を期待。IMP-231, BUG-021）", block.Head, look, mermaidLook))
+			}
+		}
+
+		if block.Filtered > 0 {
+			failures = append(failures, fmt.Sprintf("%s: 影（filter）の付いた要素が %d 個（DSP-270, BUG-021）", block.Head, block.Filtered))
+		}
+	}
+
+	if drawn > 0 && !seen {
+		failures = append(failures, "data-look を持つ Mermaid の図が 1 つも無い（look の検査が何も見ていない）")
 	}
 
 	return failures

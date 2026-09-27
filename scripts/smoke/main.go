@@ -22,7 +22,8 @@
 //
 // v1.1.0 で、文書の id の名前空間（AR-053。UT-813）・表の並べ替えの比較
 // （FR-130。UT-814）・目印の照合（NFR-030, BUG-014。UT-815）を足した。
-// **どれも assets 部（testdata/smoke.md）でだけ判定する。**
+// `v1.1.0-rc.2` の後に、Mermaid の図の見た目（look と影。MD-080, DSP-270。UT-816。BUG-021）を
+// 足した。**どれも assets 部（testdata/smoke.md）でだけ判定する。**
 //
 // 60 秒で打ち切る（BR-054）。無限ループやハングは「失敗」ではなく「終わらない」
 // という形で現れるため、待ち時間そのものを合否に含める。
@@ -64,6 +65,13 @@ var mermaidKinds = []string{
 // **描けていることも見る。** 描けなければラベルの id が SVG の中に現れず、
 // 文書の id の検査は何も見ないまま通る。flowchart と区別するため `graph` で書く。
 const mermaidLabelKind = "graph LR"
+
+// mermaidLook は IMP-231 が Mermaid に渡す look の値（DSP-270, UT-816。BUG-021）。
+//
+// **人が書いたリテラルにする**（UT-031）。lazy.js から読み取らない——読み取ると、lazy.js から
+// 指定が消えたときに検査も一緒に空になる。**値は GitHub の描画に合わせる**（MD-080）。GitHub が
+// neo に切り替えたら、lazy.js と一緒にここを変え、影の検査（checkMermaidLook）も見直す。
+const mermaidLook = "classic"
 
 // plantUMLKinds は BR-054 が挙げる 2 種類。**両方を見る。**
 //
@@ -166,6 +174,10 @@ type diagramBlock struct {
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
 	Error  string `json:"error"`
+
+	// Mermaid だけが返す（collect.js の collectLook。UT-816）。
+	Looks    []string `json:"looks"`    // SVG の中の data-look の値（重複を除く）
+	Filtered int      `json:"filtered"` // 計算値の filter が none でない要素の数（影）
 }
 
 type mathResult struct {

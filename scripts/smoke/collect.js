@@ -28,8 +28,29 @@ export function collectMermaid(root, all, report) {
       width: box ? Math.round(box.width) : 0,
       height: box ? Math.round(box.height) : 0,
       error: line ? line.textContent : "",
+      ...collectLook(svgs),
     });
   });
+}
+
+// collectLook は図の見た目（look）の事実を集める（DSP-270, IMP-231, UT-816。BUG-021）。
+//
+// looks は SVG の中の data-look の値（重複を除く）、filtered は計算値の filter が none でない
+// 要素の数（影）。**計算値で数える**——Mermaid の影は、図の id 付きのセレクタで data-look を条件に
+// 当てる CSS であり、属性を見ても分からない。
+function collectLook(svgs) {
+  const looks = new Set();
+  let filtered = 0;
+
+  for (const svg of svgs) {
+    for (const element of svg.querySelectorAll("*")) {
+      const look = element.getAttribute("data-look");
+      if (look !== null) looks.add(look);
+      if (getComputedStyle(element).filter !== "none") filtered += 1;
+    }
+  }
+
+  return { looks: [...looks], filtered };
 }
 
 // collectPlantUML は図ごとの描画結果を集める。

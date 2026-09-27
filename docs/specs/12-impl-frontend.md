@@ -750,11 +750,13 @@ mermaid.initialize({
   startOnLoad: false,
   securityLevel: 'strict',   // MD-081
   theme: state.theme === 'dark' ? 'dark' : 'default',
+  look: 'classic',           // MD-080, DSP-270。GitHub の描画に合わせる（BUG-021）
   dompurifyConfig: { SANITIZE_NAMED_PROPS: true },  // AR-053。ラベルの id / name に user-content- を付ける
 });
 ```
 
 - **`dompurifyConfig: { SANITIZE_NAMED_PROPS: true }` を落とさない**（AR-053）。**Mermaid の図のラベルには書き手が HTML を書け**（`A["<span id='tooltip'>x</span>"]`）、`securityLevel: 'strict'` でもその `id` は SVG の中に残る。残ると画面の要素（`#tooltip`）や同梱資産の決め打ち（`#status`）を乗っ取る（[BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md)）。この設定で DOMPurify が `id` / `name` を `user-content-` 付きへ書き換える（Mermaid 11.17.2 で実測）。**資産を更新したら、描画スモーク（BR-054）でこれが効いていることを確かめる。**
+- **`look` を省かない**（MD-080, DSP-270, [BUG-021](../bugs/2026-09-28-bug-021-mermaid-neo-look.md)）。**Mermaid 12.0.0 から、図種別ごとの設定（`flowchart` / `sequence` / `class` / `state` / `er` ほか）の既定が `look: 'neo'` になり、全体の `look` を指定しないと `neo` で描かれる**（全体の既定は `classic` のまま。同梱の 12.0.0 で実測）。`neo` はノードに灰色（`rgba(185,185,185,1)`）の `drop-shadow` を付け、Dark では枠をグラデーションにする。**Dark の背景では光のにじみに見える。** **値は GitHub の描画に合わせる**（MD-002）。4.71.0 の時点は `classic` である。**GitHub が `neo` に切り替えたら追従し、描画スモークの期待値（`scripts/smoke` の `mermaidLook`。UT-816）と DSP-270 を一緒に変える。** PlantUML の `maxSvgSize`（IMP-233）と同じく、**同梱資産の更新だけで見た目が変わらないようにする**ための明示である。
 
 - `startOnLoad: false` とし、描画対象を明示的に指定する。
 - 描画対象は `.code-block[data-mermaid] pre.mermaid-source` のうち、**ブロックが鍵の合う目印を持つもの**（IMP-230）。`mermaid.render` に渡す id は `mermaid-svg-<n>` とする（IMP-233 の 2 と同じ連番。`user-content-` で始めない。AR-053）。

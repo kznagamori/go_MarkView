@@ -52,7 +52,7 @@ WebView は、アプリケーションとは別に**自身のデータ領域**�
 | OS | 位置 | 指定手段 |
 | --- | --- | --- |
 | Windows | `%TEMP%\MarkView\webview2`（この下に WebView2 が `EBWebView` を作る） | あり（IMP-193） |
-| Linux | WebKitGTK の既定に従う | **無い**（下記） |
+| Linux | WebKitGTK の既定に従う。**`$XDG_DATA_HOME/MarkView`**（既定 `~/.local/share/MarkView`。中に `storage` / `mediakeys`）と **`$XDG_CACHE_HOME/MarkView`**（既定 `~/.cache/MarkView`。中に `WebKitCache` / `CacheStorage`）。**`v1.1.0-rc.2` の L1 の実測は 36 KiB と 64 KiB**（2026-09-27。rc.1 と rc.2 の手動テストの後。E2E-313 の手順 8） | **無い**（下記） |
 
 - 数十 MB 規模になりうる。消えても支障がなく、次回起動時に作り直される。テンポラリに置く前提と矛盾しない。
 - 複数のインスタンスがこの領域を共有する。同時に起動しても破綻しないこと（UI-115）。
@@ -60,7 +60,7 @@ WebView は、アプリケーションとは別に**自身のデータ領域**�
 > [!IMPORTANT]
 > **Linux には指定手段が無い。** Wails v2.15.0 の `linux.Options` にデータ領域のパス項目が存在せず、内部で `webkit_web_context_get_default()` を用いるためである。`ProgramName` は `g_set_prgname` を呼ぶだけで、ディレクトリ**名**は変えられても**場所**は変えられない。
 >
-> したがって Linux では WebKitGTK の既定（`$XDG_DATA_HOME` と `$XDG_CACHE_HOME` の配下）に作られる。これは NFR-033 が禁じている領域に当たるため、**NFR-033 の明示的な例外として扱う**。実際の位置は E2E-313 で実測し、判明した内容をこの表へ反映する。**rc.3 / rc.4 で E2E-313 を L1 でも実施したが、記録の備考にディレクトリの名前と大きさが残っておらず、まだ反映できていない**（2026-09-14 に確認）。次の rc で E2E-313 の手順 8 を実施するときに備考へ残し、この表を直す。
+> したがって Linux では WebKitGTK の既定（`$XDG_DATA_HOME` と `$XDG_CACHE_HOME` の配下）に作られる。これは NFR-033 が禁じている領域に当たるため、**NFR-033 の明示的な例外として扱う**。実際の位置は E2E-313 で実測し、この表へ反映した（4.71.0。`v1.1.0-rc.2` の記録の備考）。**名前の `MarkView` は GLib のプログラム名であり**、MarkView は `ProgramName` を渡さないため、既定の実行ファイルの名前になる。`v1.0.0-rc.3` / `rc.4` と `v1.1.0-rc.1` でも E2E-313 を L1 で実施したが、備考に名前と大きさが残っておらず、`v1.1.0-rc.2` で初めて記録できた。
 >
 > `XDG_DATA_HOME` / `XDG_CACHE_HOME` を起動前に書き換えて移す方法は採らない。この 2 つは GTK / GLib 全体（アイコンテーマ等）に効くため、WebView のデータ領域だけを移す手段として副作用が大きすぎる。
 
