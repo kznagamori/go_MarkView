@@ -79,7 +79,9 @@ func printResult(got report, failures []string, v110 bool) {
 	fmt.Printf("elapsed : %d ms\n\n", got.ElapsedMS)
 
 	for _, block := range got.Mermaid {
-		fmt.Printf("  mermaid  %-18s svg=%d  %d×%d\n", block.Head, block.SVG, block.Width, block.Height)
+		// look と影も出す（UT-816）。描かれないブロック（偽装したもの）は look が空になる。
+		fmt.Printf("  mermaid  %-18s svg=%d  %d×%d  look=%s filter=%d\n",
+			block.Head, block.SVG, block.Width, block.Height, strings.Join(block.Looks, ","), block.Filtered)
 	}
 
 	for _, block := range got.PlantUML {

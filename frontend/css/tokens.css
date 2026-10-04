@@ -25,7 +25,8 @@
   --fg-on-emphasis: #ffffff;
 
   --border-default: #d1d9e0;
-  --border-muted: #d8dee4;
+  /* GitHub は #d1d9e0 の 70 %（#d1d9e0b3）。白地に重ねた色を単色で持つ（Dark と同じ持ち方。BUG-022） */
+  --border-muted: #dfe4e9;
 
   --accent-fg: #0969da;
   --accent-emphasis: #0969da;
@@ -135,7 +136,7 @@
   --canvas-inset: #010409;
   --canvas-overlay: #151b23;
 
-  --fg-default: #e6edf3;
+  --fg-default: #f0f6fc;
   --fg-muted: #9198a1;
   --fg-subtle: #6e7681;
   --fg-on-emphasis: #ffffff;

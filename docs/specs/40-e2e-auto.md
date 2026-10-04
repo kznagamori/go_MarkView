@@ -142,6 +142,7 @@ testdata/
 | `locked/locked.md` | E2E-386 の手順 9（L1 でディレクトリの権限を落とす） |
 | `bytes/tasks-crlf-bom.md` / `bytes/tasks-lf.md` / `bytes/tasks-cr.md` | `tasks-lf.md` と同じ項目を、それぞれ **BOM と CRLF・末尾に改行なし** / **LF** / **CR だけ・YAML の Front Matter 付き** で書いたもの（E2E-385） |
 | `bytes/table-crlf.md` | `table.md` と同じ表を CRLF で書いたもの（E2E-385） |
+| `bytes/` の 4 つの末尾 | **日本語の行を 1 つ持つ**（4.70.0。E2E-237 の確認内容 1）。**BOM・CRLF・CR と多バイト文字の組み合わせ**を実機で見るため。**行を足すだけにする**——チェックボックスや表のセルを増やすと E2E-384 / E2E-385 の手順が指す番号が変わる。`expected/` にも同じ行を付ける |
 | `bytes/perm.md` / `bytes/link.md` → `bytes/real/linked.md` | **Linux で作ったときだけ作る。** 権限 `0640` のファイルと、シンボリックリンク（E2E-385 の手順 6〜8） |
 | `expected/` | `bytes/` の 4 つに E2E-385 の手順 1〜3 の操作をした後の内容と、`undo-original.md`（`undo.md` を作り直した直後と同じ内容） |
 
@@ -376,6 +377,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | 8 | **本文の id**（`smoke.md`） | **本文（`#markdown`）の中の `id` が AR-053 の表のとおりである。** 図の SVG の外では `user-content-` で始まるか、図の器の `plantuml-svg-N` である。**図の SVG の中では、XHTML 名前空間の要素（Mermaid のラベルに書いた HTML）の `id` が `user-content-` で始まる**（SVG 名前空間の要素の `id` は処理系が作るもの——`mermaid-svg-N`、シーケンス図の `actor0` など——として判定しない）。**`Status` の見出しの文字が PlantUML の描画の後も変わらない**（AR-053, BUG-011。判定は UT-813）|
 | 9 | **表の並べ替えの比較** | 本番の `tablesort.js` の `parseNumber` / `compareCells` が、UT-814 の表どおりの値を返す（FR-130）|
 | 10 | **目印の照合**（`smoke.md`） | 本番の `refs.js` の `isOwnRef` が鍵の合う GFM の要素と図のブロックでだけ真になり、並べ替えのボタンが 2 行以上ある GFM の表にだけ付き、`ownLinkTarget` が GFM のリンクにだけ文字列を返し、`ownSource` が鍵の合う図のブロックにだけ原文を返す。**生 HTML の偽の目印（偽装した図のブロックと、`data-source` を偽装したコードブロックを含む）は対象にならない**（FR-060, FR-063, FR-130, FR-141, FR-142, MD-084, NFR-030, BUG-014。判定は UT-815）|
+| 11 | **Mermaid の図の見た目**（`smoke.md`） | 描けた図の `data-look` がすべて IMP-231 の値（`classic`）であり、計算値の `filter` を持つ要素（影）が無い。**`data-look` を持つ図が 1 つも無ければ失敗**（MD-080, DSP-270, [BUG-021](../bugs/2026-09-28-bug-021-mermaid-neo-look.md)。判定は UT-816）。**見ているのは同梱資産が `look` の指定に従うかであり、GitHub と同じかではない**（それは E2E-234 の確認内容 7）|
 
 > [!IMPORTANT]
 > **本テストは Chromium 系ブラウザでしか走らない**（BR-054 が候補をそう定めている。Windows は WebView2 と
@@ -493,7 +495,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | UI-115 | E2E-273, E2E-312, E2E-315, E2E-386 |  |
 | UI-116 | E2E-342, E2E-343, E2E-344 |  |
 | MD-001 | E2E-231 |  |
-| MD-002 | E2E-231 |  |
+| MD-002 | E2E-231, E2E-234 | E2E-234 は Mermaid の図の見た目だけを GitHub と見比べる（MD-080） |
 | MD-010 | E2E-237 |  |
 | MD-011 | E2E-231 |  |
 | MD-020 | E2E-231 |  |
@@ -516,7 +518,7 @@ BR-054 で定めた検証を E2E の一部として位置づける。内容は B
 | MD-071 | E2E-236, E2E-351 |  |
 | MD-072 | E2E-231, E2E-327, E2E-328, E2E-361, E2E-372, E2E-382, E2E-383 |  |
 | MD-073 | E2E-231, E2E-385 |  |
-| MD-080 | E2E-234 |  |
+| MD-080 | E2E-234 | 影と枠のグラデーションの有無を GitHub と見比べる（確認内容 7。BUG-021） |
 | MD-081 | E2E-234 | ウィンドウが遷移しないことは目で見る（BUG-015） |
 | MD-082 | — (INTERNAL) |  |
 | MD-083 | E2E-239, E2E-240 |  |

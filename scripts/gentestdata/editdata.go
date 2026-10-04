@@ -123,6 +123,15 @@ const tasksBytesExpected = `# Tasks
 ~~~
 `
 
+// japaneseNote は bytes/ の 4 つの文書の末尾に付ける日本語の行（E2E-237 の確認内容 1）。
+//
+// **BOM・CRLF・CR と多バイト文字の組み合わせ**を実機で見るために入れる。`v1.1.0-rc.1` の手動テストで
+// 「日本語が記載されてない」と分かった（E2E-237 の備考）。**行を足すだけにする**——チェックボックスや
+// 表のセルを増やすと、E2E-384 / E2E-385 の手順が指す番号が変わる。expected/ にも同じものを付ける。
+const japaneseNote = `
+日本語の行（BOM と改行コードの確認用）。全角と半角 ASCII を混ぜる。
+`
+
 // frontMatter は bytes/tasks-cr.md の先頭の YAML の Front Matter（MD-073）。
 const frontMatter = `---
 title: tasks-cr

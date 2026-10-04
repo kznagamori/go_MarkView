@@ -42,6 +42,40 @@ chmod +x ./MarkView
 
 MarkView は GUI アプリケーションです。ディスプレイのない環境では起動できません。
 
+### Linux — アイコンが歯車などの汎用アイコンになる
+
+Linux では、**実行ファイル単体で固有のアイコンを出せません**。
+ファイルマネージャは実行ファイルの中身からアイコンを読まず、
+ウィンドウやタスクバーのアイコンは、Wayland では**デスクトップエントリ**（`.desktop` ファイル）から解決されます。
+
+ランチャーに登録したい場合は、次のように置いてください。
+
+アイコンの画像は配布物に含まれていません。リポジトリの `assets/icon.png` か、任意の PNG を使ってください。
+
+```sh
+mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps
+cp /path/to/icon.png ~/.local/share/icons/hicolor/256x256/apps/markview.png
+
+cat > ~/.local/share/applications/markview.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=MarkView
+Exec=/path/to/MarkView %f
+Icon=markview
+MimeType=text/markdown;
+Categories=Utility;TextEditor;
+StartupWMClass=MarkView
+EOF
+
+update-desktop-database ~/.local/share/applications   # 関連付け（MIME）の更新
+gtk-update-icon-cache ~/.local/share/icons/hicolor    # アイコンの更新
+```
+
+`Exec` は実際に置いた場所に合わせてください。
+`Icon=markview` は**アイコンテーマから名前で引かれる**ため、上のようにテーマの階層（`hicolor/<サイズ>/apps/`）へ置きます。
+
+なお、**情報ダイアログ（`?` ボタン）のアイコンは Linux でも表示されます**。
+
 ### Windows — 何も起きない
 
 ウイルス対策ソフトが実行を止めている可能性があります。

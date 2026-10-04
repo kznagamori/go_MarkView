@@ -469,6 +469,7 @@ Release の本文には少なくとも以下を含める。
 | **文書の id の名前空間** | **本文の中の `id` が AR-053 の表のとおりであること**——図の SVG の外では、`user-content-` で始まるか、フロントエンドが作る図の器の id（`plantuml-svg-N`）であること。**図の SVG の中では、XHTML 名前空間の要素（Mermaid のラベルの HTML）の `id` が `user-content-` で始まること。** SVG 名前空間の要素の `id`（`mermaid-svg-N`、シーケンス図の `actor0`、PlantUML の `ent0001` など）は処理系のものとして判定しない。**Mermaid のラベルに書いた `id` が接頭辞付きになっていること**（IMP-231）。**`Status` という見出しの文字が、PlantUML の描画の後も書き換わっていないこと**（[BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md)。同梱の `plantuml.js` は `#status` を決め打ちで書き換える）|
 | **表の並べ替えの比較** | 本番の `tablesort.js` の `parseNumber` と `compareCells` を決めた入力で呼び、結果が FR-130 の比較の規則（数値として比べる・`,` と `%`・数字の並び・数値を先に置く・空のセルを後ろに置く）どおりであること。**降順での空のセルの扱いと安定性は並べる側の処理であり、ここでは見ない**（手動テスト） |
 | **目印の照合** | 本番の `refs.js` の `isOwnRef` / `ownLinkTarget` / `ownSource` と `tablesort.js` の `attachSortButtons` が、**変換時の鍵の合う要素（GFM の要素と、Go 側が出した Mermaid / PlantUML のブロック）だけ**を対象にすること。**生 HTML で書いた目印**（鍵の違うもの・鍵の無いもの・形の崩れたもの）を、編集や並べ替えの対象にせず、**書かれたとおりのリンク先としても、図として描画する原文やコピーする原文としても使わない**こと（FR-063, FR-130, FR-141, FR-142, MD-084, NFR-030。[BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)） |
+| **Mermaid の見た目** | 描けた Mermaid の図が **IMP-231 の `look`（`classic`）で描かれ、影（計算値の `filter`）の付いた要素が無いこと**（MD-080, DSP-270。[BUG-021](../bugs/2026-09-28-bug-021-mermaid-neo-look.md)）。**`data-look` を持つ図が 1 つも無ければ失敗とする**（何も見ずに通らない）。**GitHub に追従して `look` を変えるときは、期待値も一緒に変える** |
 | 共通 | 描画中に JavaScript のエラーが発生しないこと |
 | 共通 | 実行が 60 秒以内に完了すること（無限ループ・ハングの検出） |
 

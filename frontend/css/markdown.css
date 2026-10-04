@@ -248,6 +248,10 @@
      右と下は 2〜3px であり、ずれても目に見えないため em のままとする。 */
   margin: 0 0.2em 0.25em calc(var(--md-em) * -1.1667);
   vertical-align: middle;
+  /* **塗りの色をエンジンの既定に委ねない**（NFR-061, DSP-121）。WebKitGTK は
+     GTK テーマのアクセント色で描くため、Ubuntu の既定ではオレンジになる
+     （BUG-018）。テーマのトークンで明示し、W1 と L1 で同じ色にする。 */
+  accent-color: var(--accent-emphasis);
   /* 読み取り専用であることを見た目でも示す（MD-022）。ファイルを書き換えない */
   cursor: default;
   pointer-events: none;
@@ -280,10 +284,11 @@
 }
 
 /* --- 水平線（DSP-121, MD-025） ---
-   GitHub と同じ 0.25em（倍率 100 % で 4px）の帯にする。 */
+   **GitHub と同じ 1px の線にする**（BUG-022）。GitHub は 0.25em（4px）の帯だったが、
+   1px に変えた（2026-10-04 に GitHub の CSS で確認）。**倍率に追随しない**（GitHub も px）。 */
 
 .markdown-body hr {
-  height: var(--md-4);
+  height: 1px;
   padding: 0;
   margin: var(--md-24) 0;
   background-color: var(--color-border-default);
@@ -633,7 +638,9 @@
 
 /* --- 脚注（DSP-121, MD-051） ---
    **区切り線は goldmark が .footnotes の内側に <hr> として出す。**
-   同梱物のように .footnotes へ border-top を引くと線が 2 本になる。 */
+   同梱物のように .footnotes へ border-top を引くと線が 2 本になる。
+   **太さは本文の水平線（1px）と同じであり、上書きしない。** 4.71.0 までは本文が 4px の帯で、
+   ここだけ 1px に上書きしていた（BUG-022）。 */
 
 .markdown-body .footnotes {
   font-size: var(--md-12);
@@ -653,10 +660,4 @@
 
 .markdown-body .footnote-ref::after {
   content: "]";
-}
-
-/* 脚注の区切りだけは細いままにする。本文の水平線と同じ 4px の帯にすると、
-   GitHub の細い区切りと見た目が変わる（MD-002）。 */
-.markdown-body .footnotes > hr {
-  height: 1px;
 }
