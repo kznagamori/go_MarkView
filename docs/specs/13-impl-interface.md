@@ -2,7 +2,7 @@
 
 > 索引: [README](README.md) | 実装仕様: [10](10-impl-overview.md) / [11](11-impl-backend.md) / [12](12-impl-frontend.md) / **13**
 
-本文書は、Go 側（`app.go`）がフロントエンドへ公開するメソッドと、Go 側から送出するイベント、およびその間でやり取りするデータ型を定める。ここが両者の唯一の接点であり、**この境界の規約は厳密に守る**（AR-061）。
+本文書は、Go 側（`desktop` パッケージの `App`。IMP-011）がフロントエンドへ公開するメソッドと、Go 側から送出するイベント、およびその間でやり取りするデータ型を定める。ここが両者の唯一の接点であり、**この境界の規約は厳密に守る**（AR-061）。
 
 ## 13.1 方針（IMP-300 系）
 
@@ -10,13 +10,13 @@
 
 1. **往復回数を最小化する。** 1 つの利用者操作に対する呼び出しは原則 1 回とし、必要な情報をまとめて返す（AR-061）。
 2. **判断は Go 側に置く。** パスの解釈、リンク先の種類判定、拡張子の判定、サイズ判定をフロントエンドで行わない。フロントエンドは「利用者が何をしたか」を伝え、結果を描画する。
-3. **フロントエンドから任意のパスを渡せる API を作らない。** ファイルを開く経路は、ダイアログ・ドロップ・引数・ツリー・リンク・履歴の 6 つに限る（IMP-192）。**書き込み（IMP-316）も例外ではない。** フロントエンドが渡すのは目印（IMP-120）と文字列だけであり、書き込み先は Go 側が持つ表示中の文書に限る（FR-143）。
+3. **フロントエンドから任意のパスを渡せる API を作らない。** ファイルを開く経路は、ダイアログ・ドロップ・引数・ツリー・リンク・履歴の 6 つに限る（IMP-192）。**ファイルツリーの操作（IMP-196。4.75.0）はパスを受け取るが、Go 側で「いまのツリーが見せているもの」であることを確かめてから使う**（IMP-135, FR-036）。任意のパスを開く・起動する汎用の API ではない。**書き込み（IMP-316）も例外ではない。** フロントエンドが渡すのは目印（IMP-120）と文字列（修飾では、選んだ位置と見えている文字。IMP-124）だけであり、書き込み先は Go 側が持つ表示中の文書に限る（FR-143）。
 4. **状態の正は Go 側にある。** フロントエンドの `state`（IMP-210）は写しである。
 
 ### IMP-301: 命名と型 **MUST**
 
 - バインドメソッドは Go の慣習どおり大文字始まり。Wails は JavaScript 側で先頭小文字に変換する。
-- DTO は `app.go` またはその近傍に定義し、`json` タグで JavaScript 側のフィールド名（キャメルケース）を明示する。
+- DTO は `desktop/dto*.go`（IMP-011）に定義し、`json` タグで JavaScript 側のフィールド名（キャメルケース）を明示する。
 - 時刻は RFC 3339 の文字列、パスは絶対パスの文字列とする。
 - `null` を返しうるフィールドはポインタ型とし、その旨を本文書に記す。
 
@@ -47,6 +47,12 @@ type DocumentDTO struct {
     Editable      bool               `json:"editable"`      // 編集モードを開始できるか（FR-140 の表）
     EditMode      bool               `json:"editMode"`      // いま編集モードか（Go 側が正。IMP-109）
     EditSeq       uint64             `json:"editSeq"`       // 編集モードの状態の版（IMP-109）。古い値で上書きしないため
+
+    // v1.2.0（FR-025〜FR-027, FR-145〜FR-147。4.75.0）
+    Kind          string             `json:"kind"`          // "markdown" | "plantuml" | "mermaid" | "image"（IMP-105）
+    FileSize      int64              `json:"fileSize"`      // ファイルの大きさ（バイト）。画像ファイルのステータス表示（UI-060）
+    NoDiagrams    bool               `json:"noDiagrams"`    // 図のファイルで図が 1 つも無い（No diagrams found. を出す。IMP-126, IMP-127）
+    TextRefs      bool               `json:"textRefs"`      // 修飾の目印（text:<n>）を付けた描画か（IMP-120）
 }
 
 type ScrollDTO struct {
@@ -78,10 +84,14 @@ type ScrollDTO struct {
 | フィールド | フロントエンドの使い方 |
 | --- | --- |
 | `SameDocument` | 真なら同じ文書の再描画（1.7）として、折りたたみ・フォーカス・並べ替え・原寸表示・拡大画面を引き継ぐ（IMP-220）。偽なら解除する。**パスを比べて自分で判断しない**——同じファイルかどうかはシンボリックリンクと大文字小文字の規則を要し（`session.SameFile`。IMP-191）、**直前が状態画面なら同じファイルでも偽**になる（IMP-192） |
-| `Trigger` | `edit` のときだけ、並べ替えを並べ直さずに行の並びを保つ（FR-130, IMP-229）。それ以外の用途に使わない |
+| `Trigger` | `edit` のときだけ、並べ替えを並べ直さずに行の並びを保つ（FR-130, IMP-229）。**編集欄が開いている間に届いた再描画を控えるとき、警告を出すか（`edit` なら出さない）と、確定してよいか（`edit` だけを控えているなら確定してよい）を決める**（どの警告を出すかは IMP-264 の順。4.75.0 / 4.76.0）。**修飾の選択を当て直すのも `edit` のときだけ**（IMP-265）。それ以外の用途に使わない |
 | `RefKey` | 目印（`data-ref` / `data-link`。**図のブロックの `data-ref` を含む**）の値がこの鍵で始まるものだけを本物として扱う（IMP-120, IMP-260）。図の描画とコピーする原文の選択も、鍵の合うブロックに限る（NFR-030） |
 | `Editable` | 偽なら編集モードのボタンを淡色にする（UI-021） |
 | `EditMode` | ボタンの押下状態と本文の装飾に写す（IMP-260）。**フロントエンドが独自に保持している値より、こちらを優先する** |
+| `Kind` | **文書の種類による違いは、これだけで決める**（4.75.0）。画像ファイルの表示（市松模様・拡大画面のボタンを常に出す・ステータスの寸法と大きさ・エディタで開くを淡色。IMP-228, IMP-202, DSP-129, DSP-150）、図のファイルの `No diagrams found.`（IMP-220）。**`class="image-file"` の有無で判断しない**——生 HTML でも同じ `class` を書ける（IMP-128） |
+| `FileSize` | 画像ファイルのステータス領域の右端に出す（UI-060。書き方は DSP-150）。他の種類では使わない |
+| `NoDiagrams` | 真なら、本文の先頭に `No diagrams found.` を出す（FR-025, FR-026。IMP-220） |
+| `TextRefs` | **真のときだけ修飾の操作を使える**（IMP-265）。編集モードを始めた直後は、目印付きの描き直し（IMP-195）が届くまで偽である |
 | `EditSeq` | **`Editable` / `EditMode` を写すかどうかの判断にだけ使う。** フロントエンドがそれまでに受け取った版（`DocumentDTO.EditSeq` と `EditModeDTO.Seq` の大きいほう）より小さければ、`Editable` / `EditMode` を写さない（本文の再描画はする。IMP-260）。**イベントとバインドメソッドの戻り値は到着順が決まっていない**ため、`SetEditMode` の結果の後に、それより前に作られた `document:changed` が届きうる |
 
 | 経路 | `Trigger` |
@@ -90,13 +100,16 @@ type ScrollDTO struct {
 | 手動の再読み込み（FR-015） | `reload` |
 | ファイル更新の自動検知（FR-014） | `watch` |
 | 編集モードの書き込み・取り消し・やり直しの直後の読み直し（IMP-195 の 8）と、書き込み前の不一致による読み直し（IMP-195 の 4） | 前者は `edit`、後者は `reload` |
+| **編集モードを始めたときの、修飾の目印付きの描き直し**（IMP-195。4.75.0） | `reload`（自分の書き込みではない。鍵も新しくなる。FR-143） |
 
 ### IMP-303: InitialStateDTO **MUST**
 
 ```go
 type InitialStateDTO struct {
-    Config    ConfigDTO    `json:"config"`
-    TreeRoot  string       `json:"treeRoot"`  // 絶対パス。未確定なら空文字
+    Config     ConfigDTO     `json:"config"`
+    Extensions ExtensionsDTO `json:"extensions"` // ツリーのフィルターの文言に出す拡張子（FR-037。4.75.0）
+    History    HistoryDTO    `json:"history"`    // 戻れるか・進めるか（FR-051, IMP-323。4.75.0）
+    TreeRoot   string        `json:"treeRoot"`   // 絶対パス。未確定なら空文字
     Document  *DocumentDTO `json:"document"`  // 表示対象がなければ null
     StateKind string       `json:"stateKind"` // "" | "welcome" | "confirm-large" | "too-large" | "render-error"
     Error     *ErrorDTO    `json:"error"`     // StateKind が "" 以外で情報を要する場合
@@ -108,6 +121,15 @@ type ConfigDTO struct {
     FileTreeVisible bool   `json:"fileTreeVisible"`
     OutlineWidth    int    `json:"outlineWidth"`
     FileTreeWidth   int    `json:"fileTreeWidth"`
+    TreeShowDiagrams bool  `json:"treeShowDiagrams"` // ツリーのフィルター（FR-037。4.75.0）
+    TreeShowImages   bool  `json:"treeShowImages"`
+}
+
+// ExtensionsDTO は開けるファイルの拡張子の並び（mdfile の定義。IMP-105。4.75.0）。
+type ExtensionsDTO struct {
+    Markdown []string `json:"markdown"` // mdfile.Extensions
+    Diagrams []string `json:"diagrams"` // PlantUMLExtensions の後に MermaidExtensions
+    Images   []string `json:"images"`   // ImageTypes の Ext
 }
 ```
 
@@ -125,7 +147,11 @@ type ConfigDTO struct {
 
 復路で解決済みの値を常に返すと、**ペインを開閉しただけで `config.Config.Theme` が空文字から `light` へ書き換わり、初回起動の OS 追従が最初の保存で失われる。** フロントエンドは「利用者が自分で切り替えたか」を別に持ち（IMP-210 の `state.themeExplicit`）、切り替えるまでは空文字を送る。Go 側の `Normalize`（IMP-153）は空文字を既定値（＝空文字）のまま保つため、追加の処理は要らない。
 
-`StateKind` が `welcome` 以外の値を取るのは、**起動時の引数に大きすぎるファイルや壊れたファイルが指定された場合**である（FR-012）。この場合 `Document` は null となり、`Error` に対象パスとサイズと表示用パス（`DisplayPath` / `OutsideTree`。IMP-307）が入る。フロントエンドは通常の状態画面（IMP-250）と同じ処理でこれを描画する。起動経路のためだけの専用画面を作らない。
+**ツリーのフィルター（`TreeShowDiagrams` / `TreeShowImages`）は往路も復路も同じ意味である**（4.75.0）。切り替えたら、フロントエンドは `saveConfig`（IMP-210）の送信が終わるのを待ってから `ReadDir` を呼ぶ（IMP-271）。**Go 側は `UpdateConfig` で受け取った値をすぐに `App.cfg` に写し**（保存は UI-114 の契機）、以後の `ReadDir` とツリーの操作の検査がその値で絞る（IMP-134, IMP-196）。
+
+**`Extensions` は、フィルターの文言の拡張子の並びを `mdfile` の定義から渡すためにある**（FR-037 の「2 か所に書かない」）。文言の枠（`Markdown (` … `)`）は `strings.js` に置き（IMP-290）、拡張子の並びは書かない。拡張子を足したときに、文言だけが古くならない。
+
+`StateKind` が `welcome` 以外の値を取るのは、**起動時の引数に大きすぎるファイルや壊れたファイルが指定された場合**である（FR-012）。この場合 `Document` は null となり、`Error` に対象パスとサイズと表示用パス（`DisplayPath` / `OutsideTree`）と対象の種類（`TargetKind`。4.76.0）が入る（IMP-307）。フロントエンドは通常の状態画面（IMP-250）と同じ処理でこれを描画する。起動経路のためだけの専用画面を作らない。
 
 ### IMP-304: TreeNodeDTO **MUST**
 
@@ -134,6 +160,7 @@ type TreeNodeDTO struct {
     Name      string `json:"name"`
     Path      string `json:"path"`      // 絶対パス
     IsDir     bool   `json:"isDir"`
+    Kind      string `json:"kind"`      // ファイルの種類（"markdown" | "plantuml" | "mermaid" | "image"）。ディレクトリは空（UI-030 のアイコン。4.75.0）
     HasChild  bool   `json:"hasChild"`  // 展開可能か（FR-032 の先読み結果）
     Omitted   int    `json:"omitted"`   // 件数上限で除かれた数。0 なら全件（FR-032）
 }
@@ -141,9 +168,11 @@ type TreeNodeDTO struct {
 
 子ノードは含めない。展開のたびに `ReadDir` を呼ぶ（FR-032 の遅延展開）。
 
+**`Kind` でアイコンを決める**（Markdown・図・画像。UI-030, DSP-112）。PlantUML と Mermaid は同じ「図」のアイコンにする。**拡張子をフロントエンドで判定しない**（IMP-300 の 2）。
+
 `Omitted` は**その要素が属する一覧から件数上限で除かれた数**である（IMP-130）。切り詰めが起きた場合、返すすべての要素に同じ値が入る。フロントエンドは先頭の要素を見て、一覧の末尾に `… and N more` を表示する（DSP-112, IMP-290 の `treeMore`）。
 
-`HasChild` はディレクトリかどうかと一致する。`filetree.ReadDir` が Markdown を含まないディレクトリを既に除いており（FR-031, IMP-133）、返ってきたディレクトリはすべて展開する価値があるためである。**先読みの判定を DTO 側でやり直さない。**
+`HasChild` はディレクトリかどうかと一致する。`filetree.ReadDir` が表示している種類を含まないディレクトリを既に除いており（FR-031, IMP-133）、返ってきたディレクトリはすべて展開する価値があるためである。**先読みの判定を DTO 側でやり直さない。**
 
 ### IMP-305: LinkResultDTO **MUST**
 
@@ -156,7 +185,7 @@ type LinkResultDTO struct {
 }
 ```
 
-`external`（外部 URL・画像・その他のファイル）の場合、Go 側が既に OS へ委譲済みであり、フロントエンドは何もしない。
+`external`（外部 URL・**開けないファイル**）の場合、Go 側が既に OS へ委譲済みであり、フロントエンドは何もしない。**画像ファイルへのリンクは 4.73.0 から `document` である**（FR-053。MarkView で開く）。
 
 失敗は文言ではなく `ErrorDTO` をそのまま載せる（IMP-307）。リンク先が大きな Markdown だった場合、`Kind` は `error`、`Error.Kind` は `needs-confirm` となり、フロントエンドは他の経路と同じ確認画面を出せる（FR-016）。文言だけを渡すとサイズと上限が失われ、確認画面を組み立てられない。理由は IMP-308 と同じである。
 
@@ -189,10 +218,11 @@ type ErrorDTO struct {
     Limit       int64  `json:"limit"`       // サイズ関連のときのみ
     DisplayPath string `json:"displayPath"` // 状態画面の種別のときのみ。ステータス表示用（UI-060, DSP-302）
     OutsideTree bool   `json:"outsideTree"` // 同上。ツリー外か（FR-052）
+    TargetKind  string `json:"targetKind"`  // 同上。対象の種類（IMP-105 の Kind。4.75.0）。状態画面の間のボタンの淡色に使う（UI-021）
 }
 ```
 
-- **`DisplayPath` / `OutsideTree` は、状態画面を出す種別（`needs-confirm` / `too-large` / `render-error`）でだけ設定する**（IMP-192, IMP-193）。値は `DocumentDTO` の同名のフィールドと同じ規則（`session.DisplayPath`。IMP-191）で、**画面の対象**（`target`）について求める。
+- **`DisplayPath` / `OutsideTree` / `TargetKind` は、状態画面を出す種別（`needs-confirm` / `too-large` / `render-error`）でだけ設定する**（IMP-192, IMP-193）。**`TargetKind` は、画像ファイルの状態画面（大きすぎる画像。FR-027, FR-016）で「エディタで開く」を淡色にするためにある**（UI-021, IMP-202）。状態画面では `DocumentDTO.Kind` が届かず、フロントエンドは拡張子から種類を判断しない（IMP-300 の 2）。値は**画面の対象**（`target`）について求める。`DisplayPath` / `OutsideTree` は `DocumentDTO` の同名のフィールドと同じ規則（`session.DisplayPath`。IMP-191）、`TargetKind` は `DocumentDTO.Kind` と同じ規則（`mdfile.KindOf`。IMP-105。4.76.0）とする。
 - **状態画面の間、ステータス領域の左は画面の対象を指す**（FR-016, DSP-302）。状態画面では `DocumentDTO` が届かないため、フロントエンドは表示用のパスをここから得る（IMP-250）。**パスを自分で相対化しない**（IMP-300 の 2）。**v1.0.0 はこの値を持たず、状態画面の間も前の文書のパスが残っていた**（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)）。
 - ステータスに出す種別（`not-found` など）では空のままとする。表示を変えない失敗であり、パスの表示も直前のまま保つ（FR-110）。
 
@@ -210,19 +240,22 @@ type OpenResultDTO struct {
 > [!IMPORTANT]
 > Wails v2 は Go の `error` を**メッセージ文字列としてしか**フロントエンドへ渡せない（`dispatcher.NewErrorCallback(message string, ...)` を経て、JavaScript 側は `new Error(message)` を受け取る）。`(*DocumentDTO, error)` のまま返すと `ErrorDTO` の `Kind` / `Size` / `Limit` が失われ、**大きなファイルの確認画面（FR-016, IMP-314）を組み立てられない。** 失敗が値として渡る形にする必要がある。
 
-`Document` と `Error` がどちらも `null` の場合は「**何も起きなかった**」を表す。フロントエンドは表示を変えない。次の 5 つがこれにあたる。
+`Document` と `Error` がどちらも `null` の場合は「**何も起きなかった**」を表す。フロントエンドは表示を変えない。次の 6 つがこれにあたる。
 
 | 場面 | メソッド |
 | --- | --- |
 | ダイアログを取り消した | `OpenFileDialog` |
 | ダイアログを開けなかった | `OpenFileDialog` |
 | 履歴の端で戻る・進むを呼んだ | `HistoryBack` / `HistoryForward` |
+| ツリーに出していないパスを渡された（IMP-135 の `ErrNotInTree`） | `OpenFromTree` |
 | 画面の対象が無い状態（文書未表示）で再読み込みした | `Reload` |
 | 確認待ちでないパスで `Open anyway` を押した（二度押し、確認待ちが消えた後。IMP-314） | `OpenConfirmed` |
 
+**履歴の先の文書を開けなかった場合は「何も起きなかった」ではない**（4.75.0。FR-051。[BUG-023](../bugs/2026-11-08-bug-023-history-step-on-open-failure.md)）。その項目を履歴から取り除き（IMP-191）、`Error`（`not-found` など）を返してステータスに出す。
+
 ダイアログを開けなかった場合を失敗として扱わないのは、表示中の文書を状態画面で置き換える理由がないためである（FR-110）。利用者から見れば「ファイルが選ばれなかった」ことに変わりはない。
 
-`ReadDir` と `CopyToClipboard` と `ReadClipboard` は `error` を返したままとする。前者はツリーの一部が読めないだけであり、後の 2 つは失敗の種類が 1 つしかない。いずれも `Kind` を伴う分岐を必要としない（IMP-315）。
+`ReadDir` と `CopyToClipboard` と `ReadClipboard` は `error` を返したままとする。前者はツリーの一部が読めないだけであり、後の 2 つは失敗の種類が 1 つしかない。いずれも `Kind` を伴う分岐を必要としない（IMP-315）。**`ReadDir` の失敗は、フロントエンドがその文言（Go の `error` のメッセージ）をステータスに出し、展開しない。** 展開しようとしたディレクトリが既に無い（`filetree.ErrMissing`）ときの文言は `File not found: <path>`（`not-found` と同じ。FR-036, FR-110。4.76.0）とする。
 
 ### IMP-309: EditorListDTO / EditorDTO / EditorResultDTO **MUST**
 
@@ -231,8 +264,9 @@ type OpenResultDTO struct {
 ```go
 // EditorListDTO は選択ウィンドウの中身（UI-103）。
 type EditorListDTO struct {
-    Editors []EditorDTO `json:"editors"`
-    Error   *ErrorDTO   `json:"error"`
+    Editors  []EditorDTO `json:"editors"`
+    FileName string      `json:"fileName"` // 開くファイルのベース名（UI-103。4.75.0）。ウィンドウを開いた時点で控えた対象
+    Error    *ErrorDTO   `json:"error"`
 }
 
 // EditorDTO は一覧の 1 行。
@@ -253,11 +287,12 @@ type EditorResultDTO struct {
 > [!IMPORTANT]
 > **`EditorDTO` に実行ファイルのパスを載せてはならない**（[NFR-035](07-nonfunctional.md) の 3）。画面に出す必要がなく、載せた時点でフロントエンドをパスが通ることになる。これは IMP-300 の 3 が禁じている形そのものである。
 
-- 一覧の末尾には常に **`ID` が `custom` の行**を置く。`Other...` にあたる。
+- 一覧を返すときは、末尾に常に **`ID` が `custom` の行**を置く。`Other...` にあたる（対象が無く一覧を空で返すときは置かない。IMP-310）。
   - まだ何も選ばれていなければ `Name` は空、`Available` は `false`。
   - `BrowseEditor` で選ばれた後、または設定のエディタがどのプリセットとも一致しない場合は、**実行ファイル名（`filepath.Base`。パスではない）**を `Name` に入れ、`Available` を `true` にする（UI-103）。
 - `Selected` が真の行は高々 1 つとする。設定にエディタが無い、または見つからない場合は**どの行も真にしない**（UI-116）。
 - `Editors` の順序は [IMP-172](11-impl-backend.md) の定義順に `custom` を足したものとし、**並べ替えない**（UI-103）。
+- **`FileName` は表示だけのためにある**（UI-103 の「項目を追加してはならない」に当たらない）。ベース名であり、パスを載せない。**`BrowseEditor` の戻り値にも、控えた対象（`editorTarget`）のベース名を載せる**（フロントエンドは戻り値で一覧全体を描き直すため、空にすると名前が消える。IMP-252。4.76.0）。`Editors` が空なら、フロントエンドはウィンドウを出さない（IMP-196 の `ErrNotInTree`）。
 
 ## 13.3 バインドメソッド（IMP-310 系）
 
@@ -269,13 +304,19 @@ type EditorResultDTO struct {
 | --- | --- | --- | --- |
 | `GetInitialState()` | — | `InitialStateDTO` | FR-012, FR-013, UI-110 |
 | `OpenFileDialog()` | — | `OpenResultDTO` | FR-010 |
-| `OpenFromTree(path string)` | 絶対パス | `OpenResultDTO` | FR-033 |
+| `OpenFromTree(path string)` | 絶対パス | `OpenResultDTO` | FR-033, FR-036 |
 | `OpenConfirmed(path string)` | 絶対パス | `OpenResultDTO` | FR-016 |
 | `FollowLink(href string)` | リンクの生値 | `LinkResultDTO` | FR-050, FR-053 |
 | `HistoryBack()` / `HistoryForward()` | — | `OpenResultDTO` | FR-051 |
 | `Reload()` | — | `OpenResultDTO` | FR-015 |
-| `ReadDir(path string)` | 絶対パス | `([]TreeNodeDTO, error)` | FR-032, FR-035 |
-| `GetTreeRoot()` | — | `string` | FR-030 |
+| `ReadDir(path string)` | 絶対パス。**空文字はツリールート**（`filetree.js` の `loadTreeRoot` はパスを組み立てずに空文字を渡す） | `([]TreeNodeDTO, error)` | FR-032, FR-035, FR-036, FR-037 |
+| `SetTreeRoot(path string)` | 絶対パス | `TreeActionDTO` | FR-030, FR-036 |
+| `SetTreeRootUp()` | — | `TreeActionDTO` | FR-030, FR-036 |
+| `CanSetTreeRootUp()` | — | `bool` | FR-036, UI-032 |
+| `OpenInFileManager(path string)` | 絶対パス | `TreeActionDTO` | FR-036, NFR-035 |
+| `OpenContainingFolder(path string)` | 絶対パス | `TreeActionDTO` | FR-036, NFR-035 |
+| `CopyTreePath(path string)` | 絶対パス | `TreeActionDTO` | FR-036 |
+| `GetTreeRoot()` | — | `string`（フロントエンドは呼ばない。ツリールートは `InitialStateDTO.TreeRoot`・`tree:root-changed`・`TreeActionDTO` で受け取る） | FR-030 |
 | `SetScrollTop(top int)` | 現在のスクロール位置 | — | FR-051 |
 | `UpdateConfig(patch ConfigDTO)` | 変更後の設定 | — | UI-110, UI-114 |
 | `CopyToClipboard(text string)` | コピー対象 | `error` | FR-061, FR-063, AR-062 |
@@ -284,30 +325,41 @@ type EditorResultDTO struct {
 | `SetTask(ref string, checked bool)` | 目印の値、望む状態 | `EditResultDTO` | FR-141, FR-143 |
 | `GetCellSource(ref string)` | 目印の値 | `CellSourceDTO` | FR-142 |
 | `SetCell(ref string, text string)` | 目印の値、確定した文字列 | `EditResultDTO` | FR-142, FR-143 |
+| `GetCodeSource(ref string)` | 目印の値 | `CodeSourceDTO` | FR-145 |
+| `SetCode(ref string, text string)` | 目印の値、確定した文字列 | `EditResultDTO` | FR-145, FR-143 |
+| `ApplyFormat(ref string, start, end int, visible string, style FormatStyleDTO)` | 目印の値、選んだ位置（符号位置）、ブロックの見える文字、操作 | `EditResultDTO` | FR-146, FR-147, FR-143 |
 | `UndoEdit()` / `RedoEdit()` | — | `EditResultDTO` | FR-144 |
+| `SetEditBoxOpen(open bool)` | 編集欄が開いたら真、閉じたら偽 | — | FR-140 |
 | `ListEditors()` | — | `EditorListDTO` | FR-091 |
+| `ListEditorsForTree(path string)` | 絶対パス | `EditorListDTO` | FR-036, FR-091 |
+| `CloseEditor()` | — | — | FR-091 |
 | `BrowseEditor()` | — | `EditorListDTO` | FR-091 |
 | `OpenInEditor(id string)` | プリセットの ID または `"custom"` | `EditorResultDTO` | FR-090 |
 | `GetAbout()` | — | `AboutDTO` | FR-100, FR-101 |
 | `Quit()` | — | — | UI-090 |
 
-このほかに、フロントエンドから任意のパスを開く汎用メソッドを**定義しない**（IMP-300 の 3）。**エディタの 3 つも例外ではない。** 実行ファイルのパスは Go 側で生まれて Go 側で消費され、フロントエンドは識別子しか扱わない（IMP-309, NFR-035）。
+このほかに、フロントエンドから任意のパスを開く汎用メソッドを**定義しない**（IMP-300 の 3）。**ファイルツリーの操作（`OpenFromTree` / `ReadDir` / `SetTreeRoot` / `OpenInFileManager` / `OpenContainingFolder` / `CopyTreePath` / `ListEditorsForTree`）はパスを受け取るが、IMP-135 の検査を通ったものだけを使う**（IMP-196。4.75.0）。**エディタのメソッドも例外ではない。** 実行ファイルのパスは Go 側で生まれて Go 側で消費され、フロントエンドは識別子しか扱わない（IMP-309, NFR-035）。
 
 - `BrowseEditor` は Go 側でファイル選択ダイアログを開き、**選ばれたパスを「確定前の候補」として 1 つだけ保持する。** `OpenInEditor("custom")` が用いてよいのは、**この候補か、設定に保存されたエディタ（UI-116）のどちらかだけ**とする。フロントエンドから受け取った値は使わない。任意の実行ファイルを無条件に起動する経路を作らないためであり、`OpenConfirmed` が確認待ちのパスを 1 つだけ保持するのと同じ考え方である（IMP-314）。
+- **`ListEditors` は、そのときの画面の対象（`target`）を `editorTarget` に控える**（FR-091。4.75.0。利用者の判断）。**対象が文字のファイルでなければ（画像ファイル・文書未表示）控えは空とし、一覧（`Editors`）を空で返す**（フロントエンドはウィンドウを出さない。IMP-252。`ListEditorsForTree` の `ErrNotInTree` と同じ形）。`FileName` に控えたファイルのベース名を載せる。`ListEditorsForTree` は IMP-196 の検査を通ったファイルを控える。**`CloseEditor` は控え（`editorTarget`）と確定前の候補（`pendingEditor`）を捨てる**（ウィンドウを `Cancel` / `Esc` / 外のクリックで閉じたとき。FR-036, FR-091）。**`ListEditorsForTree` も `ListEditors` と同じく確定前の候補を捨てる。**
 - **`ListEditors` は確定前の候補を捨てる。** 押すたびに選択ウィンドウを出す設計であり（[UI-103](03-ui.md)）、初期選択は設定に保存されたエディタだけから決まる（[UI-116](03-ui.md)）。`Browse` したまま閉じた候補が次に開いたときも残っていると、利用者には「閉じた場合は何も保存しない」（FR-091）が破れたように見える。
 - **`OpenInEditor("custom")` は、確定前の候補が無ければ設定に保存されたエディタを使う**（UI-116）。`ListEditors` が候補を捨てる以上、候補だけを見ると**保存されたエディタは 2 回目以降けっして起動できない。** 一覧では選択済みとして出るのに `Open` が必ず `editor-failed` になる、という食い違いになる。用いてよいかどうかの判定は `EditorDTO.Available`（IMP-309）と同じ条件にする。**「一覧で選べる行」と「起動できる行」を一致させる。**
 - `OpenInEditor` が成功したとき、**そのとき初めて設定へ保存する**（UI-116）。選択しただけ、`Browse` しただけでは保存しない。
-- **`OpenInEditor` が開くファイルは `App.target`（IMP-190）である。** 「表示中の文書」（`current`）ではない。状態画面を出している間 `current` は前の文書のまま残っており、それを渡すと画面と食い違う（FR-090, NFR-035）。`target` が空（文書未表示）のときは `Error.Kind` を `editor-failed` として返す。**ボタンが淡色である以上（UI-021）通常は起こらないが、防御的に扱う。**
+- **`OpenInEditor` が開くファイルは、ウィンドウを開いた時点で控えた `editorTarget`（IMP-190）である**（4.75.0）。v1.1.0 は押した時点の `App.target` を開いていた。**ウィンドウを開いている間にドロップで文書が切り替わると、ウィンドウに出ている名前と違うファイルが開く**（UI-090 は、エディタ選択ウィンドウの表示中もドロップを受け付ける）。「表示中の文書」（`current`）を使わないことは変わらない（状態画面の間 `current` は前の文書のまま残る。FR-090, NFR-035）。控えが空のときは `Error.Kind` を `editor-failed` として返す。**ボタンが淡色である以上（UI-021）通常は起こらないが、防御的に扱う。** 起動の成否に関わらず、終わったら控えを捨てる。
 
 - **`GetAbout` は WebView のバージョンを取得して渡す**（[UI-100](03-ui.md), [IMP-181](11-impl-backend.md)）。空文字を固定で渡さない。取得手段と OS ごとの実装は IMP-181 が定める。**空文字は取得に失敗したときだけ**であり、そのとき `Environment` は当該区画を省く。
 - **`Reload` は画面の対象（`target`。IMP-190）を読み直す。** 状態画面の間はその対象をもう一度開く（`confirm-large` なら確認画面、`render-error` なら変換をやり直す）。**表示中の文書（`current`）を開き直さない**——状態画面を見ながら `F5` を押すと、画面に無い前の文書が表示される（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)。v1.0.0 は `current` を開き直していた）。`target` が空なら何もしない（IMP-308）。
-- **`ReadDir` はキャッシュを持たない。** 呼ばれるたびにディスクを読む。**いつ呼び直すかを決めるのはフロントエンドである**（FR-035 の 3 契機。[IMP-240](12-impl-frontend.md)）。
+- **`ReadDir` はキャッシュを持たない。** 呼ばれるたびにディスクを読む。**いつ呼び直すかを決めるのはフロントエンドである**（FR-035 の 5 契機。[IMP-240](12-impl-frontend.md)）。
 
 - **失敗は戻り値の DTO で伝える**（IMP-308, IMP-305）。Go の `error` を返すのは `ReadDir` と `CopyToClipboard` と `ReadClipboard` だけとする。
 - **`ReadClipboard` は Wails の `runtime.ClipboardGetText` を使う**（AR-062）。WebView の `navigator.clipboard.readText` は読み取りに権限を求めるため使わない。**テキスト以外（画像など）しか入っていなければ空文字を返し、失敗にしない。**
-- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタの 3 つは `editor-failed`、編集モードの書き込みの 4 つ（`SetTask` / `SetCell` / `UndoEdit` / `RedoEdit`）は `edit-failed` とする。** これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
-- **文書を開くメソッド（`OpenFileDialog` / `OpenFromTree` / `OpenConfirmed` / `FollowLink` / `HistoryBack` / `HistoryForward` / `Reload`）で回復したパニックは、Go 側の状態も状態画面へ移す。** IMP-192 の「状態画面を出した」と同じ反映を行う——`showing` を偽にし、監視を外し、`edit.Left()` を呼び、確認待ちを消す。`ioMu` を取って行う。**画面の対象（`target`）は、そのメソッドが開こうとしていたパスが分かっていればそれ（ツリーの選択・確認待ちのパス・履歴のエントリ・再読み込みの対象・ダイアログで選ばれたパス）、分からなければ空とする**（`FollowLink` と、履歴を動かす前）。空のときは `ErrorDTO.DisplayPath` も空になり、ウィンドウタイトルはアプリケーション名だけになる。**フロントエンドは `render-error` の状態画面を出す**（IMP-250）ため、Go 側を「前の文書を表示中」のまま残すと、監視のイベントや `F5` で状態画面が前の文書の表示に置き換わる（BUG-012 と同じ形の食い違い）。**前の文書を `target` に残さない**——`F5` と「エディタで開く」が画面に無い文書を指す（IMP-190）。**回復が錠を取れるように、`ioMu` と `mu` は途中でパニックが起きても `defer` で解く形で取る。**
-- **`SetEditMode` と `GetCellSource` は、回復したパニックを通知しない。** `edit-failed` の文言は「Failed to save: <path>」であり、保存していない操作には合わない。`SetEditMode` はその時点の `edit.On()` を返し（ボタンの表示が Go 側と揃う）、`GetCellSource` は `Stale` を真で返す（編集欄が開かないだけで済む）。
+- **`OpenFileDialog` のフィルタは 5 つとする**（FR-010。4.75.0）。`Supported files`（既定。開けるファイルのすべての拡張子）・`Markdown files`・`Diagrams`（PlantUML と Mermaid）・`Images`・`All files`。拡張子は `mdfile` の定義から組み立てる（IMP-105）。**開けないファイルを選んだときは `not-supported`** とし、ツリールートも表示も変えない（FR-010, IMP-192）。
+- **`SetEditBoxOpen` は、ドロップを拒むためにだけある**（FR-140。4.75.0）。値は `App.editBoxOpen`（IMP-190）に写し、ドロップの受け口（IMP-313）だけが読む。**フロントエンドは前の呼び出しの応答を待ってから次を送る**（到着順が入れ替わりうるため。`UpdateConfig` と同じ事情。IMP-264。4.76.0）。書き込みの判断には使わない（Go 側の判断は IMP-109）。**フロントエンドから渡すのは真偽値だけであり、パスも目印も渡さない。**
+- **`CanSetTreeRootUp` は、ツリールートが根（ファイルシステムの根・ドライブの根）でないかを返す**（UI-032）。フロントエンドはパスから根かどうかを判断しない（IMP-300 の 2）。
+- **`HistoryBack` / `HistoryForward` は、`ioMu` の中で IMP-191 の「戻る・進むの手順」を行う**（4.75.0）。開けなかったら、その項目を履歴から取り除き、`Error` を返す（BUG-023）。
+- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタのメソッド（`ListEditors` / `ListEditorsForTree` / `BrowseEditor` / `OpenInEditor`）は `editor-failed`、編集モードの書き込みの 6 つ（`SetTask` / `SetCell` / `SetCode` / `ApplyFormat` / `UndoEdit` / `RedoEdit`）は `edit-failed` とする。** ツリーの操作（`OpenFromTree` と `ListEditorsForTree` を除く）は通知しない（IMP-196）。`CloseEditor` と `SetEditBoxOpen` も通知しない。 これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
+- **文書を開くメソッド（`OpenFileDialog` / `OpenFromTree` / `OpenConfirmed` / `FollowLink` / `HistoryBack` / `HistoryForward` / `Reload`）で回復したパニックは、Go 側の状態も状態画面へ移す。** IMP-192 の「状態画面を出した」と同じ反映を行う——`showing` を偽にし、監視を外し、`edit.Left()` を呼び、確認待ちを消す。`ioMu` を取って行う。**表示履歴とツリールートは回復では動かさない**（パニックは想定外の失敗であり、どこまで進んだかを推し量らない。回復の時点までに動いたものはそのままにする）。**回復の後に `history:changed` を送る**（履歴の写しを Go 側にそろえる。IMP-323。4.76.0）。**画面の対象（`target`）は、そのメソッドが開こうとしていたパスが分かっていればそれ（ツリーの選択・確認待ちのパス・履歴のエントリ・再読み込みの対象・ダイアログで選ばれたパス）、分からなければ空とする**（`FollowLink` と、戻る・進むで項目を得る前）。空のときは `ErrorDTO.DisplayPath` も空になり、ウィンドウタイトルはアプリケーション名だけになる。**フロントエンドは `render-error` の状態画面を出す**（IMP-250）ため、Go 側を「前の文書を表示中」のまま残すと、監視のイベントや `F5` で状態画面が前の文書の表示に置き換わる（BUG-012 と同じ形の食い違い）。**前の文書を `target` に残さない**——`F5` と「エディタで開く」が画面に無い文書を指す（IMP-190）。**回復が錠を取れるように、`ioMu` と `mu` は途中でパニックが起きても `defer` で解く形で取る。**
+- **`SetEditMode` と `GetCellSource` と `GetCodeSource` は、回復したパニックを通知しない。** `edit-failed` の文言は「Failed to save: <path>」であり、保存していない操作には合わない。`SetEditMode` はその時点の `edit.On()` を返し（ボタンの表示が Go 側と揃う）、`GetCellSource` と `GetCodeSource` は `Stale` を真で返す（編集欄が開かないだけで済む）。
 - `Quit` は `Ctrl+Q`（UI-090）の受け口である。`Alt+F4` と閉じるボタンは OS とウィンドウマネージャが処理するためこの経路を通らない。**終了処理そのものは Wails に任せ、ここで設定を保存しない。** `OnBeforeClose` / `OnShutdown`（IMP-194）を通ることで、閉じるボタンで終了した場合とまったく同じ後始末になる。
 - `UpdateConfig` を**立て続けに 2 つ呼ばない**。バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、到着順が入れ替わりうる。フロントエンドは `saveConfig`（IMP-210）を経由し、前の応答を待ってから次を送る。
 
@@ -332,18 +384,18 @@ flowchart TD
     C -->|なし| F["baseDir を基準に絶対パス化 (AR-042)"]
     F --> G{"存在するか"}
     G -->|No| R3["kind: error<br/>(link-not-found)"]
-    G -->|Yes| H{"拡張子 (IMP-105)"}
-    H -->|Markdown| I["open(openFromLink)"] --> R4["kind: document"]
-    H -->|画像| J["opener.OpenFile (FR-053)"]
-    H -->|その他| J
+    G -->|Yes| H{"開けるファイルか<br/>(mdfile.IsOpenable。IMP-105)"}
+    H -->|"Markdown・図・画像"| I["open(openFromLink)"] --> R4["kind: document"]
+    H -->|その他| J["opener.OpenFile (FR-050)"]
     J -->|成功| R2
     J -->|失敗| R5
 ```
 
 - `href` にアンカーが付いた Markdown（`./a.md#sec`）は、パス部分とアンカー部分を分離し、`DocumentDTO.Scroll` を `anchor` モードで返す。
+- **図のファイルと画像ファイルへのリンクも MarkView で開く**（FR-050, FR-053。4.73.0）。v1.1.0 は画像へのリンクを `opener.OpenFile` で OS の既定のビューアへ渡していた。**`.iuml` は開けるファイルに入らず**、`opener.OpenFile` へ渡る（FR-025）。
 - 基準ディレクトリは**表示中の文書のディレクトリ**であり、ツリールートではない（AR-042）。相対パスの解決規則は画像（IMP-118）と同一のものを使う。別々に書くと、`[x](./a.png)` が開くファイルと `![x](./a.png)` が表示するファイルが食い違いうる。
 - **Windows のドライブレターをスキームと取り違えない。** `net/url` は `C:/docs/a.md` のスキームを `c` と解釈する。1 文字のスキームは存在しないため、これはローカルパスとして扱う。
-- **OS への委譲の失敗は `kind: error`、`Error.Kind` は `open-failed` とする**（IMP-315）。`opener.ErrUnsupportedScheme`・`opener.ErrNotFound`・プロセスを起動できない（Linux で `xdg-open` が無いなど）のいずれも同じである。**文書を開く経路の分類（`not-found` / `render-error`）を使い回さない**——分類できないエラーを `render-error` に落とすと、フロントエンドは状態画面を出して本文が消える（[BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)。FR-053 は「その旨をステータス表示する」、FR-110）。v1.0.0 はこの形だった。エディタの失敗を `newEditorErrorDTO` で分けているのと同じ考え方である（IMP-315）。
+- **OS への委譲の失敗は `kind: error`、`Error.Kind` は `open-failed` とする**（IMP-315）。`opener.ErrUnsupportedScheme`・`opener.ErrNotFound`・プロセスを起動できない（Linux で `xdg-open` が無いなど）のいずれも同じである。**文書を開く経路の分類（`not-found` / `render-error`）を使い回さない**——分類できないエラーを `render-error` に落とすと、フロントエンドは状態画面を出して本文が消える（[BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)。FR-050 と FR-110 はステータス領域への通知を求める）。v1.0.0 はこの形だった。エディタの失敗を `newEditorErrorDTO` で分けているのと同じ考え方である（IMP-315）。
 - **`opener` が受け付けないスキームは `kind: error` とする**（IMP-170, NFR-030）。FR-050 は「`mailto:` 等のその他スキームは OS の既定ハンドラに委譲する」と定めるが、委譲してよいのは `http` / `https` / `mailto` に限る。文書は任意の第三者から受け取りうるため、`javascript:` や `file:` を OS へ渡さないことを優先する。
 
 ### IMP-313: ドロップの受け口 **MUST**
@@ -357,7 +409,8 @@ runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
 })
 ```
 
-- 複数パスから対象を選ぶ判定（FR-011）は Go 側で行う。
+- 複数パスから対象を選ぶ判定（FR-011）は Go 側で行う。**対象は開けるファイル（`mdfile.IsOpenable`。Markdown・図・画像）である**（4.75.0）。
+- **フロントエンドで編集欄が開いている間（`App.editBoxOpen`。`SetEditBoxOpen`）は、開かずに拒み、`error` イベントで `ErrorDTO{Kind: "edit-busy"}` を送る**（FR-140。4.75.0）。ツリールートも変えない。**Linux ではドロップが JavaScript を通らずにここへ届く**（下の IMPORTANT）ため、フロントエンドだけでは止められない。
 - ディレクトリがドロップされた場合、ツリールートを変更し、直下の README を探して開く。
 
 > [!IMPORTANT]
@@ -372,10 +425,10 @@ runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
 
 ### IMP-314: 大きなファイルの確認 **MUST**
 
-FR-016 を実装する。
+FR-016 を実装する。**画像ファイルにも同じ規則を当てはめる**（FR-027。大きさは `os.Stat` で測る。IMP-102）。
 
 1. 通常の `open` が `ErrNeedsConfirm`（`*SizeError`）を返す。
-2. `app.go` はこれを `OpenResultDTO{Error: &ErrorDTO{Kind: "needs-confirm", Path, Size, Limit}}` に変換して返す（IMP-308）。リンクから開いた場合は `LinkResultDTO{Kind: "error", Error: ...}` となる（IMP-305）。
+2. `desktop`（`errors.go`。IMP-315）はこれを `OpenResultDTO{Error: &ErrorDTO{Kind: "needs-confirm", Path, Size, Limit}}` に変換して返す（IMP-308）。リンクから開いた場合は `LinkResultDTO{Kind: "error", Error: ...}` となる（IMP-305）。
 3. フロントエンドは状態画面 `confirm-large` を表示する（IMP-250）。
 4. `Open anyway` の押下で `OpenConfirmed(path)` を呼ぶ。Go 側は `LoadOptions{Confirmed: true}` で再試行する。
 
@@ -397,23 +450,34 @@ Go 側の番兵エラー（IMP-021）を `ErrorDTO.Kind` へ写像し、フロ�
 | --- | --- | --- | --- |
 | `document.ErrNotFound` | `not-found` | ステータス | `File not found: <path>` |
 | `document.ErrPermission` | `permission` | ステータス | `Cannot access: <path>` |
-| `document.ErrNotMarkdown` | `not-markdown` | ステータス | `Not a Markdown file: <path>` |
+| `document.ErrNotSupported` | `not-supported` | ステータス | `Not a supported file: <path>`（4.75.0。v1.1.0 の `not-markdown` / `Not a Markdown file: <path>`） |
 | `document.ErrNeedsConfirm` | `needs-confirm` | 状態画面 | `This file is large.` ほか（UI-052） |
-| `document.ErrTooLarge` | `too-large` | 状態画面 | `File is too large (<size> / limit <limit>)` |
+| `document.ErrTooLarge` | `too-large` | 状態画面 | `<size>` / `Maximum size is <limit>.`（DSP-181） |
 | 変換エラー・パニック回復 | `render-error` | 状態画面 | `Failed to render this document.` |
 | リンク先が見つからない（FR-050） | `link-not-found` | ステータス | `Link target not found: <href>` |
-| リンク先を OS へ委譲できない（`opener.ErrUnsupportedScheme` / `opener.ErrNotFound` / 起動の失敗。FR-050, FR-053。IMP-312） | `open-failed` | ステータス | `Cannot open: <href>` |
+| リンク先を OS へ委譲できない（`opener.ErrUnsupportedScheme` / `opener.ErrNotFound` / 起動の失敗。FR-050。IMP-312）、**ファイルマネージャを起動できない**（`opener.ErrNotDir` を含む。FR-036。IMP-196） | `open-failed` | ステータス | `Cannot open: <href または path>` |
+| **ツリーで選んだものが既に無い**（`filetree.ErrMissing`。FR-036。4.75.0） | `not-found` | ステータス | `File not found: <path>` |
 | クリップボード失敗 | `clipboard` | ステータス | `Failed to copy.` |
 | 監視対象が削除された | `removed` | ステータス | `File was deleted: <path>` |
 | エディタを起動できない | `editor-failed` | ステータス | `Failed to start the editor.` |
 | `opener.ErrSelf` | `editor-self` | ステータス | `MarkView cannot be used as an editor.` |
 | 不正な文字コードを置換 | `encoding` | ステータス | `Some characters were replaced.` |
 | 書き込む前にファイルが変更されていた（FR-143） | `edit-conflict` | ステータス | `The file changed on disk and was not saved.` |
-| 書き込めない（`document.ErrPermission` ほか、表の形の確かめで拒んだ `document.ErrNotEditable`。FR-143, FR-142） | `edit-failed` | ステータス | `Failed to save: <path>` |
+| 書き込めない（`document.ErrPermission` ほか、不正なバイト列・位置の食い違いの `document.ErrNotEditable`。FR-143） | `edit-failed` | ステータス | `Failed to save: <path>` |
+| **書き込む内容の確かめで拒んだ**（`document.ErrRejected`。セル・コードブロック・図。FR-143。4.75.0。v1.1.0 のセルは `edit-failed` だった） | `edit-rejected` | ステータス（警告） | `This change would alter the document structure and was not saved.` |
+| **前置きが行ごとに違うコードブロック**（`document.ErrLocked`。**`data-locked` のブロックをダブルクリックしたときはフロントエンドが作る**。IMP-264。FR-145。4.75.0） | `code-locked` | ステータス（警告） | `This code block cannot be edited in MarkView.` |
+| **修飾を分けられない・確かめで拒んだ**（`document.ErrCannotFormat`。FR-146, FR-147。4.75.0） | `format-rejected` | ステータス（警告） | `This formatting cannot be applied here.` |
+| **手書きの取り消し線を全体で外した**（`EditResultDTO.Notice`。FR-146。4.75.0） | `format-widened` | ステータス（警告） | `The whole strikethrough was removed.` |
+| **編集欄が開いているため、操作を受け付けなかった**（FR-140。フロントエンドが決める。**ドロップのときだけ Go が作る**——IMP-313。IMP-264。4.75.0） | `edit-busy` | ステータス（警告） | `Save or cancel the open edit first.` |
+| **編集欄が開いている間に外部で変更された・その間に確定した**（FR-014, FR-145。フロントエンドだけで決める。4.75.0） | `edit-held` | ステータス（警告） | `The file changed on disk. Cancel the edit to see the changes.` |
+| **削除された後に確定した**（FR-140。フロントエンドだけで決める。4.75.0） | `edit-removed` | ステータス（警告） | `The file was deleted. The edit cannot be saved.` |
+| **編集欄が開いている間に、表示中のファイルが削除された**（FR-110。フロントエンドだけで決める。4.75.0） | `removed-editing` | ステータス（警告） | `File was deleted: <path>. Edit mode ends when you close the edit.` |
+| **編集欄が開いている間に、読み直した内容の不正なバイト列を置き換えた**（FR-110。フロントエンドだけで決める。4.75.0） | `encoding-editing` | ステータス（警告） | `Some characters were replaced. Edit mode ends when you close the edit.` |
 | クリップボードを読めない（FR-063） | `paste` | ステータス | `Failed to paste.` |
 
 - **指示を作った描画の後に再描画が起きていた場合（IMP-195 の `Stale`）は、`Kind` を作らない。** 失敗ではなく、通知もしない（FR-143）。
-- **`open-failed` の `Path` にはリンクの生値（`href`）を入れる。** 実行ファイルのパスは入らない（OS の既定のハンドラが起動されるため、MarkView はそれを知らない）。
+- **「警告」と書いた種別は、DSP-151 の警告の色で出す**（UI-060。4.75.0。利用者の判断）。拒んだ知らせはすべて警告とし、情報を出す場面（エディタの起動の成功だけ）を増やさない。**`edit-held` / `edit-removed` / `removed-editing` / `encoding-editing` は Go 側では作らない**——編集欄はフロントエンドにしか無い（IMP-195）。**`edit-busy` を Go が作るのは、編集欄が開いている間のドロップを拒んだときだけである**（IMP-313。Linux ではドロップが JavaScript を通らない）。文言の定義は他の種別と同じく `strings.js` に置く（IMP-290）。
+- **`open-failed` の `Path` には、リンクの経路ではリンクの生値（`href`）を、ファイルマネージャの経路では開こうとしたディレクトリの絶対パスを入れる**（4.75.0）。実行ファイルのパスは入らない（OS の既定のハンドラが起動されるため、MarkView はそれを知らない）。
 - **分類できないエラーを状態画面の種別へ落とすのは、文書を開く経路（IMP-192）だけとする。** ステータスに出る操作（リンクの委譲・エディタ・書き込み・クリップボード）は、それぞれの経路で種別を決める。
 
 - 文言の組み立てはフロントエンドで行う。Go 側は `Kind` と要素（パス・サイズ）を渡す。これにより、文言の定義が `strings.js` の 1 箇所に集約される（IMP-290）。
@@ -422,7 +486,7 @@ Go 側の番兵エラー（IMP-021）を `ErrorDTO.Kind` へ写像し、フロ�
 
 ### IMP-316: 編集モードの DTO **MUST**
 
-FR-140〜FR-144 のバインドメソッド（IMP-310）の戻り値。処理の中身は IMP-195 が定める。
+FR-140〜FR-147 のバインドメソッド（IMP-310）の戻り値。処理の中身は IMP-195 が定める。
 
 ```go
 // EditModeDTO は SetEditMode の結果。失敗を伝える欄を持たない（開始できない場合も、
@@ -436,7 +500,8 @@ type EditModeDTO struct {
 type EditResultDTO struct {
     Changed bool      `json:"changed"` // ファイルを書き換えたか
     Stale   bool      `json:"stale"`   // 指示を作った描画が古かった（FR-143）。通知しない
-    Error   *ErrorDTO `json:"error"`   // edit-conflict / edit-failed（IMP-195 の 3〜6）。成功と Stale では null
+    Error   *ErrorDTO `json:"error"`   // edit-conflict / edit-failed / edit-rejected / code-locked / format-rejected（IMP-195 の 3〜6）。成功と Stale では null
+    Notice  string    `json:"notice"`  // 成功したが知らせることがある（"format-widened"。FR-146。4.75.0）。無ければ空
 }
 
 // CellSourceDTO はセルの編集欄に入れるソース（FR-142）。
@@ -445,11 +510,44 @@ type CellSourceDTO struct {
     Stale bool      `json:"stale"` // 読めない・古い指示・編集できないセル。通知しない（IMP-195）
     Error *ErrorDTO `json:"error"` // edit-conflict のときだけ
 }
+
+// CodeSourceDTO はコードブロック・図の編集欄に入れるソース（FR-145。4.75.0）。
+// 前置きを除き、改行は LF にそろえたもの（IMP-122）。
+type CodeSourceDTO struct {
+    Text  string    `json:"text"`
+    Stale bool      `json:"stale"` // 読めない・古い指示。通知しない
+    Error *ErrorDTO `json:"error"` // edit-conflict / code-locked のときだけ
+}
+
+// FormatStyleDTO は修飾の操作（FR-146, FR-147。document.FormatStyle と同じ。4.75.0）。
+type FormatStyleDTO struct {
+    Strike bool   `json:"strike"` // 取り消し線のトグル
+    Color  string `json:"color"`  // "red" / "orange" / "yellow" / "green" / "blue" / "purple" / "gray" / "default"
+}
 ```
 
 - **`Changed` が偽で `Stale` も `Error` も無い**のは、「内容が変わらなかった」または「取り消すものが無かった」ことを表す（FR-142, FR-144）。フロントエンドは見た目を戻すだけにし、通知しない。
 - **表示の更新はこれらの戻り値ではなく `document:changed`（IMP-320）で届く**（AR-061）。フロントエンドは、戻り値とイベントのどちらが先に届いても成り立つように書く（IMP-195）。
+- **`ApplyFormat` の `start` / `end` は、ブロックの見える文字の中の Unicode の符号位置での位置**（半開区間）である（IMP-123, IMP-266）。JavaScript の文字列の位置（UTF-16）から変換して渡す。`visible` はそのブロックの見える文字の全体であり、Go 側が組み立てたものと 1 文字でも違えば `Stale`（FR-146）。`style` は `Strike` と `Color` のどちらか一方だけを使う。
+- **`Notice` は、成功（`Changed` が真）のときだけ設定する**（`format-widened`）。フロントエンドは警告として出す（IMP-315）。
 - **目印の値（`ref`）はフロントエンドが HTML から読んだ文字列をそのまま渡す。** 解くのは Go 側である（`document.ParseRef`）。フロントエンドで番号へ分解して渡さない——鍵の照合（IMP-195 の 2）を省く経路を作らないためである。
+
+### IMP-317: TreeActionDTO **MUST**
+
+ファイルツリーの操作（IMP-196。FR-036）のうち、文書を開かないものの戻り値（4.75.0）。
+
+```go
+// TreeActionDTO はファイルツリーの操作の結果。すべて空なら「何もしなかった」（IMP-135 の ErrNotInTree など）。
+type TreeActionDTO struct {
+    Root        string    `json:"root"`        // ツリールートを変えたときの新しいルート。変えなければ空
+    DisplayPath string    `json:"displayPath"` // 同上のとき、画面の対象の表示用パス（FR-052）。対象が無ければ空
+    OutsideTree bool      `json:"outsideTree"` // 同上のとき、画面の対象がツリールートの外か
+    Error       *ErrorDTO `json:"error"`       // not-found / open-failed / clipboard（IMP-315）
+}
+```
+
+- **`Root` が空でなければ、フロントエンドはツリーを新しいルートで読み直し、ステータス領域のパス（`DisplayPath` / `OutsideTree`）を差し替える**（FR-030, FR-052。IMP-270）。表示中の文書・履歴・編集モードは変わっていない。
+- 表示用パスは Go 側が求める（`session.DisplayPath`。IMP-300 の 2）。状態画面の間は、その対象について求める（`target`。IMP-190）。
 
 ## 13.4 イベント（IMP-320 系）
 
@@ -460,12 +558,13 @@ Go からフロントエンドへの一方向通知。`runtime.EventsEmit` で�
 | イベント名 | ペイロード | 契機 | 対応要求 |
 | --- | --- | --- | --- |
 | `document:opened` | `DocumentDTO` | ドロップ・引数など、フロントエンドの呼び出し以外で表示対象が変わったとき | FR-011 |
-| `document:changed` | `DocumentDTO` | 表示中ファイルの更新を検知して再変換したとき。**編集モードの書き込みの直後に Go 側が読み直したとき**（IMP-195 の 8）と、書き込み前の不一致で読み直したとき（IMP-195 の 4） | FR-014, FR-143 |
+| `document:changed` | `DocumentDTO` | 表示中ファイルの更新を検知して再変換したとき。**編集モードの書き込みの直後に Go 側が読み直したとき**（IMP-195 の 8）、**編集モードを始めたときの目印付きの描き直し**（IMP-195。4.75.0）と、書き込み前の不一致で読み直したとき（IMP-195 の 4） | FR-014, FR-143 |
 | `document:removed` | `ErrorDTO` | 表示中ファイルが削除されたとき（**画面が表示している文書のものに限る**。IMP-192 の「イベントの照合」）。**編集モードも同時に終える**（IMP-195） | FR-014, FR-110, FR-140 |
-| `tree:root-changed` | `string`（絶対パス） | ツリールートが変わったとき | FR-030 |
-| `error` | `ErrorDTO` | 非同期処理で発生したエラー。**監視のイベントによる読み直しと、編集モードの書き込みの前後の読み直し（IMP-195 の 4 と 8）に失敗したとき**を含む | FR-014, FR-016, FR-110, FR-143 |
+| `tree:root-changed` | `string`（絶対パス） | ツリールートが変わったとき（ダイアログ・ドロップ・引数で開いた結果。**ツリーの右クリックメニューで変えたときは送らない**——戻り値の `TreeActionDTO` で伝える。IMP-196） | FR-030 |
+| `history:changed` | `HistoryDTO` | 表示履歴が変わったとき（積む・戻る・進む・取り除く。IMP-323。4.75.0） | FR-051 |
+| `error` | `ErrorDTO` | 非同期処理で発生したエラー。**監視のイベントによる読み直しと、編集モードの書き込みの前後の読み直し（IMP-195 の 4 と 8）・編集モードを始めたときの描き直し（IMP-195。4.76.0）に失敗したとき**を含む。**編集欄が開いている間のドロップを拒んだとき（`edit-busy`。IMP-313。4.75.0）** | FR-014, FR-016, FR-110, FR-143, FR-140 |
 
-- **`error` の `Kind` が状態画面の種別（`needs-confirm` / `too-large` / `render-error`）なら、フロントエンドは状態画面を出す**（IMP-250。`document:opened` と同じ扱い）。Go 側は既に状態画面へ移っている（IMP-192 の `target` / `showing` / 監視の解除、IMP-109 の `Left`）。**ステータスに出すだけにすると、画面は前の文書と編集モードの表示のまま残る。**
+- **`error` の `Kind` が状態画面の種別（`needs-confirm` / `too-large` / `render-error`）なら、フロントエンドは状態画面を出す**（IMP-250。`document:opened` と同じ扱い）。**ただし編集欄が開いている間は控え、閉じた時点で出す**（IMP-264。4.75.0）。Go 側は既に状態画面へ移っている（IMP-192 の `target` / `showing` / 監視の解除、IMP-109 の `Left`）。**ステータスに出すだけにすると、画面は前の文書と編集モードの表示のまま残る。**
 - **フロントエンドは、`state.editable` が偽の間に届いた `EditModeDTO` の `On` が真でも写さない**（IMP-260）。状態画面へ移るときと `document:removed` は版（`EditSeq`）を運ばないため、それより前に送った `SetEditMode(true)` の結果が後から届くと、版の比較だけでは止められない。**DTO に版を足さずに済むのは、状態画面と削除の後は編集モードを始められない（`Editable` が偽）ためである。** 次に文書が届けば、その `EditSeq` が以後の比較の基準になる。
 
 ### IMP-321: document:changed の扱い **MUST**
@@ -475,13 +574,36 @@ FR-014 を実装する。
 - ペイロードの `Scroll.Mode` は **`keep`** とする（IMP-302）。位置はフロントエンドが保持している現在値を用い、Go 側は `Top` を設定しない。
 - 再描画時、フロントエンドは検索状態をリセットし（FR-080）、ツリーの展開状態は維持する（FR-014）。
 - 再描画後、Mermaid・KaTeX・PlantUML の描画も再実行する。資産の再読み込みは行わない（AR-021）。
-- **監視のイベントで読み直した内容が表示中のものと同じなら、送らない**（FR-014, IMP-192）。書き込みの直後に Go 側が送った `document:changed` の後から、同じ内容のイベントが届くためである。
+- **監視のイベントで読み直した内容が表示中のものと同じなら、送らない**（FR-014, IMP-192）。書き込みの直後に Go 側が送った `document:changed` の後から、同じ内容のイベントが届くためである。**ただし削除の後（`document:removed` を送った後）は、同じ内容でも送る**（削除の後に同じ内容で戻る場合。送らないと、淡色にしたボタンとステータスの表示が戻らない。IMP-192。4.76.0）。
 - **`SameDocument` は常に真である。** `document:changed` を送るのは、画面が表示している文書（`showing` が真）を同じファイルとして読み直したときだけであり（IMP-192 の「イベントの照合」、IMP-195 の 4 と 8）、状態画面の間のイベントは読み直さずに捨てるためである（IMP-302）。フロントエンドは DSP-352 の「同じ文書の再描画」の列に従って状態を引き継ぐ（IMP-220）。
-- **ペイロードの `EditMode` が偽になっていれば、フロントエンドは編集モードの表示を解く**（読み直した結果、不正なバイト列を含んでいた場合。IMP-192 の表）。
+- **ペイロードの `EditMode` が偽になっていれば、フロントエンドは編集モードの表示を解く**（読み直した結果、不正なバイト列を含んでいた場合。IMP-192 の表）。**ただし編集欄が開いていれば、閉じるまで解かない**（FR-140。IMP-264）。
+- **編集欄（セル・コードブロック）が開いている間に届いた `document:changed` は、画面へ当てずに控える**（FR-140 の表の「保留する」。4.75.0。IMP-264）。控えるのは最新の 1 つだけとし、編集欄を閉じた時点で当てる。どの警告を出すか（`edit-held` / `encoding-editing`。自分の書き込みの直後（`edit`）なら出さない）は IMP-264 の順に従う（4.76.0）。
+- **編集モードを始めたときの描き直し**（`trigger` が `reload`、`TextRefs` が真。IMP-195）も、同じ文書の再描画として扱う（DSP-352）。
 
 ### IMP-322: イベントの購読解除 **SHOULD**
 
 フロントエンドは単一ページであり、購読は起動時の 1 回のみ行う。動的な購読・解除を繰り返さない。
+
+### IMP-323: history:changed **MUST**
+
+FR-051 を実装する（4.75.0）。**戻れるか・進めるかを、Go 側の履歴（IMP-191）から専用のイベントで送る**（利用者の判断）。ツールバーの戻る・進むのボタンは、これに従って淡色にする（UI-021。IMP-202）。
+
+```go
+// HistoryDTO は戻れるか・進めるか（FR-051）。
+type HistoryDTO struct {
+    CanBack    bool   `json:"canBack"`    // session.History.CanBack()
+    CanForward bool   `json:"canForward"` // session.History.CanForward()
+    Seq        uint64 `json:"seq"`        // App.historySeq。送るたびに 1 増やす
+}
+```
+
+- **送る場所**: 履歴を変える処理（`Push`・`Step`・`Remove`。IMP-191）を呼んだ後。文書を開く共通処理（IMP-192。積む経路での成功と状態画面）と、戻る・進む（IMP-191 の手順）である。**値は送る直前に `mu` の内側で読み、送出は錠を解いた後で行う**（IMP-192 の Wails の呼び出しと同じ）。
+- **ドロップのように、イベントで文書が届く経路も同じ受け口になる**（`document:opened` と別に `history:changed` が届く）。経路ごとに DTO へ載せる形（実現性検討の H2）にしない——確認画面・ドロップ・失敗のように `DocumentDTO` を伴わない場面で載せ漏れが起きうる。
+- **到着順は決まっていない。** フロントエンドは、それまでに受け取った `Seq` より小さいものを捨てる（`EditModeDTO` と同じ考え方。IMP-316）。
+- **起動時の値は `InitialStateDTO.History`（IMP-303）で渡す**（イベントの購読より前に起きた積む処理を取りこぼさない）。
+- **フロントエンドの受け口は `toolbar.js` の `applyHistory(dto)` の 1 つとする**（4.75.0）。`main.js` が `history:changed` を購読してこれを呼び、起動時（IMP-211）も同じ関数を通す。`dto.seq` が `state.history.seq` より小さければ写さず、写したら `#btn-back` / `#btn-forward` の `disabled` を決める（IMP-202, IMP-210）。
+- **フロントエンドで履歴を数え直さない**（FR-051）。履歴の正は Go 側にあり、2 か所で数えるとずれる（IMP-300 の 4）。
+- 履歴を変えないもの（再読み込み・監視・確認画面の `Open anyway`・ツリールートの変更）では送らない。
 
 ## 13.5 呼び出しの流れ（例）
 
@@ -500,13 +622,14 @@ sequenceDiagram
     FE->>APP: SetScrollTop(現在位置)
     FE->>APP: FollowLink(href)
     APP->>APP: 種類を判定 (IMP-312)
-    alt Markdown ファイル
-        APP->>DOC: Load + Render
+    alt 開けるファイル（Markdown・図・画像）
+        APP->>DOC: Load + 種類ごとの変換 (IMP-102)
         DOC-->>APP: Document
         APP->>APP: 履歴に積む / ツリールートは変えない
+        APP-->>FE: event history:changed (IMP-323)
         APP-->>FE: LinkResultDTO(kind=document)
         FE->>FE: renderDocument (IMP-220)
-    else 外部 URL / 画像 / その他
+    else 外部 URL / 開けないファイル
         APP->>OS: 既定ブラウザ・既定アプリで開く
         APP-->>FE: LinkResultDTO(kind=external)
         FE->>FE: 何もしない
@@ -527,10 +650,11 @@ sequenceDiagram
     participant APP as App (Go)
     participant OS as OS
 
-    U->>FE: エディタで開くボタン / Ctrl+E
-    FE->>APP: ListEditors()
+    U->>FE: エディタで開くボタン / Ctrl+E / ツリーの Open in editor...
+    FE->>APP: ListEditors() / ListEditorsForTree(path)
+    APP->>APP: 対象を editorTarget に控える (target、またはツリーの検査 IMP-135 を通ったファイル)
     APP->>APP: プリセットを検出 (IMP-172) + 設定と突き合わせ (UI-116)
-    APP-->>FE: EditorListDTO
+    APP-->>FE: EditorListDTO (FileName を含む)
     FE->>FE: 選択ウィンドウを表示 (IMP-252)
     opt Other... を選んで Browse
         FE->>APP: BrowseEditor()
@@ -541,7 +665,7 @@ sequenceDiagram
     end
     U->>FE: Open / Enter
     FE->>APP: OpenInEditor(id)
-    APP->>APP: id を絶対パスへ解決 + 対象は App.target (IMP-190)
+    APP->>APP: id を絶対パスへ解決 + 対象は editorTarget (IMP-190)
     APP->>APP: 起動前の検査 (IMP-171)
     alt 成功
         APP->>OS: exec.Command(editor, path).Start()
@@ -552,9 +676,13 @@ sequenceDiagram
         APP-->>FE: EditorResultDTO(error)
         FE->>FE: ウィンドウを閉じ、ステータスに表示 (IMP-315)
     end
+    opt Cancel / Esc / 外のクリック
+        FE->>APP: CloseEditor()
+        APP->>APP: editorTarget と確定前の候補を捨てる
+    end
 ```
 
-`ListEditors` は**画面の対象があるかを見ない。** 一覧を作るだけであり、対象の有無はボタンの活性（UI-021）で表す。
+`ListEditors` は**画面の対象を控えるだけで、対象が無いことを失敗にしない。** 対象の有無はボタンの活性（UI-021）で表す。対象が文字のファイルでなければ、一覧を空で返し、フロントエンドはウィンドウを出さない（IMP-310, IMP-252。ボタンも淡色である。UI-021）。控えが空のときの `OpenInEditor` の `editor-failed` は防御のためだけにある（4.76.0）。**4.75.0 で、ウィンドウを開いた時点の対象を控えるようにした**（FR-091。開いている間のドロップで文書が切り替わっても、ウィンドウに出ている名前のファイルを開く）。
 
 **対象が無いときに呼ばない判定は、フロントエンド側の 1 か所に置く。** ツールバーのボタンとショートカット（`Ctrl+E`）の両方が同じ入口を通るようにする。ボタンは淡色で防げるが（UI-021）、ショートカットはそれだけでは止まらない。判定が抜けると、操作案内の表示中に `Ctrl+E` を押したときだけ `Failed to start the editor.` が出る、原因の分からない失敗になる。
 
@@ -586,6 +714,7 @@ sequenceDiagram
         APP->>FS: 実体を読む
         APP->>DOC: SHA-256 が Known() と一致するか（EditSession.Plan。IMP-109）
         alt 一致しない
+            APP->>DOC: 取り消し履歴を捨てる（EditSession.Discard。IMP-109）
             APP->>DOC: openLocked で読み直し（trigger: reload。IMP-192）
             APP-->>FE: event document:changed
             APP-->>FE: EditResultDTO(edit-conflict)
@@ -627,9 +756,11 @@ sequenceDiagram
 | IMP-314 | 大きなファイルの確認 | MUST |
 | IMP-315 | エラーの分類と文言 | MUST |
 | IMP-316 | 編集モードの DTO | MUST |
+| IMP-317 | TreeActionDTO | MUST |
 | IMP-320 | イベント一覧 | MUST |
 | IMP-321 | document:changed の扱い | MUST |
 | IMP-322 | イベントの購読解除 | SHOULD |
+| IMP-323 | history:changed | MUST |
 | IMP-330 | 呼び出しの流れ（リンク遷移） | — |
 | IMP-331 | 呼び出しの流れ（エディタで開く） | — |
 | IMP-332 | 呼び出しの流れ（編集モードでの書き込み） | — |

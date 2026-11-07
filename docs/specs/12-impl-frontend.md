@@ -25,9 +25,11 @@ frontend/
 │   ├── state.js            フロントエンド側の状態
 │   ├── api.js              Go バインディングの薄いラッパ（13 章）
 │   ├── strings.js          UI 文言の一元定義（IMP-290）
-│   ├── toolbar.js          ツールバー
+│   ├── toolbar.js          ツールバー（群と区切り・戻る / 進むの淡色・修飾の群の出し入れ。IMP-202）
 │   ├── filetree.js         ファイルツリーペイン（読み込み・展開と折りたたみ・強調・クリックとキー操作）
 │   ├── treenodes.js        ファイルツリーの項目の組み立てと、項目の中を読む関数（DOM だけを扱う）
+│   ├── treemenu.js         ファイルツリーの右クリックメニューの項目と実行（IMP-270。4.75.0）
+│   ├── treefilter.js       ファイルツリーのフィルターの枚（IMP-271。4.75.0）
 │   ├── outline.js          アウトラインペイン
 │   ├── viewer.js           本文の挿入と後処理の順序・リンク・スクロール・フォーカス・再描画で引き継ぐ状態
 │   ├── decorate.js         本文の飾り付け（Alerts のアイコン・読み込みに失敗した画像・見出しのアンカー。IMP-225〜IMP-227）
@@ -51,7 +53,12 @@ frontend/
 │   ├── contextmenu.js      右クリックメニュー（IMP-249）
 │   ├── menuactions.js      右クリックメニューの項目の実行（IMP-249。4.70.0）
 │   ├── expand.js           拡大画面（IMP-253）
-│   ├── editmode.js         編集モード・チェックボックス・セルの編集欄・取り消し（IMP-260〜IMP-263）
+│   ├── editmode.js         編集モード・チェックボックス・取り消し（IMP-260, IMP-261, IMP-263）
+│   ├── blockedit.js        編集欄の共通の部品（開いている間の拒む・保留・確定の待ち・開き直し。IMP-264。4.75.0）
+│   ├── celledit.js         セルの編集欄（IMP-262。4.75.0 で editmode.js から分けた）
+│   ├── codeedit.js         コードブロックと図の編集欄（IMP-264。4.75.0）
+│   ├── format.js           選んだ文字の修飾（取り消し線と文字色。IMP-265。4.75.0）
+│   ├── visible.js          修飾するブロックの見える文字の数え方（IMP-266。4.75.0）
 │   ├── refs.js             目印の鍵の照合（IMP-260。state.js 以外を import しない）
 │   ├── docswitch.js        文書の切り替えと状態画面への移行の後始末（IMP-250 の leaveDocument）
 │   └── util.js             共通ユーティリティ
@@ -61,7 +68,9 @@ frontend/
 
 - **`about.js` と `editors.js` は `overlay.js` を import しない。** `overlay.js` が 400 行の目安を超えていた（v1.0.0 で 509 行）ため、エディタ選択ダイアログ（v1.0.0）に続いて情報ダイアログの中身も分けた。閉じる処理とリンクの処理は引数（`handlers`）で受け取る（IMP-251, IMP-252）。
 - **`treenodes.js` は `filetree.js` を import せず、Go を呼ばず、`state` も読まない。** `filetree.js` が 400 行の目安を超えた（v1.1.0 の BUG-012 の対策で 412 行）ため、項目の要素の組み立て（`fill`）と、項目の中を読む関数（`childByName` / `childGroup` / `depthOf` / `setDirIcons`）を分けた。
-- **`editmode.js` が 400 行の目安（IMP-011）を超えたら、セルの編集欄（IMP-262）を `celledit.js` へ分けてよい。** 分けても、鍵を読むのは `refs.js` だけとする（IMP-260）。
+- **v1.2.0 で、セルの編集欄（IMP-262）を `celledit.js` へ分け、セルとコードブロックの編集欄に共通する部品を `blockedit.js` に置いた**（4.75.0。v1.1.0 の `editmode.js` は 358 行で、コードブロックの編集欄を足すと 400 行の目安（IMP-011）を超える）。分けても、鍵を読むのは `refs.js` だけとする（IMP-260）。
+- **`blockedit.js` は `celledit.js` / `codeedit.js` / `editmode.js` / `viewer.js` / `navigate.js` / `main.js` を import しない**（いずれもこのモジュールを呼ぶ。IMP-264）。
+- **`visible.js` は自前の他のモジュールを import しない**（描画スモーク（BR-054）が直接読み、Go 側の数え方と突き合わせる。IMP-266）。
 - **`navigate.js` は `main.js` を import しない**（`main.js` が配線のために `navigate.js` を import する）。`main.js` が 400 行の目安を超えたため、文書を開く経路（ダイアログ・ツリー・リンク・履歴・再読み込み・確認画面の `Open anyway`）と、その結果（`OpenResultDTO` / `LinkResultDTO` / イベントの `DocumentDTO` / `ErrorDTO`）の反映を分けた。
 - **`decorate.js` は `viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` を import しない**（`viewer.js` が `renderDocument` の手順 4〜6 で呼ぶ）。`viewer.js` が 400 行の目安を超えたため、手順の順序を持たない飾り付け（IMP-225 / IMP-226 / IMP-227）を分けた。**`viewer.js` は `markBrokenImages` を再 export する**——描画スモーク（BR-054）は `viewer.js` を動的に読んでこの関数を呼び、`viewer.js` の連結の失敗を 1 件の失敗として捉える（UT-811 のケース 8）。`decorate.js` を直接読むと、その失敗が見えなくなる。
 - **`lazy.js` は `puml.js` の `ensurePlantUML` / `drawPlantUML` / `redrawPlantUML` と `drawing.js` の `startDrawing` を再 export する。** 呼び出し側（`viewer.js` / `theme.js` は `drawDiagrams` / `redrawDiagrams`、描画スモークの `harness.js` は `drawMermaid` / `drawPlantUML`）は `lazy.js` だけを import する（IMP-230 の export の置き場所は変えない）。**`drawing.js` は自前の他のモジュールを import しない**——図の器の連番（IMP-233 の 2 で Mermaid と PlantUML が共有する）と描画の世代を片方に置くと循環する。
@@ -84,22 +93,39 @@ export function initToolbar(deps) { /* … */ }
 ```html
 <div id="app" data-theme="light">
   <header id="toolbar" class="toolbar">
+    <button id="btn-back"     class="tb-btn" type="button" disabled></button>
+    <button id="btn-forward"  class="tb-btn" type="button" disabled></button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <button id="btn-open"     class="tb-btn" type="button"></button>
-    <button id="btn-reload"   class="tb-btn" type="button"></button>
-    <button id="btn-theme"    class="tb-btn" type="button"></button>
-    <button id="btn-outline"  class="tb-btn tb-toggle" type="button" aria-pressed="true"></button>
+    <button id="btn-reload"   class="tb-btn" type="button" disabled></button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <button id="btn-filetree" class="tb-btn tb-toggle" type="button" aria-pressed="false"></button>
+    <button id="btn-outline"  class="tb-btn tb-toggle" type="button" aria-pressed="true"></button>
+    <button id="btn-theme"    class="tb-btn" type="button"></button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <button id="btn-edit"     class="tb-btn" type="button" disabled></button>
     <button id="btn-editmode" class="tb-btn tb-toggle" type="button" aria-pressed="false" disabled></button>
+    <span id="tb-format" class="tb-group" hidden>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <button id="btn-strike" class="tb-btn" type="button" disabled></button>
+      <button id="btn-color"  class="tb-btn" type="button" aria-haspopup="menu" aria-expanded="false" disabled></button>
+    </span>
     <span class="tb-spacer"></span>
     <button id="btn-about"    class="tb-btn" type="button"></button>
   </header>
 
   <main id="content" class="content">
     <nav id="pane-filetree" class="pane pane-filetree" hidden>
-      <div class="pane-title"></div>
+      <div class="pane-head">
+        <div class="pane-title"></div>
+        <div class="pane-actions">
+          <button id="btn-treefilter" class="pane-btn" type="button" aria-haspopup="dialog" aria-expanded="false"></button>
+        </div>
+      </div>
       <div class="pane-subtitle" id="tree-root-name"></div>
-      <ul id="tree" class="tree" role="tree"></ul>
+      <div class="pane-body">
+        <ul id="tree" class="tree" role="tree"></ul>
+      </div>
     </nav>
     <div id="resizer-filetree" class="resizer" hidden></div>
 
@@ -130,16 +156,26 @@ export function initToolbar(deps) { /* … */ }
   <div id="overlay" class="overlay" hidden></div>
   <div id="expand-view" class="expand-view" role="dialog" aria-modal="true" hidden></div>
   <div id="contextmenu" class="contextmenu" role="menu" hidden></div>
+  <div id="contextsubmenu" class="contextmenu contextmenu-sub" role="menu" hidden></div>
+  <div id="treefilter" class="treefilter" role="dialog" hidden></div>
   <div id="dropzone" class="dropzone" hidden></div>
   <div id="tooltip" class="tooltip" hidden></div>
 </div>
 ```
 
+- **ツールバーのボタンは、群（移動・ファイル・表示・編集・修飾）の順に並べ、群の間に区切り（`.tb-sep`）を置く**（UI-020。4.75.0）。**ボタンの id は変えない**——`panes.js` は `btn-${name}` で id を組み立て、`overlay.js` / `theme.js` も id を直接参照している。並びは `index.html` の順序だけで変わる。**`role="toolbar"` は付けない**（付けると矢印キーでボタン間を移る作法が求められ、`Tab` で移る今の操作（UI-021）と変わる）。
+  - **修飾の群（`#tb-format`）は、手前の区切りと一緒に `hidden` で出し入れする**（編集モードの間だけ。UI-020）。**隠すとき、その中のボタンにフォーカスがあれば `#btn-editmode` へ移す**（`hidden` の要素にフォーカスが残ると `Tab` の起点が失われる）。**`#btn-editmode` が `disabled` なら（ファイルの削除・状態画面で終えたとき）、本文ペインへ移す**（`focusViewer()`。4.76.0）。
+  - **v1.1.0 の `#btn-outline` の `margin-left` は消す**（4.75.0。群の間隔は区切りが受け持つ。DSP-032, DSP-103）。
+  - **押せるかどうか**（UI-021）: `#btn-back` / `#btn-forward` は `state.history`（IMP-323）、`#btn-reload` は画面の対象があるか（`welcome` では押せない。v1.1.0 は淡色にしていなかった）、`#btn-edit` は画面の対象が文字のファイルか（`welcome` と画像ファイルでは押せない。FR-090。種類は `state.doc.kind`、状態画面の間は `state.target.targetKind`（`ErrorDTO.TargetKind`。IMP-307）で見る）、`#btn-editmode` は `state.editable`、`#btn-strike` / `#btn-color` は IMP-265 の `canFormat()`。**起動時は `#btn-about` 以外の押せるかが決まらないボタンを `disabled` で読み込む**（確定するまで押せない側に倒す）。
+- **ファイルツリーペインは、見出しの行（`.pane-head`）とツリールートの名前の行（`#tree-root-name`）を、スクロールする器（`.pane-body`）の外に置く**（UI-030。4.75.0）。v1.1.0 は `.pane` そのものがスクロールする器で、見出しの行は `position: sticky; top: 0` で縦にしか留まらず、**横にスクロールすると右端に置いたボタンが画面の外へ流れた**（実現性検討の試作で、186px のスクロールで 209px → 23px へ流れた。付録 A.14）。器の外に出すと動かない。**アウトラインのペインは変えない**（ボタンを置かない。DSP-110）。
+- **`#btn-treefilter` は `.pane-actions` の中に置き、今後ツリーの機能のボタンを足すときも、ここへ右から左へ並べる**（UI-030）。
+- **`#treefilter` と `#contextsubmenu` はペインと本文の外に置く**（4.75.0）。フィルターの枚はペインより広く、アウトラインや本文の上へはみ出す（UI-033）——ペインの中に置くと、ペインの端で切れ、ツリーと一緒にスクロールして流れる（検索バーの受け皿で起きたのと同じ問題）。位置はボタンの位置から求める（IMP-271）。重なり順は DSP-015。
+- **ツールバーの文字色の一覧は `#contextmenu` を使い回す**（右クリックメニューと同時に開かない。UI-085。IMP-249）。
 - **`#viewer-frame` は v1.1.0 で足した受け皿である**（UI-055, DSP-126）。スクロールしない器として `#viewer` を包み、**編集モードの枠と右下のラベル（`#editmode-badge`）をスクロールに流されない位置に置く。** `#viewer` の中に置くと、`#searchbar` と同じく内容と一緒に流れる（下記）。**`#viewer` がスクロールする唯一の器であることは変わらない**（UI-051）。
   - `#viewer-frame` は `position: relative`（枠とラベルの位置の基準。DSP-126）とし、**これまで `.viewer` が `main` の中で持っていた伸縮（`flex: 1; min-width: 0`）を引き受ける。** 中の `#viewer` は `#viewer-frame` の幅と高さいっぱいに広げる。**本文ペインの寸法とスクロールの振る舞いを v1.0.0 から変えない。**
 - **`#expand-view` と `#contextmenu` を `#overlay` の中に入れない。** `#overlay` は情報ダイアログとエディタ選択ダイアログの暗幕であり、全面を覆う（IMP-251）。拡大画面はステータス領域を覆わず（UI-104）、右クリックメニューは情報ダイアログの**上に**出る（ライセンス欄。FR-063）。重なり順は DSP-015 が定める。
-- **新しい id（`viewer-frame` / `editmode-badge` / `expand-view` / `contextmenu`）も、同梱資産が決め打ちする id と重ならないことを `scripts/domids` で確かめる**（BR-043, 下記の IMPORTANT）。
-- **`scripts/domids` が読むのは `index.html` だけであり、JavaScript で作る id は検査されない。** v1.1.0 で足すモジュール（IMP-228, IMP-229, IMP-249, IMP-253, IMP-260〜IMP-263）は JavaScript で `id` を作らず、要素はクラスで探す。
+- **新しい id（`viewer-frame` / `editmode-badge` / `expand-view` / `contextmenu`。4.75.0 で `btn-back` / `btn-forward` / `tb-format` / `btn-strike` / `btn-color` / `btn-treefilter` / `contextsubmenu` / `treefilter`）も、同梱資産が決め打ちする id と重ならないことを `scripts/domids` で確かめる**（BR-043, 下記の IMPORTANT）。
+- **`scripts/domids` が読むのは `index.html` だけであり、JavaScript で作る id は検査されない。** v1.1.0 で足したモジュール（IMP-228, IMP-229, IMP-249, IMP-253, IMP-260〜IMP-263）と v1.2.0 で足すモジュール（IMP-264〜IMP-266, IMP-270, IMP-271）は JavaScript で `id` を作らず、要素はクラスで探す。
 - **画面の id（`index.html` と JavaScript が作る要素）は `user-content-` で始めない**（AR-053）。この接頭辞は文書から生まれる id のためのものである（IMP-117）。**`$(id)`（`util.js`）で画面の要素を探してよいのは、この規則があるからである**——文書から生まれる id（Mermaid のラベルの id を含む。IMP-231）は接頭辞で始まり、画面の id と同じ値にならない（[BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md)）。**CSS の id セレクタ（`#app` など）も、同じ id を持つすべての要素に効く**ため、この規則が要る。
 - **`#btn-edit` と `#btn-editmode` は `disabled` を持った状態で読み込む。** 押せるかどうかは起動後の状態から決める（UI-021。`#btn-edit` は `welcome` では押せず、`#btn-editmode` は起動時に `unavailable`。DSP-320）。**確定するまで押せない側に倒す。**
 - **`#btn-edit`・ショートカットの id `edit`（IMP-244）・`toolbar.js` の `canEdit()` は「エディタで開く」を指す**（v1.0.0 からの名前）。編集モードは `editmode` / `editMode` の名前で持つ。**id と関数名を改名しない**——改名すると `scripts/domids` の検査対象と、それを参照する記述も動く。紛らわしかったのは文言であり、文言は `tipOpenInEditor` へ改めた（IMP-290）。
@@ -161,7 +197,7 @@ export function initToolbar(deps) { /* … */ }
 - **`#viewer` に `tabindex="-1"` を与える。目的は 3 つある。** 負値のため `Tab` の巡回順には入らない。
   1. 検索バーを閉じたときにフォーカスを本文へ戻す（UI-080）
   2. **文書を表示したときにフォーカスを本文ペインへ移す**（UI-051, IMP-220）。**これが無いとキーボードでスクロールできない**（[調査報告](../bugs/2026-09-05-bug-007-viewer-focus-on-open.md)）
-  3. **セルの編集欄を閉じた後、拡大画面を閉じた後に、フォーカスを本文ペインへ戻す**（IMP-262, IMP-253, IMP-244。いずれも IMP-220 の `focusViewer()` を通す）
+  3. **編集欄（セル・コードブロック）を閉じた後、拡大画面を閉じた後に、フォーカスを本文ペインへ戻す**（IMP-262, IMP-264, IMP-253, IMP-244。いずれも IMP-220 の `focusViewer()` を通す）
 - **`#searchbar` は `.searchbar-anchor` の中へ入れ、`#viewer` の先頭に置く**（DSP-160）。
   受け皿は**高さ 0 の `position: sticky`** とする。`#viewer` は `overflow-y: auto` の
   スクロールする器であり、**その中の絶対配置は内容と一緒に流れて画面外へ出る。**
@@ -200,25 +236,32 @@ UI-022 を実装する。
 
 | シンボル ID | 使用箇所 | 出典（Octicons） |
 | --- | --- | --- |
+| `icon-back` / `icon-forward` | ツールバー「戻る」「進む」（UI-020, FR-051。4.75.0） | `arrow-left` / `arrow-right` |
 | `icon-open` | ツールバー「開く」、welcome 画面（DSP-181） | `file-directory` |
 | `icon-reload` | ツールバー「再読み込み」 | `sync` |
 | `icon-moon` / `icon-sun` | ツールバー「テーマ切り替え」（状態で入れ替え） | `moon` / `sun` |
 | `icon-outline` | ツールバー「アウトライン」 | `list-unordered` |
 | `icon-filetree` | ツールバー「ファイルツリー」、ツリーの展開済みディレクトリ | `file-directory-open-fill` |
-| `icon-pencil` | ツールバー「エディタで開く」（UI-020, FR-090） | `pencil` |
+| `icon-external` | ツールバー「エディタで開く」（UI-020, FR-090。**4.75.0 で鉛筆から変えた**） | `link-external` |
+| `icon-pencil` | コードブロックと図の「編集」ボタン（UI-053, FR-145。**4.75.0 でツールバーの「エディタで開く」から譲った**） | `pencil` |
 | `icon-editmode` | ツールバー「編集モード」（UI-020, FR-140） | `checkbox` |
+| `icon-strike` | ツールバー「取り消し線」（UI-020, FR-146。4.75.0） | `strikethrough` |
+| `icon-color` | ツールバー「文字色」（UI-020, FR-147。4.75.0） | `paintbrush` |
+| `icon-filter` | ファイルツリーの見出しのフィルターボタン（UI-033。4.75.0） | `filter` |
 | `icon-actual-size` | 図と画像の「原寸表示」ボタン（UI-053, DSP-124）。**拡大画面の `1:1` は文字のボタンであり、使わない**（DSP-173） | `arrow-both` |
 | `icon-expand` | 図と画像の「拡大画面」ボタン（UI-053, DSP-124） | `screen-full` |
 | `icon-sort` / `icon-sort-asc` / `icon-sort-desc` | 表の並べ替えボタン（並べ替えなし / 昇順 / 降順。UI-054, DSP-125） | `unfold` / `sort-asc` / `sort-desc` |
 | `icon-zoom-in` / `icon-zoom-out` | 拡大画面の `+` / `-`（UI-104, DSP-173） | `zoom-in` / `zoom-out` |
 | `icon-about` | ツールバー「アプリケーション情報」 | `question` |
 | `icon-dir` | ツリーの折りたたみ状態のディレクトリ（DSP-112） | `file-directory` |
-| `icon-file` | ツリーのファイル（DSP-112） | `file` |
-| `icon-chevron-right` / `icon-chevron-down` | ツリーの展開矢印（DSP-112）。**`icon-chevron-down` は検索バー「次へ」（DSP-160）でも使う** | `chevron-right` / `chevron-down` |
+| `icon-file` | ツリーの Markdown のファイル（DSP-112） | `file` |
+| `icon-diagram` | ツリーの図のファイル（PlantUML・Mermaid。UI-030, DSP-112。4.75.0） | `workflow` |
+| `icon-image` | ツリーの画像ファイル（UI-030, DSP-112。4.75.0） | `file-media` |
+| `icon-chevron-right` / `icon-chevron-down` | ツリーの展開矢印（DSP-112）。**`icon-chevron-down` は検索バー「次へ」（DSP-160）でも使う**。**`icon-chevron-right` は `Text color` のサブメニューの矢印（DSP-141）にも使う**（4.76.0） | `chevron-right` / `chevron-down` |
 | `icon-search` | 検索バーの先頭（DSP-160） | `search` |
 | `icon-chevron-up` | 検索バー「前へ」（DSP-160） | `chevron-up` |
-| `icon-close` | 検索バー「閉じる」、情報ダイアログ「×」、エディタ選択ダイアログ「×」、拡大画面の閉じるボタン（DSP-160, DSP-170, DSP-172, DSP-173） | `x` |
-| `icon-copy` / `icon-check` | コードブロックのコピーボタン（FR-061, DSP-252） | `copy` / `check` |
+| `icon-close` | 検索バー「閉じる」、情報ダイアログ「×」、エディタ選択ダイアログ「×」、拡大画面の閉じるボタン、ファイルツリーのフィルターの枚の閉じるボタン（DSP-160, DSP-170, DSP-172, DSP-173, DSP-115） | `x` |
+| `icon-copy` / `icon-check` | コードブロックのコピーボタン（FR-061, DSP-252）。**`icon-check` は右クリックメニューと文字色の一覧の印（UI-085, DSP-141）にも使う** | `copy` / `check` |
 | `icon-note` | Alerts: NOTE（DSP-261） | `info` |
 | `icon-tip` | Alerts: TIP | `light-bulb` |
 | `icon-important` | Alerts: IMPORTANT | `report` |
@@ -226,7 +269,9 @@ UI-022 を実装する。
 | `icon-caution` | Alerts: CAUTION、エラー画面（DSP-181） | `stop` |
 | `icon-link` | 見出しのアンカー（MD-020, IMP-227, DSP-023） | `link` |
 
+- **v1.2.0 で足す 8 つのシンボル（`arrow-left` / `arrow-right` / `strikethrough` / `paintbrush` / `workflow` / `file-media` / `filter` / `link-external`）は、2026-11-07 に unpkg の 19.33.0 で実在を確かめた**（実現性検討の付録 A.4）。取り込むときに原本を `frontend/icons/` に置き、改めて原本を見る。
 - **v1.1.0 で足した 8 つのシンボルは、取り込む前に `@primer/octicons` 19.33.0 に上の名前で実在することを確かめる。** 無ければ同じ版の中から意味の近いものを選び、この表を直す（版を上げて取りに行かない。上の「BR-042 の管理対象には加えない」と同じ理由）。
+- **同じ鉛筆の絵柄を、2 つの機能に使わない**（UI-020 の NOTE。4.75.0）。v1.1.0 まで `icon-pencil` は「エディタで開く」だったが、本文の中の「その場で直す」（コードブロックと図の編集）に譲った。
 - **`icon-sort` は「並べ替えなし」を表す。昇順・降順と同じ絵柄を淡色にして流用しない。** 色だけで状態を区別することになる（DSP-125, UI-054 の「昇順と降順を区別できる」）。
 
 > [!IMPORTANT]
@@ -240,7 +285,7 @@ UI-022 を実装する。
 // js/state.js
 export const state = {
   doc: null,          // DocumentDTO（13 章）。未表示なら null
-  target: null,       // 状態画面が対象にしているファイル { path, displayPath, outsideTree }（ErrorDTO。IMP-307）。文書の表示中と welcome では null（IMP-250, DSP-302）
+  target: null,       // 状態画面が対象にしているファイル { path, displayPath, outsideTree, targetKind }（ErrorDTO。IMP-307）。文書の表示中と welcome では null（IMP-250, DSP-302）
   treeRoot: '',       // 絶対パス
   theme: 'light',        // 実際に適用している値。Go 側が解決済みで渡す（IMP-303）
   themeExplicit: false,  // 利用者が自分でテーマを切り替えたか（FR-071）
@@ -254,6 +299,9 @@ export const state = {
   editable: false,    // 編集モードを開始できるか。DocumentDTO.editable の写し（IMP-302）
   editMode: false,    // 編集モードか。DocumentDTO.editMode / EditModeDTO.on の写し（IMP-316）
   editSeq: 0,         // 写した編集モードの状態の版。DocumentDTO.editSeq / EditModeDTO.seq（IMP-302）
+  history: { canBack: false, canForward: false, seq: 0 }, // HistoryDTO の写し（IMP-323。4.75.0）
+  treeShowDiagrams: true,  // ツリーのフィルター（FR-037。ConfigDTO。4.75.0）
+  treeShowImages: false,
 };
 ```
 
@@ -263,6 +311,8 @@ export const state = {
 - **保存しない一時的な状態は `state` に置かない。** 幅不足によるアウトラインの一時的な非表示（IMP-246）は `panes.js` のモジュール変数とする。`state` は「Go 側の状態の写し」であり、そこに保存しない値を混ぜると、`configPatch` が何を送るべきかが読めなくなる。**表の並べ替え（IMP-229）・原寸表示（IMP-228）・拡大画面（IMP-253）の状態も、それぞれのモジュール変数とする。**
 - **`editable` / `editMode` / `editSeq` は Go 側の状態の写しであり、`state` に置く**（IMP-109 が正）。`configPatch` には含めない（保存しない。UI-111）。
 - **`target` も Go 側の状態（画面が対象にしているファイル。IMP-190 の `target`）の写しであり、`state` に置く**（IMP-250）。`configPatch` には含めない（NFR-042）。
+- **`history` も Go 側の履歴の写しであり、`state` に置く**（IMP-323）。`configPatch` には含めない（NFR-042）。**`seq` が手元より小さい `HistoryDTO` は写さない。**
+- **`treeShowDiagrams` / `treeShowImages` は保存する設定であり、`configPatch` に含める**（UI-110, FR-037）。**起動時に `init.config` の値を写す**（IMP-211。4.76.0）——写さないと、枚のチェックボックスとツリーの中身（Go 側は保存値で絞る）が食い違い、最初の `saveConfig` が既定値を送って保存値を上書きする。
 
 `state` を変更したあとの通知は、次の 1 関数を必ず経由する。
 
@@ -274,6 +324,7 @@ export function saveConfig()    // 現在の状態を Go 側へ通知する
 
 - **`api.updateConfig` を直接呼ばない。** バインドメソッドの呼び出しは Wails がメッセージごとに処理するため、立て続けに 2 つ投げると**到着順が入れ替わりうる**。実際に、ペインの開閉と別の設定変更を続けて行うと先に投げたほうが後に処理され、新しい値が古い値で上書きされた。`saveConfig` は前の応答を待ってから次を送ることで順序を保つ。
 - 送信待ちが既にあるときは新たに積まない。`ConfigDTO` は差分ではなく状態の全体であり、待っている 1 つが送信時点の最新を読めば足りる。
+- **`saveConfig()` は、呼んだ時点の状態を含む送信が終わったときに解決する `Promise` を返す**（4.75.0）。ツリーのフィルターを切り替えたら、これを待ってから `ReadDir` を呼ぶ（IMP-271）——Go 側の `ReadDir` は `UpdateConfig` で受け取った値で絞る（IMP-303）。
 - **`configPatch` の `theme` は、利用者が自分で切り替えるまで空文字とする**（FR-071, IMP-303）。`state.theme` は Go 側が OS 設定まで解決した値であり、それをそのまま返すと「まだ選んでいない」状態が最初の保存で失われ、以後 OS 設定を変えても追従しなくなる。
 
 ### IMP-211: 起動順序 **MUST**
@@ -284,13 +335,22 @@ async function boot() {
   const init = await api.getInitialState(); // 13 章 InitialStateDTO
   applyTheme(init.config.theme);
   applyPanes(init.config);       // 倍率は復元しない。常に 100 %（UI-111, IMP-242）
+  state.treeShowDiagrams = init.config.treeShowDiagrams; // ツリーのフィルター（FR-037。4.76.0）
+  state.treeShowImages = init.config.treeShowImages;     // 写さないと、最初の saveConfig が既定値で上書きする
+  state.treeRoot = init.treeRoot;
   initToolbar(); initTooltip(); initFileTree(); initOutline(); initViewer(); initPanes();
   initSearch(); initZoom(); initOverlay(); initDnd();
   initMedia(); initTableSort(); initExpand(); initContextMenu(); initEditMode();
+  initBlockEdit(); initCellEdit(); initCodeEdit(); initFormat();      // 4.75.0（IMP-262, IMP-264, IMP-265）
+  initTreeMenu(); initTreeFilter(init.extensions);                    // 4.75.0（IMP-270, IMP-271）
+  applyHistory(init.history);                                         // toolbar.js。戻る・進むの淡色（IMP-323）
   initShortcuts();
   subscribe();                              // Go からのイベント購読（IMP-322）
   if (init.document) renderDocument(init.document);
-  else showStateScreen('welcome');
+  else {
+    enterStateScreen(init.stateKind || 'welcome', init.error);       // 状態画面も同じ入口（IMP-250, IMP-303）
+    if (init.error && !isStateScreenError(init.error)) showMessage(errorText(init.error), 'error'); // 開けなかった理由（FR-012, IMP-193）
+  }
   if (init.treeRoot) await loadTreeRoot(init.treeRoot);
 }
 ```
@@ -311,12 +371,13 @@ export function renderDocument(doc) // doc: DocumentDTO
 処理順序を固定する。**手順の番号は他の文書からも参照される**（「IMP-220 の手順 11」など）。**番号を振り直さない。** 後から足した手順は `5a` のように枝番で書く。枝番は Markdown の番号付きリストにならないため、箇条書きの先頭に太字で番号を置く。
 
 - **0a.** **引き継ぐ状態を控える、または解除する**（DSP-352）。
-  - **セルの編集欄は、どちらの場合も取り消す**（IMP-262, FR-142）。**右クリックメニューもどちらの場合も閉じる**（IMP-249。本文を差し替えると、メニューが指していたリンクや選択範囲が無くなる。DSP-352）。**控えるより前に閉じる**——閉じるとフォーカスが開く前の要素（チェックボックスなど）へ戻り、その順番を控えられる。偽の場合は `leaveDocument()` も閉じるが、開いていなければ何もしない。
+  - **編集欄（セル・コードブロック）は、ここでは開いていない**（4.75.0）。開いている間は、文書を切り替える操作を拒み、再描画を控える（IMP-264）ため、`renderDocument` は編集欄を閉じた後にしか呼ばれない。v1.1.0 はここでセルの編集欄を取り消していた（FR-142 の改訂で、フォーカスが外れても入力を捨てなくなった）。**右クリックメニューもどちらの場合も閉じる**（IMP-249。本文を差し替えると、メニューが指していたリンクや選択範囲が無くなる。DSP-352）。**控えるより前に閉じる**——閉じるとフォーカスが開く前の要素（チェックボックスなど）へ戻り、その順番を控えられる。偽の場合は `leaveDocument()` も閉じるが、開いていなければ何もしない。
   - `doc.sameDocument` が**真**（同じ文書の再描画。1.7）なら、差し替える前の DOM から次を控える。**開いている `<details>` の順番**（`#markdown` の中の出現順）、**フォーカスのあるチェックボックスの順番**（**鍵の合うチェックボックス（`isOwnRef(input, "task")` が真のもの）を文書の順に並べたときの位置**。目印の値の番号 `<n>` を読まない——値を解くのは `refs.js` だけである（IMP-260）。Go 側は番号を文書の順に振る（IMP-120）ため、位置と番号は一致する。4.67.0。FR-014）、並べ替え（IMP-229 の `captureSort`）、原寸表示（IMP-228 の `captureMedia`）。拡大画面は閉じない（IMP-253）。
   - **偽**（文書の切り替え）なら何も控えず、`docswitch.js` の `leaveDocument()`（IMP-250）で後始末する。拡大画面を閉じ（IMP-253 の `onDocumentSwitched`）、並べ替えと原寸表示の状態を空にする。**状態画面へ移るときと同じ関数を通す。**
 - **0b.** **`state.doc = doc` とし、`state.target` を `null` にする**（状態画面の対象を消す。IMP-250）。0a は差し替える前の DOM を**前の描画の鍵**で照合し、6b〜6d と 11 は新しい DOM を**新しい鍵**で照合する（`isOwnRef` は `state.doc.refKey` を読む。IMP-260）。**この位置から動かさない**——`F5` や更新検知では鍵が変わる（IMP-102）ため、前にずらすとチェックボックスの順番を控えられず、後ろにずらすと並べ替えと編集の印が付かない。
 - **0.** 検索を閉じる（IMP-241）。包んだ `<mark>` を解いてから差し替える。ここを飛ばすと、検索状態が前の文書の `<mark>` を指したまま残る（FR-080 の「検索対象文書の切り替え・再描画時は検索状態をリセットする」）。
 - **1.** `#markdown.innerHTML = doc.html` で**一度に**挿入する（AR-052）。分割挿入や逐次追加を行わない。
+- **1a.** **文書の種類を本文の器に写す**（4.75.0）。`#markdown` に、画像ファイル（`doc.kind === 'image'`）なら `is-image-file` のクラスを付け、それ以外では外す（市松模様と中央への配置。DSP-129）。**図のファイルで `doc.noDiagrams` が真なら、本文の先頭に `<p class="no-diagrams">` を差し込み、`textContent` で `S.noDiagrams` を入れる**（FR-025, FR-026）。**判断は `doc.kind` と `doc.noDiagrams` で行い、HTML の `class` を見ない**（IMP-302）。
 - **2.** `#state-screen` を隠す。
 - **3.** コピーボタンを付与する（IMP-221）。
 - **4.** GitHub Alerts のアイコンを付与する（IMP-225）。
@@ -326,11 +387,11 @@ export function renderDocument(doc) // doc: DocumentDTO
 - **6a.** 0a で控えた `<details>` を、同じ順番のものについて開き直す（FR-014）。**9 より前に行う**——開くと高さが変わり、先にスクロール位置を合わせると位置がずれる。
 - **6b.** 画像に原寸表示・拡大画面のボタンを配線し、控えた原寸表示を当て直す（IMP-228）。**`restoreMedia` を `attachImageButtons` より前に呼ぶ**——読み込みの済んだ画像は `attachImageButtons` の中で包まれ、その時点で当て直すためである。
 - **6c.** GFM の表に並べ替えのボタンを付け、控えた並べ替えを当て直す（IMP-229。`doc.trigger` を渡す）。
-- **6d.** 編集モードの状態を画面へ写す（IMP-260 の `applyEditMode(doc)`）。
+- **6d.** 編集モードの状態を画面へ写す（IMP-260 の `applyEditMode(doc)`）。コードブロックと図の編集のボタン（IMP-264）と修飾の操作（IMP-265）もここで付け直す。**修飾で残すと決めた選択（IMP-265）は、ここで当て直す。**
 - **7.** スクロール連動の監視対象を作り直す（IMP-222）。
 - **8.** `doc.needsMermaid` / `doc.needsKaTeX` / `doc.needsPlantUML` に応じて遅延ロードを起動する（IMP-230。図は `lazy.js` の `drawDiagrams`）。**図の描画が 1 つ終わるたびに（成功・失敗のどちらでも）、`media.js` の `onDiagramSettled` を呼ぶ**（IMP-228）。図のボタンの配線、原寸表示の当て直し、拡大画面の差し替え（IMP-253）はそこで行う。**描画の世代を 1 つ進める**——前の描画の図の知らせは、ここから先は届かない（IMP-230）。
 - **9.** スクロール位置を設定する（13 章 `ScrollDTO` の `mode` に従う）。
-- **10.** アウトライン（IMP-224）とステータス（DSP-150）を更新する。
+- **10.** アウトライン（IMP-224）とステータス（DSP-150）を更新する。**画像ファイルでは、文字コードと行数の代わりに大きさ（`doc.fileSize`）を出し、寸法は画像の読み込みを待って足す**（IMP-228。UI-060）。
 - **11.** **本文ペインへフォーカスを移す**（UI-051。`focusViewer()`）。**ただし 0a でチェックボックスの順番を控えていて、同じ順番のチェックボックスがあれば、そこへ移す**（FR-014, UI-051 の例外）。
 
 3〜6d は DOM 走査を伴うため、`#markdown` を 1 回だけ走査してまとめて処理してよい（NFR-011）。**ただし、ここで順序を定めたもの（5a は 6 より前、6a は 9 より前）は保つ。**
@@ -349,8 +410,8 @@ export function renderDocument(doc) // doc: DocumentDTO
 export function focusViewer()   // #viewer へ focus({ preventScroll: true })。ダイアログと拡大画面の表示中は何もしない
 ```
 
-- **本文ペインへフォーカスを移す箇所は、すべてこの関数を通す**（手順 11、IMP-244 の `Esc` による編集の取り消し、IMP-253 の拡大画面を閉じたとき、IMP-260 / IMP-262 の編集欄を閉じたとき）。上の 2 つの条件を 1 か所で満たすためである。
-- **他のモジュールへは `main.js` が `deps.focusViewer` として渡す。** `editmode.js` / `expand.js` が `viewer.js` を import すると循環しうる（`viewer.js` は描画の後処理のために多くのモジュールを import する。IMP-201）。
+- **本文ペインへフォーカスを移す箇所は、すべてこの関数を通す**（手順 11、IMP-244 の `Esc` による編集の取り消し、IMP-253 の拡大画面を閉じたとき、IMP-260 / IMP-262 / IMP-264 の編集欄を閉じたとき）。上の 2 つの条件を 1 か所で満たすためである。
+- **他のモジュールへは `main.js` が `deps.focusViewer` として渡す。** `editmode.js` / `expand.js` / `blockedit.js` / `celledit.js` / `codeedit.js` が `viewer.js` を import すると循環しうる（`viewer.js` は描画の後処理のために多くのモジュールを import する。IMP-201）。
 - 拡大画面の判定（`isExpandOpen()`）があるため、**拡大画面を閉じる処理は、閉じた状態にしてからこの関数を呼ぶ**（IMP-253）。
 
 > [!NOTE]
@@ -437,7 +498,8 @@ export function linkHref(anchor)  // 書かれたリンク先。HTML の <a> は
 - **次の場合は `preventDefault()` だけを行い、遷移の処理へ進まない。**
   - クリックが `.media-actions`（IMP-228）の中で起きた。画像をリンクで囲んだ記法でも、ボタンの操作ではリンク先へ移らない（UI-053）
   - **編集モードの間に、鍵の合う `data-ref` を持つセル（`th` / `td`）の中で起きた**（FR-050 の例外、FR-142）。ダブルクリックの 1 回目で文書が切り替わるのを防ぐ。判定は IMP-260 の `isEditableCell(element)` を使い、ここで鍵を読まない
-- 同一文書内のアンカー（`#...`）のみフロントエンドで処理し、該当見出しへスクロールする。それ以外は `href` の生値を Go 側へ渡し、判断を委ねる（IMP-312）。フロントエンドでスキームやパスの解釈を行わない。
+  - **編集モードの間に、鍵の合う図のブロック（Mermaid・PlantUML）の中で起きた**（図の中のリンク。FR-050 の例外、FR-145。4.74.0）。判定は IMP-260 の `isEditableBlock(element)` を使う
+- 同一文書内のアンカー（`#...`）のみフロントエンドで処理し、該当見出しへスクロールする。それ以外は `href` の生値を Go 側へ渡し、判断を委ねる（IMP-312）。**編集欄が開いている間は、Go へ渡すリンクを種類を問わず拒む**（IMP-264 の `refuseIfEditing()`。外部の URL と開けないファイルへのリンクも拒む——画面の側ではリンク先の種類を判定しない。同一文書内のアンカーは拒まない。FR-140。4.76.0。利用者の判断）。フロントエンドでスキームやパスの解釈を行わない。
 - **移動先は `util.js` の `findInDocument(fragment)` で探す**（AR-053）。**`document.getElementById` をフラグメントにそのまま使わない**——本文に無い id（`#overlay` など）が画面の要素に当たる（[BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md)）。
 
   ```js
@@ -464,7 +526,7 @@ export function linkHref(anchor)  // 書かれたリンク先。HTML の <a> は
 
 - **移動先が折りたたみ（`<details>`。[MD-026](04-markdown.md)）の中にある場合は、祖先の `<details>` を開いてからスクロールする**（[FR-050](02-functional.md)）。閉じたままの要素は `scrollIntoView` の対象にならず、**大きさを返すのにスクロールは起きない**。**IMP-241 と同じ関数を使う**（`util.js` に置く）。**文書を開いた直後のアンカー復元（IMP-302 の `anchor` モード）も同じ経路を通す。**
 - `target="_blank"` を含むリンクも同じ経路で処理する。
-- **Go 側の結果（`LinkResultDTO`。IMP-305）で状態画面を出すのは、`Kind` が状態画面の種別（`needs-confirm` / `too-large` / `render-error`。リンク先の Markdown が大きい・変換に失敗した）のときだけとする。** OS への委譲に失敗した `open-failed`（許可されていないスキーム・既定のアプリケーションが無い。IMP-315）は、ほかの種別と同じくステータス領域に出し、**本文を残す**（FR-050, FR-053）。**v1.0.0 は委譲の失敗が `render-error` に写され、状態画面が出て本文が消えていた**（[BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)）。
+- **Go 側の結果（`LinkResultDTO`。IMP-305）で状態画面を出すのは、`Kind` が状態画面の種別（`needs-confirm` / `too-large` / `render-error`。リンク先の Markdown が大きい・変換に失敗した）のときだけとする。** OS への委譲に失敗した `open-failed`（許可されていないスキーム・既定のアプリケーションが無い。IMP-315）は、ほかの種別と同じくステータス領域に出し、**本文を残す**（FR-050, FR-110）。**v1.0.0 は委譲の失敗が `render-error` に写され、状態画面が出て本文が消えていた**（[BUG-013](../bugs/2026-09-14-bug-013-link-open-failure-state-screen.md)）。
 
 ### IMP-224: アウトラインの構築 **MUST**
 
@@ -503,11 +565,12 @@ export function markBrokenImages(root)   // viewer.js が再 export する（描
 ```
 
 - `root.querySelectorAll('img')` を走査し、各要素に `error` を配線する。`error` で、**その `<img>` を `<span class="img-broken">` へ置き換える**（DSP-123）。
-- **置き換えたら、`img` の `data-media-index`（IMP-228 の手順 5a で振った番号）を `span` へ写し、`media.js` の `onImageBroken(span)` を呼ぶ**（IMP-228）。拡大画面が開いていた画像の読み込みに失敗したことを、拡大画面へ知らせるためである（IMP-253）。
-- **配線した時点ですでに失敗しているものを別途拾う。** `img.complete && img.naturalWidth === 0` なら、その場で置き換える。
+- **置き換えたら、`img` の `data-media-index`（IMP-220 の手順 5a で IMP-228 の `numberImages` が振った番号）を `span` へ写し、`media.js` の `onImageBroken(span)` を呼ぶ**（IMP-228）。拡大画面が開いていた画像の読み込みに失敗したことを、拡大画面へ知らせるためである（IMP-253）。
+- **配線した時点ですでに失敗しているものを別途拾う。** `img.complete` で `img.decode()` が拒否されたら、その場で置き換える（4.75.0。v1.1.0 は `naturalWidth === 0` で判定していた）。**`naturalWidth` を失敗の判定に使わない**——固有の大きさを持たない SVG は、読み込みに成功しても `naturalWidth` が 0 になりうる（画像ファイルの表示と、URL の版で再描画のたびに同じ画像を使い回す場面で起きる。FR-027, IMP-118）。`naturalWidth` は寸法を出すかどうかの判断にだけ使う（IMP-228）。
 - **代替テキストは自前で描く。** `span.textContent = img.alt` とする。**`alt` は文書由来の文字列であり、`innerHTML` に渡してはならない**（IMP-220）。
 - **枠と色は CSS が与える**（DSP-123）。フロントエンドが用意するのは**要素とテキストだけ**であり、体裁を JavaScript で組み立てない。
 - ローカル画像とリモート画像（MD-071）を区別しない。FR-022 はどちらも同じ扱いと定めている。
+- **画像ファイル（FR-027）の画像も同じ経路を通る**（4.75.0）。代替テキストはファイル名（IMP-128）。原寸表示と拡大画面のボタンは付かず、ステータス領域の寸法も出さない（大きさだけ。IMP-228, DSP-150）。
 - 文書全体の描画は止めない（FR-022, FR-111）。
 
 > [!IMPORTANT]
@@ -563,7 +626,7 @@ export function decorateHeadings(root)
 
 ### IMP-228: 図と画像のボタンと原寸表示 **MUST**
 
-FR-120 / FR-121 / UI-053 / DSP-124 を実装する。
+FR-120 / FR-121 / FR-027 / UI-053 / DSP-124 を実装する。
 
 ```js
 // js/media.js
@@ -583,7 +646,7 @@ export function naturalSize(target)          // 本来の大きさ { width, heig
 
 | 種類 | 対象の要素 | 鍵 | 数え方 |
 | --- | --- | --- | --- |
-| Mermaid 図 | **鍵の合う**（IMP-260 の `isOwnRef(block, 'mermaid')`）`.code-block` の `.mermaid-rendered svg` | `mermaid:<n>` | **鍵の合う Mermaid のブロックを文書の順に数えた位置**（Go 側が `data-ref` に文書の中の出現順で振る番号と一致する。**描画に失敗したブロックも数える**。IMP-120） |
+| Mermaid 図 | **鍵の合う**（IMP-260 の `isOwnRef(block, 'mermaid')`）`.code-block` の `.mermaid-rendered svg` | `mermaid:<n>` | **鍵の合う Mermaid のブロックを文書の順に数えた位置**（Go 側が `data-ref` に描画される順（DOM の順。脚注の中のものは末尾。BUG-027）で振る番号と一致する。**描画に失敗したブロックも数える**。IMP-120） |
 | PlantUML 図 | **鍵の合う**（`isOwnRef(block, 'plantuml')`）`.code-block` の `.plantuml-rendered svg` | `plantuml:<n>` | **鍵の合う PlantUML のブロックを文書の順に数えた位置**（**描画しなかった `data-puml-error` のブロックも数える**。IMP-120） |
 | 画像 | `#markdown img`（`span.img-broken` へ置き換わる前の順） | `image:<n>` | `innerHTML` の直後に `img` を走査した順。**読み込みに失敗したものも数える** |
 
@@ -598,7 +661,7 @@ export function naturalSize(target)          // 本来の大きさ { width, heig
 **ボタンの組み立て**
 
 - 図は、`.code-block` の中に `<div class="media-actions">` を置き、`<button class="media-btn media-btn-actual" aria-pressed="false">` と `<button class="media-btn media-btn-expand">` を入れる。**コピーボタン（IMP-221）の左に並ぶ**（DSP-124）。
-- 画像は、**読み込みに成功した時点で**次の形に包む。成功の判定は `load`、または配線時の `img.complete && img.naturalWidth > 0` とする（IMP-226 と同じく、配線時に済んでいるものを拾う）。**失敗した画像は包まない。**
+- 画像は、**読み込みに成功した時点で**次の形に包む。成功の判定は `load`、または配線時の `img.complete` で `img.decode()` が解決したときとする（IMP-226 と同じく、配線時に済んでいるものを拾う。4.75.0 で `naturalWidth > 0` から改めた）。**失敗した画像は包まない。**
 
   ```html
   <span class="media-image">                 <!-- 位置の基準。スクロールしない -->
@@ -615,17 +678,20 @@ export function naturalSize(target)          // 本来の大きさ { width, heig
 **「縮小表示中」の判定**（FR-120）
 
 ```js
-export function naturalSize(target)  // img は naturalWidth / naturalHeight。svg は下記
+export function naturalSize(target)  // img は naturalWidth / naturalHeight（0 なら下記）。svg は下記
 function isReduced(target)           // naturalSize(target).width > target.getBoundingClientRect().width + 0.5
 ```
 
 - **SVG の本来の幅と高さ**は、`width` / `height` 属性が px の数値（単位の無い数値を含む）ならその値、そうでなければ `viewBox` の幅と高さとする。Mermaid は `width="100%"` と `style="max-width: <幅>px"` を出し、PlantUML は `width` を px で出す。**`getBBox` を使わない**——描画の内容の外接矩形であり、図の大きさではない。
+- **img の `naturalWidth` が 0（固有の大きさを持たない SVG）なら、本文で描いている大きさ（`getBoundingClientRect`）を本来の大きさとみなす**（4.76.0）。0 のまま使うと、画像ファイル（拡大画面のボタンを常に出す。FR-027）を拡大画面で開いたとき、中身の大きさが 0 になる（DSP-173）。
 - 判定は次の契機でやり直す（`requestAnimationFrame` で 1 フレームにまとめる。NFR-012）。
   - `#markdown` の幅の変化（`ResizeObserver`。ウィンドウとペインの幅。FR-120）
   - 画像の `load`、図の描画の完了（`onDiagramSettled`）
   - `<details>` の `toggle`（閉じた中の要素は幅を持たないことがある）
 - **拡大画面へ移している対象（`.media-frame` の中に無い対象）は判定し直さない**（IMP-253）。拡大画面での大きさで決めると、閉じたときにフォーカスを戻すボタンが隠れうる。
-- ボタンの表示は `hidden` 属性で切り替える（IMP-202）。**原寸表示のボタン**は「縮小表示中 **または** 原寸表示中」に出し、**拡大画面のボタン**は図なら常に、画像なら原寸表示のボタンと同じ条件で出す（FR-120 の表）。
+- ボタンの表示は `hidden` 属性で切り替える（IMP-202）。**原寸表示のボタン**は「縮小表示中 **または** 原寸表示中」に出し、**拡大画面のボタン**は図なら常に、画像なら原寸表示のボタンと同じ条件で出す（FR-120 の表）。**画像ファイル（`state.doc.kind === 'image'`）の画像は、読み込みに成功していれば拡大画面のボタンを常に出す**（FR-027。4.75.0）。**判断は `state.doc.kind` で行い、`.image-file` の有無で行わない**（IMP-128）。
+- **画像ファイルの画像が読み込まれたら、`status.js` に本来の寸法（`naturalWidth` / `naturalHeight`）を渡し、ステータス領域の右端に出す**（UI-060, DSP-150。4.75.0）。**固有の大きさを持たない SVG**（`naturalWidth` が 0）と、読み込みに失敗した画像（IMP-226）では寸法を出さない（大きさだけ）。
+- **編集モードの間は、コードブロックと図に編集のボタン（`media-btn-edit`）も置く**（UI-053。IMP-264）。図では `.media-actions` の先頭（左端）に入れ、コードブロックでは `.media-actions` を作って編集のボタンだけを入れる。**付けるのも外すのも IMP-264 が行う**（このモジュールは場所を用意するだけにする）。**図の器は、IMP-264 が先に作っていればそれを使い**（同じ `data-media-key`。描画を待つ間と描けなかった図にも編集のボタンを置くため）、原寸表示・拡大画面のボタンを編集のボタンの右に足す（4.76.0）。
 
 **原寸表示**（FR-121）
 
@@ -644,6 +710,9 @@ function isReduced(target)           // naturalSize(target).width > target.getBo
 - **テーマの切り替え（IMP-243）で図が描き直されたときも `onDiagramSettled` を通り、原寸表示を当て直す**（FR-121, DSP-370）。
 
 ### IMP-229: 表の表示上の並べ替え **SHOULD**
+
+> [!NOTE]
+> **編集欄が開いている間は、並べ替えのボタンを押しても並べ替えない**（FR-140 の表の「拒む」。4.74.0）。押したら IMP-264 の `refuseIfEditing()` を呼び、警告を出して戻る。並べ替えは行を動かし、開いているセルの編集欄の位置が変わるためである。
 
 FR-130 / UI-054 / DSP-125 を実装する。
 
@@ -764,7 +833,7 @@ mermaid.initialize({
 - テーマ切り替え時は、`mermaid.initialize` をやり直したうえで、`ownSource(block)`（保存しておいた `data-source`）から再描画する（FR-070）。
 - **`securityLevel: 'strict'` は、URL を指定した `click` のリンクを止めない**（11.17.2 で実測。ノードが SVG の `<a xlink:href>` で包まれる）。止まるのはコールバックだけである。図の中のリンクは、IMP-223 が本文のリンクと同じ経路で扱う（MD-081, [BUG-015](../bugs/2026-09-17-bug-015-mermaid-click-link-navigation.md)）。
   - **資産の読み込みが済んでいるかを条件にしない。** 初めての図の資産を読み込んでいる間に切り替えると、読み込みを待っていた文書の描画は世代が変わって描かずに戻る（IMP-230）。条件にすると、**図が原文のまま残る**（v1.0.0 には世代が無く、読み込みの後にそのまま描いていたため起きなかった）。読み込み中なら同じ読み込みを待ち（IMP-230）、鍵の合うブロックが無ければ資産を読まずに戻る（NFR-013）。
-  - **描き直す図のブロックは、描き終えるまで描き直す前の高さに固定する**（DSP-370。`drawing.js` の `holdHeight` / `releaseHeight`）。描画済みの SVG を原文の `<pre>` へ戻した時点で高さが変わり、図より下の本文が動くためである。**固定は `onDiagramSettled` を呼ぶ直前に解く**（成功・失敗のどちらでも）——原寸表示の判定と当て直しは図の本来の配置で測る（IMP-228）。世代が変わって描かずに戻ったブロックは解かない（次の描画が解くか、本文ごと差し替わる）。
+  - **描き直す図のブロックは、描き終えるまで描き直す前の高さに固定する**（DSP-370。`drawing.js` の `holdHeight` / `releaseHeight`。ブロックに `is-redrawing` を付け、高さを `--diagram-height` に入れる）。描画済みの SVG を原文の `<pre>` へ戻した時点で高さが変わり、図より下の本文が動くためである。**固定は `onDiagramSettled` を呼ぶ直前に解く**（成功・失敗のどちらでも）——原寸表示の判定と当て直しは図の本来の配置で測る（IMP-228）。世代が変わって描かずに戻ったブロックは解かない（次の描画が解くか、本文ごと差し替わる）。
   - **描けなかった図（理由を添えたブロック。`.mermaid-error` / `.plantuml-error`）は描き直さない**（DSP-370）。原文のコードブロックは CSS だけで新しい配色に追随する。描き直すと、PlantUML は描けないまま原文の `<pre>` を器に置き換えるため、理由が出るまで本文が動き、**原文の中の検索のハイライトが外れる**（v1.0.0 から。IMP-241）。読み込めなかった資産の読み直しは、次の文書の描画（`F5` を含む）で行う。
 
 ### IMP-232: KaTeX の初期化 **MUST**
@@ -858,13 +927,15 @@ export function applyResponsive()    // ウィンドウ幅に応じた一時的�
 - **再読み込み操作（[FR-015](02-functional.md)）でもツリーを読み直す**（FR-035 の 2 番目の契機）。`Reload()`（IMP-310）は表示中の文書を開き直すだけでツリーに触れないため、**フロントエンドが続けて `loadTreeRoot` を呼ぶ。**
 
 > [!IMPORTANT]
-> **FR-035 は再読み込みの契機を 3 つ定めている。担当を分けて書く。**
+> **FR-035 は再読み込みの契機を 5 つ定めている（4.73.0 で 3 つから 5 つになった）。担当を分けて書く。**
 >
 > | # | 契機 | 担当 |
 > | --- | --- | --- |
 > | 1 | ツリーペインを非表示から表示に切り替えたとき | **本 ID**（`togglePane` の呼び出し側） |
 > | 2 | 再読み込み操作（FR-015）を行ったとき | **本 ID**（`reloadCurrent` の後段） |
 > | 3 | ディレクトリノードを折りたたんでから再度展開したとき | [DSP-330](22-display-states.md)（展開のたびに `ReadDir` を呼ぶ） |
+> | 4 | ツリーの右クリックメニューでツリールートを変えたとき（4.73.0） | IMP-270（`SetTreeRoot` / `SetTreeRootUp` の戻り値で `loadTreeRoot`） |
+> | 5 | ツリーのフィルターを切り替えたとき（4.73.0） | IMP-271（展開の状態・強調・スクロール位置を保って読み直す `reloadTreeKeepingState`） |
 >
 > **1 と 2 の担当がどの ID にも無かったため、実装されないまま通過した**（[調査報告](../bugs/2026-09-04-bug-002-filetree-reload-on-show.md)）。**箇条書きが複数ある要求では、90 章の対応表の 1 行が「全部見た」に見える。** 項目ごとに担当があるかを確かめる。
 - 幅の下限は 160 px、上限はウィンドウ幅の 40 %（IMP-153 の補足）。ドラッグ中に毎回クランプする。
@@ -898,6 +969,8 @@ export function syncHits(root)   // 図・数式を描き終えたときに件�
 - 現在位置のヒットには `search-hit` に加えて `search-hit-current` を付与する。配色は DSP-161 で定める。クラス名を 2 種に分けることで、移動時は付け替えだけで済み、DOM の作り直しが起きない。
 - 検索終了時（`Esc`・文書切り替え・再描画・**表の並べ替え**。FR-080, IMP-229）は、包んだ `<mark>` を必ず解除して元のテキストノードへ戻す。解除処理を持たないハイライト実装を採らない。
 - **自前で足したボタン（`.copy-btn` / `.media-actions` / `.sort-btn`）は `svg` しか持たず、上の `svg` の除外で走査から外れる。** セルの編集欄（`input.cell-editor`。IMP-262）の値はテキストノードではなく、走査に入らない。
+- **文字を持つ自前の要素は、走査から外す**（4.75.0）: 編集欄の `Save` / `Cancel`（`.edit-actions`。IMP-262, IMP-264）と、図のファイルの `No diagrams found.`（`p.no-diagrams`。IMP-220）。UI の文言であり、文書の文字ではない。コードブロックの編集欄（`textarea.code-editor`）の値も走査に入らない。
+- **コードブロックの編集欄を開いている間は、隠した元の中身（`.is-code-editing` の中の `[hidden]`）を走査から外す**（4.76.0）。数えると、移っても見えないヒットが件数に残る（BUG-004 と同じ形）。**編集欄を開いたとき・閉じたとき・確定の直後に中身を置き換えたとき（`pre.code-pending`、セルの `.cell-pending`）に、そのブロックで `syncHits` を呼ぶ**——DOM から外れた `<mark>` を落とし、戻った中身を探し直す（BUG-017 と同じ形）。
 - 大文字小文字を区別しない比較には `toLowerCase()` を用いる。正規表現でユーザ入力を直接使わない（メタ文字の混入を避けるため）。
 - 200 件を超えるヒットがある場合もハイライトは全件に付ける。件数表示は実数を出す。
 - **`syncHits(root)` は、図か数式を 1 つ描き終えたときに呼ぶ**（IMP-230, IMP-232。4.69.0。[BUG-017](../bugs/2026-09-18-bug-017-search-hits-before-rendering.md)）。検索を開いていなければ何もしない。
@@ -997,7 +1070,7 @@ export function initShortcuts(handlers)  // id をキーとする処理の表
 
 - `window` の `keydown` に 1 つだけリスナを置き、テーブル駆動で処理する。個々の要素にキーハンドラを分散させない。
 - 入力欄（検索バーの入力欄、セルの編集欄）にフォーカスがある間は、テキスト編集に関わるキーを素通しする（UI-090）。**素通しさせるのは編集に関わるものだけとする。** UI-090 は「テキスト編集に関わるキーを優先する」と定めているのであって、入力中はすべてのショートカットを止める、とは定めていない。`Ctrl+Shift+T` などは入力中も有効とする。
-  - **入力欄の判定は `input.search-input, input.cell-editor`（文字の入力欄）に限る。** チェックボックス（`input[type=checkbox]`）とラジオボタンは入力欄に数えない。v1.0.0 の `isEditing` は `input` 要素をすべて入力欄とみなしている。**v1.1.0 では再描画の後にフォーカスがチェックボックスへ戻る**（IMP-220 の手順 11）ため、そのままでは**チェックボックスを切り替えた直後の `Ctrl+Z` / `Ctrl+Y` が素通しされ、既定の動作にも何も無いため黙って何も起きない**（FR-144）。
+  - **入力欄の判定は `input.search-input, input.cell-editor, textarea.code-editor`（文字の入力欄。コードブロックの編集欄は 4.75.0）に限る。** チェックボックス（`input[type=checkbox]`）とラジオボタンは入力欄に数えない。v1.0.0 の `isEditing` は `input` 要素をすべて入力欄とみなしている。**v1.1.0 では再描画の後にフォーカスがチェックボックスへ戻る**（IMP-220 の手順 11）ため、そのままでは**チェックボックスを切り替えた直後の `Ctrl+Z` / `Ctrl+Y` が素通しされ、既定の動作にも何も無いため黙って何も起きない**（FR-144）。
 - **`preventDefault()` はリスナ側で一括して呼ぶ。** 個々のハンドラに書き漏らす余地を残さない。ただし**ハンドラが `false` を返したときは「何もしなかった」とみなし、既定の動作を止めない**。検索が閉じているときの `Enter` が、フォーカス中のボタンの実行（UI-021）を妨げないようにするためである。
 - **1 文字のキーは小文字へ揃えて表を引く。** `Shift` と `CapsLock` で `KeyboardEvent.key` の大小が変わるためであり、`Shift` の有無は修飾子側で区別する。CapsLock が入っているだけで `Ctrl+O` が効かない、という事態を避ける。
 - 修飾子の順序は `Ctrl` → `Alt` → `Shift` に固定し、表の表記もこれに揃える。
@@ -1014,13 +1087,25 @@ export function initShortcuts(handlers)  // id をキーとする処理の表
 | `undo` | `Ctrl+Z` | IMP-263 の `undoEdit()` | 編集モードでなければ `false`（既定の動作を止めない） |
 | `redo` | `Ctrl+Y` / `Ctrl+Shift+Z` | IMP-263 の `redoEdit()` | 同上 |
 
-- **`undo` / `redo` はテキスト編集に関わるキーとして扱う。** 入力欄（検索バーの入力欄、セルの編集欄）にフォーカスがある間は素通しし、入力欄の中の取り消しに任せる（FR-144, UI-090）。
+- **`undo` / `redo` はテキスト編集に関わるキーとして扱う。** 入力欄（検索バーの入力欄、セル・コードブロックの編集欄）にフォーカスがある間は素通しし、入力欄の中の取り消しに任せる（FR-144, UI-090）。
+
+**v1.2.0 で足す割り当て**（UI-090。4.75.0）
+
+| id | キー | 処理 | 返り値 |
+| --- | --- | --- | --- |
+| `back` / `forward` | `Alt+←` / `Alt+→` | `navigate.js` の `goBack()` / `goForward()`。**ツールバーのボタン・マウスのサイドボタンと同じ入口を通す**（FR-051） | なし（**履歴の端でも既定の動作を止める**——WebView 自身のページの履歴を戻らせない。AR-060。サイドボタンと同じ。v1.1.0 も止めていた。4.76.0） |
+| `strike` | `Ctrl+Shift+X` | IMP-265 の `toggleStrike()`。**入力欄（検索バー・編集欄）の中では働かない**（FR-146）——テキスト編集に関わるキーとして素通しせず、何もしない | 使えないとき `false` |
+
+- **`Ctrl+Enter` と `Tab` / `Shift+Tab` は表に入れない。** コードブロックの編集欄の `keydown` が受ける（IMP-264。IMP-262 の `Enter` と同じく、特定の要素で受ける例外）。
+- **マウスのサイドボタン**（FR-051 の SHOULD。UI-090）: `window` の `mouseup`（キャプチャ）で `event.button` が `3`（戻る）/ `4`（進む）なら、`preventDefault()` してから `goBack()` / `goForward()` を呼ぶ。**`mousedown` と `auxclick` でも `button` が `3` / `4` なら `preventDefault()` する**——WebView 自身のページの履歴を戻らせない（AR-060）。**`Alt+←` / `Alt+→` と同じ場面（拡大画面・ダイアログ・右クリックメニュー・文字色の一覧の表示中）では何もしない**（既定の動作は止める）。**L1 でサイドボタンが DOM へ届くかは実機で確かめる**——届かなくても機能が欠けるだけで、安全上の問題にはならない（実現性検討の 3.5）。
+- **編集欄が開いている間は、`open` / `reload` / `back` / `forward` / `editMode`（終える側）/ `undo` / `redo` / `strike`（`undo` 以下の 3 つは、編集欄の外にフォーカスがあるとき。中にあれば上の入力欄の扱い）を拒む**（FR-140 の表。UI-090）。各ハンドラの入口で IMP-264 の `refuseIfEditing()` を呼び、真なら何もせずに戻る（警告とフォーカスの戻しは `refuseIfEditing` が行う）。**`theme` / `outline` / `fileTree` / `search` / 倍率 / `about` は拒まない**（表示中の文書を差し替えない）。
 - **`Shift+F10` とアプリケーションキーは割り当てない。** WebView はこれらのキーで `contextmenu` イベントを発火させるため、右クリックと同じ経路（IMP-249）で受ける。
-- **`Esc` の振り分けは UI-090 の順序に固定し、この 1 か所に書く。** (1) `isContextMenuOpen()` なら `closeContextMenu()`、(2) `isExpandOpen()` / `isAboutOpen()` / `isEditorsOpen()` のうち開いているものを閉じる、(3) `isCellEditing()` なら `cancelCellEdit()` を呼び、`focusViewer()` で本文ペインへフォーカスを戻す（IMP-262, UI-055）、(4) `isSearchOpen()` なら検索を閉じる。**1 回の押下で 1 つだけに働かせ、最初に当てはまったところで戻る。**
-  - **他のモジュールは `Esc` を扱わない。** セルの編集欄の `keydown`（IMP-262）と `handleExpandKey`（IMP-253）は `Esc` を受け持たない。**2 か所に書くと、`stopPropagation` の有無で順序が入れ替わる。**
+- **`Esc` の振り分けは UI-090 の順序に固定し、この 1 か所に書く。** (1) `isContextMenuOpen()` なら `closeContextMenu()`（サブメニューが開いていればサブメニューだけ。ツールバーの文字色の一覧も同じ要素。IMP-249）、(2) `isExpandOpen()` / `isAboutOpen()` / `isEditorsOpen()` のうち開いているものを閉じる、(3) **編集欄（セル・コードブロック）にフォーカスがあれば**（`Save` / `Cancel` のボタンを含む。IMP-264 の `isEditBoxFocused()`）、`cancelEditBox()` を呼び、`focusViewer()` で本文ペインへフォーカスを戻す（IMP-262, IMP-264, UI-055）、(4) フィルターの枚（IMP-271）と検索バーのうち、**フォーカスのある方**を閉じる。どちらにもフォーカスが無ければ、**フィルターの枚を先に**閉じる（4.73.0）。**1 回の押下で 1 つだけに働かせ、最初に当てはまったところで戻る。**
+  - **開いたままの編集欄は、フォーカスが無ければ `Esc` で取り消さない**（UI-090。4.73.0）。検索バーを閉じるつもりの `Esc` で入力を捨てないためである。v1.1.0 の (3) は「編集欄が開いていれば」だった（フォーカスが外れたら取り消していたため、同じことだった）。
+  - **他のモジュールは `Esc` を扱わない。** 編集欄の `keydown`（IMP-262, IMP-264）・`handleExpandKey`（IMP-253）・フィルターの枚（IMP-271）は `Esc` を受け持たない。**2 か所に書くと、`stopPropagation` の有無で順序が入れ替わる。**
   - IME の変換中の `Esc` は変換の取り消しであり、ここへ来ない（上記の `isComposing`）。
-- **右クリックメニューを開いている間（`isContextMenuOpen()`）は、`Esc` 以外の割り当てを働かせず、既定の動作も止めない。** メニューの中の `↑` / `↓` / `Enter` / `Space` / `Tab` は `#contextmenu` の `keydown` が受ける（IMP-249。IMP-248 のツリー、IMP-262 の編集欄と同じく、特定の要素で受ける例外）。**止めないと、検索バーを開いたまま入力欄でメニューを開き、`Paste` へ移って `Enter` を押したとき、`Enter` が検索の移動（`searchNext`）へ回って貼り付けが起きない。**
-- **セルの編集欄にフォーカスがある間は、`Enter` / `Shift+Enter` を検索の移動へ回さない**（FR-142, UI-090）。編集欄自身の `keydown` が確定を受け持つ（IMP-262）。
+- **右クリックメニューを開いている間（`isContextMenuOpen()`）は、`Esc` 以外の割り当てを働かせず、既定の動作も止めない。** **ただし `Alt+←` / `Alt+→` は、働かせずに既定の動作だけを止める**（AR-060。サイドボタンと同じ。4.76.0）。 メニューの中の `↑` / `↓` / `Enter` / `Space` / `Tab` は `#contextmenu` の `keydown` が受ける（IMP-249。IMP-248 のツリー、IMP-262 の編集欄と同じく、特定の要素で受ける例外）。**止めないと、検索バーを開いたまま入力欄でメニューを開き、`Paste` へ移って `Enter` を押したとき、`Enter` が検索の移動（`searchNext`）へ回って貼り付けが起きない。**
+- **編集欄（セル・コードブロック）にフォーカスがある間は、`Enter` / `Shift+Enter` を検索の移動へ回さない**（FR-142, FR-145, UI-090）。セルの編集欄の `keydown` が確定を受け持ち（IMP-262）、コードブロックの編集欄では改行である（IMP-264）。
 - **拡大画面を開いている間は、`Esc` を先に上の振り分けで扱い、UI-104 の表の残りのキーを `expand.js` の `handleExpandKey(event)` へ渡し、それ以外のショートカットを止める**（`Ctrl+Q` を除く）。止めるときは既定の動作も抑止する（IMP-251 と同じ理由。`Ctrl` + `+` が WebView 自身の拡大になるため）。**ただし `Enter` / `Shift+Enter`（`searchNext` / `searchPrev`）は既定の動作を残す**——フォーカスしている操作バーのボタンの実行であり（IMP-253）、ダイアログの表示中と同じ扱いである（IMP-251）。**割り当てを持たないキー（`Tab` / `Space` など）には何もしない**（`Tab` は `#expand-view` の `keydown` が操作バーの中で巡らせる）。
 - **ツールチップのキー表記**（IMP-290）は、`editMode` の代表キーを `Ctrl+Shift+M` とする。
 
@@ -1044,7 +1129,7 @@ export function initDnd()   // Wails の drop リスナの取り付けと、ド�
   OnFileDrop(() => {}, true);
   ```
 
-  - **コールバックは空でよい。** 結果はイベント（`document:opened` / `tree:root-changed` / `error`）で受け取る（IMP-320, IMP-322）。ここに処理を書くと経路が 2 つになる。
+  - **コールバックは空でよい。** 結果はイベント（`document:opened` / `tree:root-changed` / `history:changed` / `error`）で受け取る（IMP-320, IMP-322, IMP-323）。ここに処理を書くと経路が 2 つになる。
   - 第 2 引数（`useDropTarget`）は `true` とする。ただし**これが検査するのは JS 側のコールバックだけ**であり、Go 側のコールバックは検査を通らずに呼ばれる。
 - **受け口となる要素は CSS で宣言する。** ドロップ地点の要素の計算済みスタイルに `--wails-drop-target: drop`（既定のプロパティ名と値）があるかで、Wails の**JS 側のコールバック**が呼ばれるかが決まる。カスタムプロパティは継承するため、`#app` に 1 度だけ置けばウィンドウ全体が対象になる（UI-070, FR-011）。**この宣言は Go 側のコールバックの条件ではない**（上記のとおり検査を通らない）。宣言を残すのは UI-070 の意図を DOM 上に残すためである。
 - **`#dropzone` は `pointer-events: none` とする。** Wails は `document.elementFromPoint` でドロップ地点の要素を求めるため、全面を覆うオーバーレイがマウスイベントを受け取ると、その下の要素を検出できずドロップが無効になる。
@@ -1058,7 +1143,8 @@ export function initDnd()   // Wails の drop リスナの取り付けと、ド�
   - **`dragstart` が出ていたら（ウィンドウ内で始まったドラッグなら）出さない。** `dragend` と `drop` で下ろす。**本文のリンクをドラッグすると `text/uri-list` が付く**ため、型だけでは本文中のドラッグと区別できない
   - **既定の動作を止められた `dragstart` では旗を立てない**（`internal = !event.defaultPrevented`）。**中止された `dragstart` には `dragend` が続かない**ため（拡大画面の台紙が止めている。IMP-253）、立てたままにすると**旗が固定され、以後ドロップの案内が二度と出なくなる。** 台紙のリスナは対象の段階で動き、`window`（泡立ちの段階）へ来たときには既に止まっている
 - `dragleave` はウィンドウ内の要素間移動でも発生するため、カウンタ方式で入れ子の出入りを数え、0 になったときだけオーバーレイを隠す。
-- 受け取ったパスの判定（Markdown か、ディレクトリか）は Go 側で行う（IMP-313）。
+- 受け取ったパスの判定（開けるファイルか、ディレクトリか）は Go 側で行う（IMP-313）。
+- **編集欄が開いている間のドロップは、Go 側が拒む**（FR-140。4.75.0）。フロントエンドは編集欄を開いたら `api.setEditBoxOpen(true)`、閉じたら `false` を呼ぶ（IMP-264, IMP-310）。**Linux ではドロップが JavaScript を通らずに Go へ届く**（下の IMPORTANT）ため、フロントエンドだけでは止められない。拒んだら Go が `error` イベント（`edit-busy`）を送り、フロントエンドは警告を出す（ダイアログ・拡大画面の表示中はフォーカスを動かさない）。**編集欄を出す前に `await api.setEditBoxOpen(true)` を呼び**、応答の後で、対象の要素がまだ DOM にあり、その間に文書が届いていないことを確かめてから出す（届いていたら `setEditBoxOpen(false)` を呼んで出さない。IMP-264）。それでも、Go へ知らせる前にドロップが処理され、その結果のイベントが後から届いた場合は、外部の更新と同じく控え、閉じた時点で当てる（**入力は失われない。FR-140 の「切り替えずに拒む」から外れるのは、この競合の窓だけであり、許容する**）。
 - **拡大画面・右クリックメニュー・ダイアログの表示中もドロップを受け付ける**（UI-090）。ドロップで文書が切り替わると `document:opened` が届き、`renderDocument` の手順 0a（IMP-220）が拡大画面と右クリックメニューを閉じる。**ダイアログは閉じない。** このモジュールで個別に閉じない（経路を 1 つに保つ）。
 
 > [!IMPORTANT]
@@ -1100,8 +1186,8 @@ UI-026 / DSP-380 を実装する。**利用者の設定と、幅による一時�
 UI-024 / DSP-102 を実装する。
 
 - **ブラウザ既定の `title` 属性を使わない。** DSP-102 はボタンの下 6px・遅延 400ms・反転色・折り返しなしという具体値を定めているが、`title` は見た目も遅延も表示位置も OS が決めており、いずれも満たせない。英日併記（`Open / 開く (Ctrl+O)`）で横に長くなるため、折り返さないことが特に効く。
-- 対象は**ツールバーのボタン**と、**v1.1.0 で足した本文中・拡大画面のボタン**（図と画像のボタン UI-053、並べ替えのボタン UI-054、拡大画面の操作バー UI-104）とする。ツリー・アウトライン・ステータスの「全文をツールチップで示す」（DSP-113, DSP-151）は隠れた文字を読ませるためのものであり、`title` のままでよい。**コードブロックのコピーボタン（FR-060）には出さない**（UI-053）。
-- **英日併記はツールバーのボタンだけ**とし、本文中と拡大画面のボタンは英語だけの文言を置く（UI-024）。書式の違いは文言（IMP-290）の側で表し、このモジュールは `data-tip` の文字列をそのまま出す。
+- 対象は**ツールバーのボタン**と、**v1.1.0 で足した本文中・拡大画面のボタン**（図と画像のボタン UI-053、並べ替えのボタン UI-054、拡大画面の操作バー UI-104）と、**v1.2.0 で足したファイルツリーペインの見出しのボタン（フィルターボタン）とフィルターの選択肢**（UI-024, UI-033）、**コードブロックと図の編集のボタン**（UI-053）とする。ツリー・アウトライン・ステータスの「全文をツールチップで示す」（DSP-113, DSP-151）は隠れた文字を読ませるためのものであり、`title` のままでよい。**コードブロックのコピーボタン（FR-060）には出さない**（UI-053）。
+- **英日併記はツールバーのボタンと、ファイルツリーペインの見出しのボタン・フィルターの選択肢だけ**とし（4.73.0）、本文中と拡大画面のボタンは英語だけの文言を置く（UI-024）。書式の違いは文言（IMP-290）の側で表し、このモジュールは `data-tip` の文字列をそのまま出す。
 - 文言は `data-tip` 属性に置く（`toolbar.js` の `setTip`）。同じ文字列を `aria-label` にも与える（IMP-295）。
 - 描画する要素は `#tooltip` の 1 つだけを使い回す。ボタンごとに持たせない。
 - 配線は `#app` への委譲で行い、`closest('[data-tip]')` で対象を求める。ボタンごとにリスナを置くと、文言が変わるボタン（テーマ。IMP-243）や、描画のたびに作り直すボタン（IMP-228, IMP-229）で付け替えが要る。
@@ -1109,6 +1195,7 @@ UI-024 / DSP-102 を実装する。
 - 位置はボタンの下・水平中央。**ウィンドウの外へ出る場合は左右に寄せて収める。** 左端の `Open` と右端の `?` は、中央に置くと枠外へ出る。
 - `pointer-events: none` を与える。ツールチップがポインタを受け取ると `pointerout` が発生して点滅する。
 - 押下時・ウィンドウのフォーカス喪失時・キー操作時に消す。トグルの状態が変わると文言が古くなるため（IMP-243）。
+- **フィルターボタンの文言は、表示している種類から組み立てる**（`S.tipFilter(['Markdown', 'Diagrams'])`。UI-024, UI-033）。切り替えたら `data-tip` と `aria-label` を書き換える（テーマのボタンと同じ。IMP-243）。
 
 ### IMP-248: ツリーのキーボード操作 **SHOULD**
 
@@ -1135,6 +1222,7 @@ UI-031 を実装する。
 | `←` | ディレクトリが展開されていれば折りたたむ。**それ以外では何もしない** |
 | `Enter` | **クリックと同じ扱い**。ファイルなら開き、ディレクトリなら展開・折りたたみを切り替える |
 
+- **`Shift+F10` とアプリケーションキーは、ここで扱わない。** WebView が `contextmenu` を発火させ、IMP-249 がツリーのメニュー（IMP-270）を開く（UI-031。4.73.0）。
 - **修飾キー（`Alt` / `Ctrl` / `Meta` / `Shift`）が押されているときは何もしない。** `Alt+←` / `Alt+→` は履歴の移動である（UI-090, IMP-244）。**ここで奪うと戻れなくなる。**
 - **上の表の 4 行すべてで `preventDefault()` する**（キーとしては 5 つ）。`↑` / `↓` は既定でページをスクロールする。**それ以外のキーは素通りさせる。**
 - 移動したら `scrollIntoView({ block: "nearest" })` で可視にする。**`block` を省かない**——既定値では本文ペインまで動きうる。
@@ -1161,13 +1249,14 @@ UI-031 を実装する。
 
 ### IMP-249: 右クリックメニュー **MUST**
 
-FR-063 / UI-085 / AR-060 / AR-062 / DSP-140 を実装する。
+FR-063 / UI-085 / AR-060 / AR-062 / DSP-140 / DSP-141 を実装する。**ファイルツリーのメニュー（FR-036, UI-032）と、ツールバーの文字色の一覧（UI-020）も、このモジュールの器と開閉を使う**（4.75.0。項目と実行は IMP-270 と IMP-265）。
 
 ```js
 // js/contextmenu.js — 場所の判定・メニューの組み立て・開閉
-export function initContextMenu(deps)  // { copyText(text), readClipboard(), notify(error), cancelCellEdit() }
-export function isContextMenuOpen()
+export function initContextMenu(deps)  // { copyText(text), readClipboard(), notify(error), format, treeMenu }
+export function isContextMenuOpen()    // 右クリックメニュー・ツリーのメニュー・文字色の一覧のどれかが開いているか
 export function closeContextMenu()     // フォーカスを戻して閉じ、true を返す。開いていなければ何もせず false
+export function openColorList(button)  // ツールバーの文字色のボタンの下に色の一覧を出す（UI-020, UI-085。4.75.0）
 
 // js/menuactions.js — 項目の実行（4.70.0。IMP-011 の 400 行の目安で分けた）
 export function hasAction(action)              // 実行できる項目か
@@ -1177,8 +1266,8 @@ export function restoreRange(current)          // 控えた選択範囲を当て
 
 - **`menuactions.js` は「押されたときに何をするか」だけを持つ**（4.70.0）。場所の判定・メニューの組み立て・開閉・フォーカスの扱いは `contextmenu.js` が持つ。**Go は直接呼ばない**——クリップボードへの格納は `deps`（`contextmenu.js` が受け取ったもの）を引数で渡す。
 
-- `deps.notify(error)` の `error` は `ErrorDTO`（IMP-307）の形とする。Go を経由しない失敗は `{ kind: 'clipboard' }` のように `kind` だけを持つ値で渡す。文言は `strings.js` の `errorText` が `kind` から選ぶ（IMP-290, IMP-315）。**IMP-261 / IMP-262 / IMP-263 の `notify` も同じ形とする。**
-- `deps.cancelCellEdit` は IMP-262 の `cancelCellEdit`（`main.js` が配線する。`contextmenu.js` は `editmode.js` を import しない）。
+- `deps.notify(error)` の `error` は `ErrorDTO`（IMP-307）の形とする。Go を経由しない失敗は `{ kind: 'clipboard' }` のように `kind` だけを持つ値で渡す。文言は `strings.js` の `errorText` が `kind` から選ぶ（IMP-290, IMP-315）。**IMP-261〜IMP-265 と IMP-270 の `notify` も同じ形とする**（フロントエンドだけで決める `edit-busy` / `edit-held` / `edit-removed` / `code-locked` / `encoding-editing` も、`kind` だけの値で渡す。**`removed-editing` は、控えた `document:removed` の `ErrorDTO` の `kind` を `removed-editing` に替えて渡す**——文言にパスが要る。4.76.0）。
+- `deps.format` は IMP-265 の修飾の操作（状態の読み取りと実行）、`deps.treeMenu` は IMP-270 のツリーのメニューの項目と実行（`main.js` が配線する。`contextmenu.js` は `format.js` / `treemenu.js` / `editmode.js` を import しない）。**v1.1.0 の `deps.cancelCellEdit` は外した**——メニューの外のクリックで閉じても、編集欄を取り消さなくなった（UI-085, FR-142。4.73.0）。
 - `deps.copyText` は `api.js` の `copyToClipboard`（成功なら `null`、失敗なら `ErrorDTO`）、`deps.readClipboard` は `api.js` の `readClipboard`（`{ text, error }`。失敗の `error` は `kind` が `paste` の `ErrorDTO`）とする（IMP-310）。
 - **`contextmenu.js` は `viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` / `editmode.js` を import しない**（IMP-250）。拡大画面の表示中かどうかは `expand.js` の `isExpandOpen` を、書かれたとおりのリンク先は `refs.js` の `ownLinkTarget` を直接 import して聞く。`viewer.js`（IMP-220 の手順 0a）・`docswitch.js`（IMP-250）・`shortcuts.js`（IMP-244）・`main.js` がこのモジュールを import する。
 
@@ -1189,10 +1278,11 @@ export function restoreRange(current)          // 控えた選択範囲を当て
 
 | # | 判定（`event.target.closest(...)`） | 場所 | 項目 |
 | --- | --- | --- | --- |
-| 1 | `input.search-input, input.cell-editor` | 入力欄 | `Cut` / `Copy` / `Paste` / `Select all` |
+| 1 | `input.search-input, input.cell-editor, textarea.code-editor` | 入力欄（コードブロックの編集欄は 4.75.0） | `Cut` / `Copy` / `Paste` / `Select all` |
 | 2 | `.about-licenses` | ライセンス欄 | `Copy` / `Select all` |
-| 3 | `#searchbar, #viewer button` | 検索バーの入力欄以外の部分、本文中のボタン（コピー・図と画像・並べ替え） | 出さない |
-| 4 | `#viewer` | 本文ペイン | （リンクの上なら `Copy link address`）/ `Copy` / `Select all` |
+| 3 | `#searchbar, #viewer button, #treefilter` | 検索バーの入力欄以外の部分、本文中のボタン（コピー・図と画像・並べ替え・編集・編集欄の `Save` / `Cancel`）、フィルターの枚 | 出さない |
+| 4 | `#viewer` | 本文ペイン | （リンクの上なら `Copy link address` / 区切り）/ **編集モードなら修飾の項目（`Strikethrough` / `Text color ▸`。使えなければ淡色）/ 区切り** / `Copy` / `Select all`（区切りは UI-085, DSP-141。4.76.0） |
+| 5 | `#tree .tree-item, #tree-root-name` | ファイルツリーの項目とツリールートの名前の行（4.75.0。FR-036） | IMP-270 の項目（ファイル・ディレクトリ・ツリールートの名前の行で違う） |
 | — | 上のいずれでもない、または拡大画面の中 | — | 出さない |
 
 - **拡大画面の表示中は、どこでも出さない**（UI-104）。
@@ -1206,6 +1296,7 @@ export function restoreRange(current)          // 控えた選択範囲を当て
 | `Copy` / `Cut`（入力欄） | `selectionStart !== selectionEnd` |
 | `Paste` | **クリップボードにテキストがあるとき**（FR-063）。判定は下記の「`Paste` の可否」 |
 | `Select all` | 常に選べる |
+| `Strikethrough` / `Text color`（4.75.0） | **行ごと出すかどうか**は、編集モード（`state.editMode`）であること（FR-063。図のファイルでも出す）。**使えるか**は IMP-265 の `canFormat()`（修飾の目印付きの描画で、選択が空でなく、修飾できる 1 つのブロックに収まり、入力欄の外）。印（全体が取り消し線・全体が同じ色）は IMP-265 の `selectionState()` |
 | `Copy link address` | 行ごと出すかどうかの判定。`closest('a')` があり、下の「リンク先の求め方」で文字列が求まるとき。**鍵の合う `data-link` も `href` も持たない `<a>`（`<a name>` など）はリンクではないため出さない** |
 
 **`Paste` の可否**（FR-063）
@@ -1240,7 +1331,8 @@ export function restoreRange(current)          // 控えた選択範囲を当て
 | --- | --- |
 | `Copy`（本文・ライセンス欄） | **`document.execCommand('copy')`** を呼ぶ。WebView 自身のコピー処理であり、`Ctrl+C` と同じ内容（書式付き）が入る（FR-063, AR-062） |
 | `Copy` / `Cut`（入力欄） | 控えた入力欄へフォーカスを戻し、控えた選択範囲を `setSelectionRange` で当て直してから `execCommand('copy')` / `execCommand('cut')` |
-| `Paste` | 上の「`Paste` の可否」で控えた文字列を使う。入力欄へフォーカスを戻し、控えた範囲を `setRangeText(text, start, end, 'end')` で置き換え、`input` イベントを発火する（検索はインクリメンタルなため。IMP-241）。**セルの編集欄では改行を半角空白へ置き換えてから入れる**（FR-142） |
+| `Paste` | 上の「`Paste` の可否」で控えた文字列を使う。入力欄へフォーカスを戻し、控えた範囲を `setRangeText(text, start, end, 'end')` で置き換え、`input` イベントを発火する（検索はインクリメンタルなため。IMP-241）。**セルの編集欄では改行を半角空白へ置き換えてから入れる**（FR-142）。**コードブロックの編集欄では改行をそのまま入れる**（FR-145） |
+| `Strikethrough` / `Text color` の色 | **控えた選択範囲を当て直してから**、IMP-265 の `toggleStrike()` / `applyColor(name)` を呼ぶ（BUG-019 と同じ理由） |
 | `Select all`（本文） | 本文ペインが文書を表示していれば `#markdown`、状態画面なら `#state-screen` を `getSelection().selectAllChildren` で選ぶ |
 | `Select all`（ライセンス欄） | `.about-licenses` を `selectAllChildren` で選ぶ |
 | `Select all`（入力欄） | 控えた入力欄へフォーカスを戻して `select()` |
@@ -1262,9 +1354,15 @@ export function restoreRange(current)          // 控えた選択範囲を当て
 - 閉じる契機は、項目の実行、`Esc`（IMP-244 の振り分け）、メニューの外での `pointerdown`、`#viewer` と `.about-licenses` の `scroll`（キャプチャで拾う）、`window` の `blur` と `resize` とする（FR-063）。
 - **メニューの外の `pointerdown` 以外の契機（項目の実行・`Esc`・`scroll`・`blur`・`resize`）で閉じたときは、控えたフォーカス要素へ `focus({ preventScroll: true })` で戻す。** **戻してから項目を取り除く**（フォーカスのある項目を先に取り除くと、フォーカスが一度 `body` へ落ちる）。開く前のフォーカスが `body` だったときは戻さない。
 - **メニューの上の `contextmenu`**（メニューにフォーカスがあるときの `Shift+F10` など）は `preventDefault()` だけを行い、閉じも開き直しもしない。**メニューを開いたまま別の場所で右クリックした場合**は、先に届く `pointerdown` で閉じ（戻さない）、続く `contextmenu` で開き直す。 `blur` で閉じた場合もその場で戻しておく（ウィンドウへ戻ったとき、そこにフォーカスがある）。
-- **メニューの外の `pointerdown` で閉じたときは戻さない**（フォーカスは押した先へ移る。UI-085）。**ただし控えたフォーカス要素がセルの編集欄（`input.cell-editor`）なら、フォーカスが外れたものとして `deps.cancelCellEdit()` を呼ぶ**（FR-142, UI-085）。押した先がその編集欄の中なら取り消さない（編集欄へフォーカスが移る）。**取り消さないと、編集欄は `blur` の取り消しを見送ったまま（下記）、フォーカスを持たずに残る。**
+- **メニューの外の `pointerdown` で閉じたときは戻さない**（フォーカスは押した先へ移る。UI-085）。**`preventDefault()` しない**——押した操作はそのまま働く（ツールバーの戻る・進むのボタンなど。FR-051）。**編集欄から開いていても、編集欄は開いたまま残す**（FR-142, FR-145。4.73.0。v1.1.0 はセルの編集欄を取り消していた）。
+- **編集欄から開いていたときは、本文のスクロールとウィンドウのフォーカス喪失で閉じたときも、編集欄へフォーカスを戻す**（ウィンドウの場合は戻ったとき。FR-142, UI-085）。
 - **情報ダイアログのフォーカストラップ（IMP-251）は、`#contextmenu` へのフォーカスを外に出たとみなさない。** ライセンス欄でメニューを開くと、ダイアログの外の要素へフォーカスが移るためである。
-- **セルの編集欄で開いた場合、編集欄の `blur` はメニューへのフォーカス移動を「外れた」に数えない**（FR-142, IMP-262）。判定は `blur` の `relatedTarget` が `#contextmenu` の中にあるかで行う。
+**サブメニューと文字色の一覧**（UI-085, DSP-141。4.75.0）
+
+- **`Text color` はサブメニュー（`#contextsubmenu`）を持つ。** 項目の右に矢印（`icon-chevron-right`）を出し、`→`・`Enter`・マウスを乗せることで、`Text color` の項目の右に 7 色と `Default` を出す（ウィンドウの右端を越えるなら左に出す）。開いたらフォーカスをサブメニューの最初の項目へ移す。`←` か `Esc`（IMP-244 の (1)）でサブメニューだけを閉じて `Text color` の項目へフォーカスを戻す。マウスが本メニューの別の項目へ移ったら閉じる。
+- 各色の項目には、色の見本（`span.color-swatch.md-color-<名前>`。いまのテーマの色。DSP-141）と名前（`S.colorRed` など）を出す。**選択の全体が同じ色なら、その項目に印（`icon-check`、`aria-checked="true"`。`role="menuitemradio"`）を付ける**。`Strikethrough` は全体が取り消し線なら印を付ける（`role="menuitemcheckbox"`）。
+- **ツールバーの文字色のボタン（`#btn-color`）は `openColorList(button)` を呼び、同じ一覧を `#contextmenu` に出す**（ボタンの下。右クリックメニューのサブメニューと同じ見た目と操作。UI-085）。**開く前に本文の選択範囲を控え**（BUG-019）、フォーカスを一覧へ移し、`↑` / `↓` / `Enter` で選ぶ。閉じる契機は本メニューと同じ。閉じたらフォーカスを開く前の位置（本文の選択を保つため、ボタンではなく開く前のフォーカス要素）へ戻す。**右クリックメニューと同時には開かない**（同じ要素を使う）。`#btn-color` の `aria-expanded` を開閉に合わせる。**開いている間は `#contextmenu` に `is-color-list` を付け、閉じたら外す**（幅の最小値が右クリックメニューと違う。DSP-141。4.76.0）。
+- **色の名前と値は IMP-265 の一覧から採る**（FR-147。文言は `strings.js`）。
 
 ## 12.6 状態画面とダイアログ（IMP-250 系）
 
@@ -1286,15 +1384,16 @@ export function leaveDocument()   // 文書の切り替えと状態画面への�
 
 - `#state-screen` に描画し、`#markdown` は空にする。
 - **状態画面へ移ることは文書の切り替えである**（1.7, DSP-352）。`#markdown` を空にする**前に**、`renderDocument` の手順 0a の「偽」の場合と同じ後始末を行う。**2 か所に書かず、`docswitch.js` の 1 つの関数（`leaveDocument()`）にまとめ、`viewer.js`（手順 0a）と `navigate.js`（状態画面を出す前）から呼ぶ。** `leaveDocument()` は次を行う。
-  - セルの編集欄を取り消す（`cancelCellEdit`。IMP-262）。右クリックメニューを閉じる（`closeContextMenu`。IMP-249）。検索を閉じる（IMP-241）。
+  - 編集欄は開いていない（開いている間は文書の切り替えを拒み、状態画面への移行も控える。IMP-264。4.75.0）。右クリックメニューを閉じる（`closeContextMenu`。IMP-249）。検索を閉じる（IMP-241）。
   - 拡大画面を閉じる（`onDocumentSwitched`。IMP-253）。
-  - 並べ替えの状態を空にする（`tablesort.js` の `clearSort`。IMP-229）。原寸表示の状態を空にする（IMP-228）。
+  - 並べ替えの状態を空にする（`tablesort.js` の `clearSort`。IMP-229）。原寸表示の状態を空にする（IMP-228）。修飾の控え（当て直す選択と `Range`）を捨てる（`format.js` の `clearFormatState`。IMP-265, DSP-352。4.76.0）。
   - `state.editable` と `state.editMode` を偽にして画面へ写す（IMP-260 の `leaveEditMode()`。`state.editSeq` は変えない）。
-- **`leaveDocument()` を `viewer.js` にも `overlay.js` にも置かない。** `viewer.js` は `overlay.js` を import しており（`hideStateScreen` ほか）、`overlay.js` から `viewer.js` の関数を呼ぶと循環参照になる（IMP-201）。**`docswitch.js` が import するモジュール（`editmode.js` / `contextmenu.js` / `search.js` / `expand.js` / `tablesort.js` / `media.js`）は、`viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` を import しない。**
+- **`leaveDocument()` を `viewer.js` にも `overlay.js` にも置かない。** `viewer.js` は `overlay.js` を import しており（`hideStateScreen` ほか）、`overlay.js` から `viewer.js` の関数を呼ぶと循環参照になる（IMP-201）。**`docswitch.js` が import するモジュール（`editmode.js` / `contextmenu.js` / `search.js` / `expand.js` / `tablesort.js` / `media.js` / `format.js`）は、`viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` を import しない。**
 - **v1.0.0 の `main.js` の `leaveDocument`（文書を離れる直前にスクロール位置を記録する。IMP-311）は `recordScroll` と呼び分ける**（`navigate.js` に置く）。同じ名前の関数が 2 つあると、呼ぶべきほうを取り違える。
 - **状態画面を出すのは `navigate.js` の `enterStateScreen` だけとする**（`OpenResultDTO` / `LinkResultDTO` / イベントの `ErrorDTO` と、起動時。起動時は `main.js` がこれを呼ぶ）。順序は、`leaveDocument()` → `state.doc = null` と `state.target` の設定 → `showStateScreen(kind, params)` → `updateStatus()` とする。
-- **状態画面の間も、ステータス領域の左に対象のファイルのパスを出す**（FR-016, UI-060, DSP-302）。`state.target` に `ErrorDTO` の `path` / `displayPath` / `outsideTree`（IMP-307）を入れ、`status.js` の `updateStatus()` は **`state.doc ?? state.target`** のパスを出す（ツリー外なら絶対パスと `(outside tree)`。DSP-150）。**右の文字コード・行数は出さない**（描画していない）。`welcome` では `state.target` を `null` にする。**ツリーの強調（`filetree.js` の選択状態と、対象までの経路を開く処理。DSP-330）も同じく `state.doc ?? state.target` から決める**（DSP-302 の「対象ファイル」。ツリー外なら強調しない）。**v1.0.0 の `updateStatus()` とツリーの `markSelected` は `state.doc` しか見ておらず、状態画面の間も前の文書のパスと強調が残っていた**（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)）。
+- **状態画面の間も、ステータス領域の左に対象のファイルのパスを出す**（FR-016, UI-060, DSP-302）。`state.target` に `ErrorDTO` の `path` / `displayPath` / `outsideTree` / `targetKind`（IMP-307。`targetKind` は 4.76.0）を入れ、`status.js` の `updateStatus()` は **`state.doc ?? state.target`** のパスを出す（ツリー外なら絶対パスと `(outside tree)`。DSP-150）。**右の文字コード・行数は出さない**（描画していない）。`welcome` では `state.target` を `null` にする。**ツリーの強調（`filetree.js` の選択状態と、対象までの経路を開く処理。DSP-330）も同じく `state.doc ?? state.target` から決める**（DSP-302 の「対象ファイル」。ツリー外なら強調しない）。**v1.0.0 の `updateStatus()` とツリーの `markSelected` は `state.doc` しか見ておらず、状態画面の間も前の文書のパスと強調が残っていた**（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)）。
 - `confirm-large` の `Open anyway` の押下で `api.openConfirmed(path)` を呼ぶ（IMP-310, IMP-314）。
+- **`welcome` の文言は、開くファイルの種類を名指ししない**（`S.welcomeTitle` / `S.welcomeHintDrop`。UI-052。4.75.0）。
 - 文言は `strings.js` から取得する。
 
 ### IMP-251: 情報ダイアログ **MUST**
@@ -1310,7 +1409,7 @@ export function isAboutOpen()
 ```
 
 - `#overlay` に描画する。**独立したウィンドウを開かない**（AR-060, UI-100）。
-- **`main.js` は `api.getAbout()` の応答を受け取って `showAbout` を呼ぶ直前に、拡大画面が開いていれば（`isExpandOpen()`）出さない。** 応答を待つ間に拡大画面を開けるためである。両者は同じ層（DSP-015 の 50）にあり、DOM では `#expand-view` が `#overlay` より後ろにあるため、後から出したダイアログが拡大画面の下に隠れる。
+- **`main.js` は `api.getAbout()` の応答を受け取って `showAbout` を呼ぶ直前に、拡大画面が開いていれば（`isExpandOpen()`）出さない。** 応答を待つ間に拡大画面を開けるためである。両者は同じ層（DSP-015 の 60）にあり、DOM では `#expand-view` が `#overlay` より後ろにあるため、後から出したダイアログが拡大画面の下に隠れる。
 - **Go を呼ぶのは `main.js` の役目とし、`overlay.js` は受け取った `AboutDTO` を描くだけにする**（IMP-201）。リンクの処理も `onLink` として受け取り、本文中のリンクとまったく同じ経路（IMP-312）へ渡す。**ダイアログの中身は `about.js` の `buildAboutDialog(about, handlers)` が組み立てる**（IMP-011。IMP-252 の `editors.js` と同じ形）。API はこの 4 つだけとし、`overlay.js` に置く。
 - 表示中は背後をフォーカストラップし、`Tab` がダイアログ外へ出ないようにする。端に来たときだけ折り返し、途中では既定の移動に任せる。**ただし右クリックメニュー（`#contextmenu`。IMP-249）へのフォーカスは外に出たとみなさない。**
 - **キーボードのショートカットも止める**（UI-100 の「背後のメインウィンドウの操作を受け付けない」）。暗幕はマウスしか塞がない。`Esc` だけは通す。止めるときも既定の動作は抑止する（`false` を返さない。IMP-244）。そうしないと `Ctrl` + `+` が WebView 自身のページ拡大として処理される。
@@ -1328,7 +1427,7 @@ export function isAboutOpen()
 
 ```js
 // js/overlay.js
-export function showEditors(list)   // list: EditorListDTO（IMP-309）
+export function showEditors(list, opener)   // list: EditorListDTO（IMP-309）。opener は閉じたときにフォーカスを戻す要素（4.75.0）
 export function hideEditors()       // 閉じたら true、開いていなければ false
 export function isEditorsOpen()
 ```
@@ -1337,14 +1436,17 @@ export function isEditorsOpen()
 
 - **情報ダイアログ（IMP-251）と同じ `#overlay` を使い、同じ規則に従う。** フォーカストラップ、`Esc` だけを通すキー制御、暗幕そのもののクリックで閉じる判定のいずれも共通とする。**2 つを同時に開かない。**
 - **Go を呼ぶのは `main.js` の役目とし、`overlay.js` は受け取った `EditorListDTO` を描くだけにする**（IMP-201）。`Browse` と `Open` の処理は `deps` として受け取る。**`main.js` は応答を受け取って `showEditors` を呼ぶ直前に `isExpandOpen()` を確かめ、真なら出さない**（IMP-251 と同じ理由）。
-- 一覧は `<input type="radio" name="editor">` のリストとする。`Available` が偽の行は `disabled` とし、`(not installed)` を添える（UI-103）。**行を消さない。**
+- **見出しの下に、開くファイルの名前（`EditorListDTO.fileName`）を `textContent` で出す**（UI-103, DSP-172。4.75.0）。**ウィンドウを開いた時点で Go が控えた対象の名前**であり、開いている間に文書が切り替わっても書き換えない（FR-091）。
+- **ツールバー・`Ctrl+E` からは `api.listEditors()`、ファイルツリーの `Open in editor...` からは `api.listEditorsForTree(path)` で一覧を得る**（IMP-310, IMP-270）。どちらも同じ `showEditors` で描く。**Go を呼ぶのはどちらも `main.js` である**（ツリーのメニューは `deps.openEditorsForTree(path)` を呼ぶ。IMP-270）。`editors` が空なら出さない（ツリーに出していないもの（IMP-196）と、ツールバーから開いたときに対象が文字のファイルでないもの（IMP-310））。
+- **`Cancel`・`Esc`・暗幕のクリックで閉じたら、`api.closeEditor()` を呼ぶ**（Go 側の控えを捨てる。IMP-310）。`Open` で閉じた場合は呼ばない（`OpenInEditor` が捨てる）。
+- 一覧は `<input type="radio" name="editor">` のリストとする。`available` が偽の行は `disabled` とし、`(not installed)` を添える（UI-103）。**行を消さない。**
 - 描画順は `EditorListDTO.editors` の順そのままとする。**フロントエンドで並べ替えない**（IMP-309）。
-- 開いた時点のフォーカスは、`Selected` の行があれば `Open` ボタン、無ければ一覧の先頭の選択可能な行に置く（UI-103）。
+- 開いた時点のフォーカスは、`selected` の行があれば `Open` ボタン、無ければ一覧の先頭の選択可能な行に置く（UI-103）。
 - `Open` は、選択が無い間 `disabled` とする。**`custom` の行そのものは常に選べる**（UI-103）が、`Browse` で実行ファイルが選ばれるまでは `Open` を `disabled` のままとする。行まで選べなくすると `Browse` へ辿り着けない。
-- `Open` の活性は「選ばれていて、かつ `Available` が真」という**1 つの式だけで決める。** 行の種類ごとに条件を書くと `custom` が別扱いになり、いつか食い違う。フロントエンドは実行ファイルのパスを見ない（NFR-035 の 3）。
+- `Open` の活性は「選ばれていて、かつ `available` が真」という**1 つの式だけで決める。** 行の種類ごとに条件を書くと `custom` が別扱いになり、いつか食い違う。フロントエンドは実行ファイルのパスを見ない（NFR-035 の 3）。
 - `Browse` は `deps.onBrowse()` を呼び、返ってきた `EditorListDTO` で**一覧全体を描き直す**。差分更新しない。行数も選択状態も Go 側が決める（IMP-309）。
-- 閉じたら**フォーカスを `#btn-edit` へ戻す**（IMP-251 と同じ理由）。
-- `EditorListDTO.Error` があるときは**ウィンドウを出さない。** 選べるものが 1 つも無いウィンドウを出しても意味がなく、理由はステータス領域へ出す（IMP-315）。`Browse` の戻りが同じ状態だった場合は**描き直さず、いま出ている一覧を保つ。** 描き直すと、出ていた一覧が消えて何も選べないウィンドウが残る。
+- 閉じたら**フォーカスを開いたボタンへ戻す**（ツールバーなら `#btn-edit`、ツリーのメニューから開いたならメニューを開く前のツリーの項目。IMP-251 と同じ理由。UI-032）。
+- `EditorListDTO.error` があるときは**ウィンドウを出さない。** 選べるものが 1 つも無いウィンドウを出しても意味がなく、理由はステータス領域へ出す（IMP-315）。`Browse` の戻りが同じ状態だった場合は**描き直さず、いま出ている一覧を保つ。** 描き直すと、出ていた一覧が消えて何も選べないウィンドウが残る。
 - 表示・非表示は `hidden` 属性で切り替える。`style.display` を直接触らない（IMP-202）。
 - **文言は `strings.js` から採る**（IMP-290）。エディタ名は `EditorDTO.name` をそのまま `textContent` で入れる。Go 側が組み立てた文字列であり、`innerHTML` へは渡さない（IMP-220）。
 
@@ -1369,7 +1471,8 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 
 - `#expand-view` に描画する（IMP-202）。**`#overlay` を使わない**——`#overlay` は全面を覆い、拡大画面はステータス領域を覆わない（UI-104）。表示・非表示は `hidden` 属性で切り替える。
 - **図の中のリンク（MD-081）は押しても何もしない**（UI-104）。既定の動作（WebView の中での遷移）は `viewer.js` が `#expand-view` に置くリスナが止める（IMP-223）。**`expand.js` にリンクの処理を置かない。** ドラッグの `setPointerCapture` により、押して離したクリックは舞台へ届くことが多いが、エンジンの振る舞いに頼らない（NFR-061）。
-- 中身は、操作バー（`.expand-bar`）と、図を置く舞台（`.expand-stage`）と、その中の移動する器（`.expand-content`）とする。操作バーのボタンは `.expand-fit` / `.expand-actual` / `.expand-zoom-out` / `.expand-zoom-in` / `.expand-close`、倍率の表示は `.expand-zoom-value` とする。
+- 中身は、操作バー（`.expand-bar`）と、図を置く舞台（`.expand-stage`）と、その中の移動する器（`.expand-content`）とする。**画像ファイル（`state.doc.kind === 'image'`）の画像を開いたときは、`#expand-view` に `is-image-file` のクラスを付け、画像の範囲に市松模様を敷く**（FR-027, DSP-129, DSP-173。4.75.0）。
+- **編集欄が開いたままでも開ける**（FR-140 の表の「保ったまま」）。開いている間は背後を操作できないため、閉じてから編集を続ける（FR-145）。操作バーのボタンは `.expand-fit` / `.expand-actual` / `.expand-zoom-out` / `.expand-zoom-in` / `.expand-close`、倍率の表示は `.expand-zoom-value` とする。
 - **`expand.js` は `viewer.js` / `main.js` / `docswitch.js` / `shortcuts.js` / `zoom.js` を import しない**（いずれもこのモジュールを呼ぶ。`shortcuts.js` は `isExpandOpen` / `handleExpandKey` を、`zoom.js` は `isExpandOpen` を直接 import する）。本来の大きさのために `media.js` の `naturalSize` を import する（`media.js` は `expand.js` を import しない。拡大画面へは `main.js` が渡す `deps` で知らせる）。
 - 操作バーのボタンは `data-tip` と同じ文字列の `aria-label` を持つ（IMP-247, IMP-295）。**キーの表記はこのモジュールのキーの表から組み立て、`strings.js` に書かない**（IMP-290 の考え方）。**キーの表には閉じるボタンの表記のために `Esc` も載せるが、`handleExpandKey` は `Esc` を処理しない**（下記）。
 
@@ -1418,7 +1521,7 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 
 ## 12.7 編集モード（IMP-260 系）
 
-FR-140〜FR-144 / UI-055 のフロントエンド側。**判断と書き込みは Go 側が持つ**（IMP-195）。ここにあるのは、指示を送ることと、見た目を先に変えて結果で整えることだけである。
+FR-140〜FR-147 / UI-055 のフロントエンド側。**判断と書き込みは Go 側が持つ**（IMP-195）。ここにあるのは、指示を送ることと、見た目を先に変えて結果で整えることだけである。
 
 ### IMP-260: 編集モードの切り替えと目印の照合 **MUST**
 
@@ -1429,25 +1532,27 @@ export function toggleEditMode()         // ボタンと Ctrl+Shift+M の共通�
 export function applyEditMode(doc)       // renderDocument の手順 6d
 export function leaveEditMode()          // editable と editMode を偽にして画面へ写す（leaveDocument と document:removed）
 export function isEditableCell(element)  // 編集モード中で、element が鍵の合うセルの中にあるか（IMP-223）
+export function isEditableBlock(element) // 編集モード中で、element が鍵の合う図のブロックの中にあるか（IMP-223。4.75.0）
 
 // js/refs.js — 目印の照合（IMP-120）。state.js 以外を import しない
-export function isOwnRef(element, kind)  // data-ref の鍵が state.doc.refKey と合い、種類が kind か（task / table / cell / mermaid / plantuml）
+export function isOwnRef(element, kind)  // data-ref の鍵が state.doc.refKey と合い、種類が kind か（task / table / cell / mermaid / plantuml / code / text。4.75.0 で code と text を足した）
 export function ownLinkTarget(anchor)    // data-link の鍵が合えば書かれたとおりのリンク先、合わなければ null（IMP-249）
 export function ownSource(block)         // 鍵の合う図のブロック（mermaid / plantuml）なら data-source、それ以外は null（IMP-221, IMP-230）
-export function ownRef(element, kind)    // isOwnRef が真なら data-ref の値そのもの、偽なら null（IMP-261, IMP-262 が Go へ渡す。IMP-316）
+export function ownRef(element, kind)    // isOwnRef が真なら data-ref の値そのもの、偽なら null（IMP-261, IMP-262, IMP-264, IMP-265 が Go へ渡す。IMP-316）
 ```
 
-- **目印の照合は `refs.js` の `isOwnRef` / `ownLinkTarget` / `ownSource` / `ownRef` の 4 関数に閉じ込め、鍵を読むのはこのモジュールだけとする。** **`data-ref` の値を Go へ渡す箇所（チェックボックスとセル）も、`getAttribute('data-ref')` を自分で読まずに `ownRef` を通す**——照合を通ったものだけが渡り、`data-ref` を読む箇所が `refs.js` だけに保たれる（`grep` で確かめられる）。 並べ替え（IMP-229）、右クリックメニュー（IMP-249）、リンク捕捉（IMP-223 の `isEditableCell` 経由）、チェックボックスとセル（IMP-261, IMP-262）、図の描画（IMP-230）、コピー（IMP-221）、図と画像のボタン（IMP-228）もこれを使う。**鍵を読む箇所を増やさない**——1 か所でも照合を忘れると、生 HTML の要素が編集・並べ替え・描画・コピーの対象になる（FR-141, FR-130, NFR-030, [BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。
+- **目印の照合は `refs.js` の `isOwnRef` / `ownLinkTarget` / `ownSource` / `ownRef` の 4 関数に閉じ込め、鍵を読むのはこのモジュールだけとする。** **`data-ref` の値を Go へ渡す箇所（チェックボックス・セル・コードブロックと図・修飾するブロック）も、`getAttribute('data-ref')` を自分で読まずに `ownRef` を通す**——照合を通ったものだけが渡り、`data-ref` を読む箇所が `refs.js` だけに保たれる（`grep` で確かめられる）。 並べ替え（IMP-229）、右クリックメニュー（IMP-249）、リンク捕捉（IMP-223 の `isEditableCell` 経由）、チェックボックスとセル（IMP-261, IMP-262）、コードブロックと図の編集欄（IMP-264）、修飾（IMP-265）、図の描画（IMP-230）、コピー（IMP-221）、図と画像のボタン（IMP-228）もこれを使う。**鍵を読む箇所を増やさない**——1 か所でも照合を忘れると、生 HTML の要素が編集・並べ替え・描画・コピーの対象になる（FR-141, FR-130, NFR-030, [BUG-014](../bugs/2026-09-14-bug-014-diagram-marker-spoofing.md)）。
 - **照合を `editmode.js` ではなく葉のモジュール（`refs.js`）に置くのは、`lazy.js` / `copy.js` / `media.js` からも使うためである。** これらが `editmode.js` を import すると、`editmode.js` の依存を通じて循環しうる（`viewer.js` → `lazy.js` → `editmode.js` → …）。**`refs.js` は `state.js` 以外を import しない。**
 - `data-ref` の値は `<鍵>:<種類>:<番号…>` とし、種類と番号の形は IMP-120 の表のとおりとする。**鍵と種類の両方が合うときだけ真とする。** `ownSource` は `data-mermaid` / `data-plantuml` の有無ではなく、鍵の合う `mermaid` / `plantuml` の目印で判断する。
-- `toggleEditMode()` は、`state.editable` が偽なら何もせず `false` を返す（UI-021 のボタンは淡色）。真なら `api.setEditMode(!state.editMode)` を呼び、返った `EditModeDTO.on` を `state.editMode` へ入れて画面へ写す。**呼んだら応答を待たずに `true` を返す**（IMP-244 は戻り値が `false` でなければ既定の動作を止める。`Promise` を返すと、開始できない状態の `false` と区別できない）。**呼ぶ前に見た目を変えない**——開始できなかった場合に戻す処理が要り、得るものが無い。
+- `toggleEditMode()` は、`state.editable` が偽なら何もせず `false` を返す（UI-021 のボタンは淡色）。**編集モードを終える側で、編集欄が開いていれば IMP-264 の `refuseIfEditing()` で拒む**（FR-140）。真なら `api.setEditMode(!state.editMode)` を呼び、返った `EditModeDTO.on` を `state.editMode` へ入れて画面へ写す。**呼んだら応答を待たずに `true` を返す**（IMP-244 は戻り値が `false` でなければ既定の動作を止める。`Promise` を返すと、開始できない状態の `false` と区別できない）。**呼ぶ前に見た目を変えない**——開始できなかった場合に戻す処理が要り、得るものが無い。
 - `applyEditMode(doc)` は `doc.editable` / `doc.editMode` を `state` へ写し、次を行う。**Go 側の値を正とし、フロントエンドが持っていた値で上書きしない**（IMP-302）。**ただし `doc.editSeq` が `state.editSeq` より小さければ写さない**（到着順が入れ替わった古い値。IMP-302）。写すときは `state.editSeq` も更新する。**版が古くて値を写さなかったときも、画面への反映（下の箇条）は行う**——本文は差し替わっており、チェックボックスの有効化とセルの印を新しい本文に付け直す必要がある。`toggleEditMode` の結果（`EditModeDTO.seq`）も同じ規則で写す。**さらに、`state.editable` が偽のときは、`on` が真の `EditModeDTO` を写さない。** 状態画面への移行と `document:removed` は版番号を運ばない（`EditSeq` は `DocumentDTO` と `EditModeDTO` にしか無い。IMP-302, IMP-316）ため、その後に遅れて届いた `SetEditMode(true)` の結果（版は手元より大きい）を写すと、**状態画面や削除の後に枠とラベルとボタンの ON が出る**（FR-140, DSP-320）。次に編集できる文書が届けば、`DocumentDTO` の版で揃う。
   - `#btn-editmode` の `aria-pressed` と、`state.editable` が偽のときの `disabled`（UI-021）
   - `#viewer-frame` の `is-editing` クラスと、`#editmode-badge` の `hidden`（UI-055, DSP-126）。**ラベルをスクロールバーの内側に置くため、`#viewer` の `offsetWidth - clientWidth` を `--viewer-scrollbar-width` として `#viewer-frame` に与える**（ウィンドウ幅の変化でも測り直す。DSP-126）
-  - チェックボックスの有効化（IMP-261）と、セルの印（IMP-262）
+  - チェックボックスの有効化（IMP-261）と、セルの印（IMP-262）、**コードブロックと図の編集のボタン（IMP-264）、ツールバーの修飾の群と修飾の操作（IMP-265）**（4.75.0）
   - **ボタン・枠・ラベル・チェックボックス・セルの印は 1 つの関数（`render`）で同時に切り替え、`applyEditMode` / `leaveEditMode` / `EditModeDTO` を写すときのすべてがそこを通る**（DSP-320）。
-  - **編集モードでなくなったら、セルの編集欄を取り消す**（`cancelCellEdit`。FR-142 の「編集モードが終わった場合は取り消す」）。**取り消す時点で編集欄にフォーカスがあれば（`document.activeElement` が編集欄）、`deps.focusViewer()` で本文ペインへ移す。** そうでなければフォーカスは動かさない（UI-055 の「フォーカスが外れたことによる取り消し」と同じ扱い）。**編集欄は DOM から取り除かれるため、フォーカスがあったまま消すと `body` に落ち、`PageUp` / `PageDown` が効かなくなる**（BUG-007 と同じ症状）。**ボタン・`Ctrl+Shift+M`・削除・読み直しのどの経路で終わっても、この 1 か所を通る。**
-- `document:removed`（IMP-320）を受けたら `state.editMode` と `state.editable` を偽にして画面へ写す（`main.js` の購読が `leaveEditMode()` を呼ぶ。Go 側は既に終えており、次に読み込めるまで開始させない。IMP-195, FR-140 の表）。
+  - **編集欄が開いている間は、編集モードを終える表示へ移らない**（FR-140。4.75.0）。利用者の操作で終える（ボタン・`Ctrl+Shift+M`）ことは拒み（IMP-264）、自動で終える知らせ（`document:removed`、不正なバイト列を含んでいた再描画）は IMP-264 が控えて、**編集欄を閉じた時点で当てる。** v1.1.0 はここでセルの編集欄を取り消していた（FR-142 の改訂で、入力を捨てなくなった）。**閉じた時点で編集欄にフォーカスがあれば `deps.focusViewer()` で本文ペインへ移す**（`body` に落とすと `PageUp` / `PageDown` が効かなくなる。BUG-007 と同じ症状）。
+- `document:removed`（IMP-320）を受けたら `state.editMode` と `state.editable` を偽にして画面へ写す（`main.js` の購読が `leaveEditMode()` を呼ぶ。Go 側は既に終えており、次に読み込めるまで開始させない。IMP-195, FR-140 の表）。**編集欄が開いていれば、IMP-264 が控え、閉じた時点で呼ぶ**（入力を残す。FR-140）。
+- **編集モードを始めたら、Go 側が修飾の目印付きで描き直した `document:changed` が届く**（`trigger` が `reload`、`textRefs` が真。Markdown のときだけ。IMP-195）。それまでは `state.doc.textRefs` が偽であり、修飾の操作は使えない（IMP-265）。**終えたときは描き直さない**——残った目印は、編集モードでない間は使われない。
 - **状態画面（`showStateScreen`。IMP-250）を出すときも、`state.editable` と `state.editMode` を偽にして写す**（FR-140 の表。`leaveDocument()` が `leaveEditMode()` を呼ぶ）。
 
 ### IMP-261: チェックボックスの切り替え **MUST**
@@ -1456,6 +1561,7 @@ FR-141 / DSP-126 / DSP-321 を実装する。
 
 - 編集モードの間、`isOwnRef(input, 'task')` が真の `input[type=checkbox]` から `disabled` を外し、`is-editable` のクラスを付ける。**編集モードでない間と、鍵の合わない `input`（生 HTML）には何もしない**——`disabled` のまま、CSS の `pointer-events: none`（DSP-121）も残る。
 - `#markdown` に `change` のリスナを 1 つ置く（イベント委譲）。対象が上の条件を満たすときだけ処理する。
+- **編集欄が開いていれば、`checked` を元へ戻し、IMP-264 の `refuseIfEditing()` を呼んで終える**（FR-140, FR-141。4.75.0）。Go を呼ばない。
 - **見た目はブラウザが既に反転している**（`change` の時点）。これが FR-141 の「即座に反転」（NFR-012）にあたる。その値を `checked` として `api.setTask(ref, checked)` を呼ぶ。`ref` は `data-ref` の値そのものを渡す（IMP-316）。**値は `refs.js` の `ownRef(input, 'task')` で得る**（IMP-260）。**呼び出しそのものが失敗した（`Promise` が拒否された）ときは `stale` と同じく戻し、通知しない**（Go 側は回復したパニックも DTO で返す。IMP-310）。
 - 結果に応じて整える。
 
@@ -1471,11 +1577,12 @@ FR-141 / DSP-126 / DSP-321 を実装する。
 
 ### IMP-262: セルの編集欄 **MUST**
 
-FR-142 / UI-055 / DSP-127 / DSP-321 を実装する。
+FR-142 / UI-055 / DSP-127 / DSP-321 を実装する。配置は `js/celledit.js`（4.75.0 で `editmode.js` から分けた。IMP-200）。**開いている間の扱い（拒む・保留・確定の待ち・開き直し）は、コードブロックの編集欄と共通の `blockedit.js`（IMP-264）が持つ。**
 
 ```js
-export function isCellEditing()   // 編集欄が開いているか（IMP-244 の Esc / Enter の振り分け）
-export function cancelCellEdit()  // 開いていれば取り消して true、開いていなければ false（IMP-220 の手順 0a, IMP-244）
+// js/celledit.js
+export function initCellEdit(deps)   // { api, notify, focusViewer }
+export function markEditableCells()  // applyEditMode（IMP-260）から。is-editable を付け外しする
 ```
 
 **編集できるセルの印**
@@ -1485,46 +1592,53 @@ export function cancelCellEdit()  // 開いていれば取り消して true、�
 **開く**
 
 - `#markdown` に `dblclick` のリスナを 1 つ置く。`state.editMode` が真で、`closest('th, td')` が `isOwnRef(cell, 'cell')` を満たすときだけ処理する。
-- **セルの中のボタンの上でのダブルクリックは無視する**（FR-142）。対象は `.sort-btn`（IMP-229）と `.media-actions`（IMP-228）であり、判定は `closest('.sort-btn, .media-actions, .cell-editor')` で行う。**開いている編集欄（`.cell-editor`）の中のダブルクリックも無視する**——語を選ぼうとしてダブルクリックすると、同じセルで編集欄が作り直され、入力中の文字が失われる。無視するときは下の `removeAllRanges()` も呼ばない（編集欄の中の語の選択を残す）。**セルの中のリンクの上では編集を始めてよい**（1 回目のクリックの遷移は IMP-223 が止めている）。
+- **セルの中のボタンの上でのダブルクリックは無視する**（FR-142）。対象は `.sort-btn`（IMP-229）と `.media-actions`（IMP-228）であり、判定は `closest('.sort-btn, .media-actions, .cell-editor-box')` で行う。**開いている編集欄（`.cell-editor-box`）の中のダブルクリックも無視する**——語を選ぼうとしてダブルクリックすると、同じセルで編集欄が作り直され、入力中の文字が失われる。無視するときは下の `removeAllRanges()` も呼ばない（編集欄の中の語の選択を残す）。**セルの中のリンクの上では編集を始めてよい**（1 回目のクリックの遷移は IMP-223 が止めている）。
+- **別の編集欄（セル・コードブロック）が開いていれば、開かずに IMP-264 の `refuseIfEditing()` を呼ぶ**（FR-140 の「別の編集欄」。4.75.0）。v1.1.0 は開いていた編集欄を取り消してから開いていた。
 - 既定のダブルクリックによる単語の選択は、`dblclick` で `getSelection().removeAllRanges()` を呼んで消す。
 - `api.getCellSource(ref)` を呼ぶ（`ref` は `ownRef(cell, 'cell')`）。`stale` なら何もしない。`error` なら `notify` して開かない（`edit-conflict` のときは Go 側が読み直しを送っている。IMP-195）。
-- **応答を待つ間にセルが DOM から消えていたら（再描画が先に届いた）、または `state.editMode` が偽になっていたら（ボタンや `Ctrl+Shift+M` で編集モードを終えた。本文は再描画されないため、セルは残っている）、開かない。** **後から別のセルをダブルクリックしていたときも開かない**——ダブルクリックのたびに番号を進め、応答が届いた時点で最新の番号でなければ捨てる。応答の順が入れ替わると、先に押したセルの編集欄が後から押したセルの編集欄を置き換えるためである。
-- `<input type="text" class="cell-editor">` を作り、`value` に `text` を入れて**セルの中**に置く（`th` / `td` に `is-cell-editing` のクラスを付ける。配置と寸法は DSP-127）。`focus({ preventScroll: true })` し、`setSelectionRange` でカーソルを末尾へ置く。**開いている編集欄は常に 1 つだけとする**（開く前に `cancelCellEdit()`）。**`value` の設定でもカーソルは末尾へ移る（HTML の規則）が、フォーカスの移動で全体を選ぶエンジンがありうるため、明示して置く**（NFR-061。Chromium では違いが出ず、DOM 検査では確かめられない。実機で見る）。
+- **応答を待つ間にセルが DOM から消えていたら（再描画が先に届いた）、または `state.editMode` が偽になっていたら、開かない。** **後から別のセルをダブルクリックしていたときも開かない**——ダブルクリックのたびに番号を進め、応答が届いた時点で最新の番号でなければ捨てる。
+- **IMP-264 の `await openBox(cell)` が `true` を返したら**（4.76.0。偽なら何もしない）、**セルの中**に `<div class="cell-editor-box">` を置き、`<input type="text" class="cell-editor">`（`value` に `text`）と、`Save` / `Cancel` のボタンの行（`<div class="edit-actions">` に、**`button.edit-cancel`、`button.edit-save` の順**。見た目の並び（右寄せで `Cancel` `Save`）と `Tab` の順をそろえる。DSP-172 の `Cancel` / `Open` と同じ。文言は `S.cancel` / `S.save`）を入れる（4.75.0。UI-055）。`th` / `td` に `is-cell-editing` のクラスを付ける（配置と寸法は DSP-127）。**置いた直後に `.edit-actions` の左端が表（`table`）の左端より左へ出ていれば、`.cell-editor-box` に `is-align-left` を付ける**（左端をセルの左端にそろえる。DSP-127。表は横スクロールの器であり、左へはみ出した分は見えない。4.76.0）。`focus({ preventScroll: true })` し、`setSelectionRange` でカーソルを末尾へ置く。**`value` の設定でもカーソルは末尾へ移る（HTML の規則）が、フォーカスの移動で全体を選ぶエンジンがありうるため、明示して置く**（NFR-061）。
 
-**キー**（編集欄の `keydown`）
+**キー**（`input.cell-editor` の `keydown`）
 
 - **`event.isComposing` が真なら何もしない**（FR-142 の IME）。**`keyCode` が 229 のときも何もしない**——変換を確定する `Enter` を、`isComposing` が偽の `keydown` として届けるエンジンがある（NFR-061。実機で見る）。
-- `Enter`: 確定する。`preventDefault()` と `stopPropagation()` を行う（IMP-244 の検索の移動へ届かせない）。
-- `Esc` はここで扱わない。**IMP-244 の振り分けの (3) が `cancelCellEdit()` を呼ぶ**（右クリックメニューが開いていれば (1) が先に閉じる）。
+- `Enter`: 確定する（`Save` と同じ）。`preventDefault()` と `stopPropagation()` を行う（IMP-244 の検索の移動へ届かせない）。
+- `Esc` はここで扱わない。**IMP-244 の振り分けの (3) が、編集欄にフォーカスがあるときに `cancelEditBox()` を呼ぶ**（右クリックメニューが開いていれば (1) が先に閉じる）。
 - `Ctrl+Z` / `Ctrl+Y` は素通しする（入力欄の中の取り消し。FR-144, IMP-244）。
+- `Tab` は既定の動作に任せる（`Save` / `Cancel` へ移る。編集欄は開いたまま）。
 
 **貼り付け**
 
 - 編集欄の `paste` で `preventDefault()` し、`clipboardData.getData('text/plain')` の改行（`\r\n` / `\r` / `\n`）を半角空白へ置き換えて `setRangeText(text, start, end, 'end')` で入れる（FR-142）。**`input type="text"` は既定で改行を黙って取り除き、語が連結される**ため、既定に任せない。
 - 右クリックメニューの `Paste` は IMP-249 が同じ置き換えを行う。
 
-**フォーカスが外れたとき**（`blur`）
+**フォーカスが外れたとき**
 
-- 次のどちらかなら**取り消さない**（FR-142）。
-  - `event.relatedTarget` が `#contextmenu` の中にある（右クリックメニューを開いた）
-  - `document.hasFocus()` が偽（ウィンドウ自体がフォーカスを失った）
-- それ以外は取り消す。**フォーカスは動かさない**（UI-055）。
-- **右クリックメニューを閉じたときのフォーカスと取り消しは IMP-249 が扱う。** メニューの外のクリックで閉じたら、フォーカスが外れたものとして取り消す。それ以外の契機（項目の実行・`Esc`・本文のスクロール・ウィンドウのフォーカス喪失）で閉じたら、編集欄へフォーカスを戻す（FR-142, UI-085）。
+- **何もしない**（取り消さない。書き込まない。FR-142。4.73.0）。**v1.1.0 は `blur` で取り消していた。** フォーカスを奪い返さない（UI-055）——利用者が移した先（ツールバーのボタンや検索バー）から奪わない。
 - ウィンドウが `focus` を取り戻したとき、編集欄がまだ開いていて、フォーカスがどこにも無ければ（`document.activeElement` が `body`）、編集欄へフォーカスを戻す。
+- 右クリックメニューを閉じたときのフォーカスは IMP-249 が扱う（メニューの外のクリックでは押した先へ、それ以外の契機では編集欄へ。FR-142, UI-085）。
 
-**確定**
+**確定**（`Enter` か `Save`）
 
-1. `value` を控えて編集欄を取り除く。
-2. **見た目を先に変える**（NFR-012, DSP-321）。**セルの直接の子のうち `.sort-btn` 以外**を 1 つの `DocumentFragment` へ退避し（画像の `.media-actions` は `.media-image` の中にあり、画像ごと退避する。IMP-228）、代わりに `<span class="cell-pending">` に `textContent` で控えた文字列を入れて**セルの先頭に**置く（並べ替えのボタンは末尾に残る）。**`innerHTML` を使わない**（IMP-220）。**`Enter` で確定したときの本文ペインへのフォーカスの移動（手順 5）は、この直後、`setCell` の応答を待つ前に行う。**
-3. `api.setCell(ref, value)` を呼ぶ。
-4. 結果に応じて整える。`changed` なら何もしない（再描画を待つ）。**`changed` が偽・`stale`・`error` なら、`.cell-pending` を退避した子で戻す**（セルがまだ DOM にある場合だけ）。`error` は `notify` する。
-5. **`Enter` で確定した後と `Esc` で取り消した後は、`deps.focusViewer()` で本文ペインへフォーカスを戻す**（UI-055）。
+0. IMP-264 の `canSubmit()` が偽なら何もしない（外部の更新を控えている・削除された。警告は `canSubmit` が出す。編集欄は開いたまま）。
+1. `value` を控え、編集欄（`.cell-editor-box`）を DOM から外して控える（開き直しに使う）。
+2. **見た目を先に変える**（NFR-012, DSP-321）。**セルの直接の子のうち `.sort-btn` 以外**を 1 つの `DocumentFragment` へ退避し（画像の `.media-actions` は `.media-image` の中にあり、画像ごと退避する。IMP-228）、代わりに `<span class="cell-pending">` に `textContent` で控えた文字列を入れて**セルの先頭に**置く（並べ替えのボタンは末尾に残る）。**`innerHTML` を使わない**（IMP-220）。**本文ペインへのフォーカスの移動（`deps.focusViewer()`）は、この直後、`setCell` の応答を待つ前に行う。**
+3. `api.setCell(ref, value)` を呼ぶ。**応答を待つ間も、IMP-264 は編集欄が開いているものとみなす**（再描画を控える）。
+4. 結果に応じて整える。
+
+| 結果 | 見た目 | 編集欄 | 通知 |
+| --- | --- | --- | --- |
+| `changed` | そのまま（再描画を待つ） | 閉じる（`is-cell-editing` を外して `closeBox`） | なし |
+| `changed` が偽で `stale` も `error` も無い（内容が変わらない） | 退避した子で戻す | 閉じる（同上） | なし |
+| `stale` | 退避した子で戻す | **入力ごと開き直し、フォーカスを編集欄へ戻す**（4.74.0。FR-142） | なし（控えた外部の更新があれば `edit-held`） |
+| `error`（`edit-conflict` / `edit-failed` / `edit-rejected`） | 退避した子で戻す | **入力ごと開き直し、フォーカスを編集欄へ戻す** | `notify(error)`（IMP-315） |
 
 - **文字列の整形（改行・前後の空白・`|` のエスケープ）はフロントエンドで行わない。** Go 側の `PlanCell`（IMP-106）が行う。**2 か所で整形すると、見た目と書き込まれる内容が食い違う**——`.cell-pending` に出すのは入力された文字列そのままでよい（FR-142 の「文字としてそのまま出したものでよい」）。
+- **v1.1.0 は失敗のときに入力を捨てていた**（見た目を戻して通知するだけ）。**4.74.0 で、入力を捨てない**と決めた（FR-142）。
 
-**取り消す**
+**取り消す**（`Esc`（編集欄にフォーカスがあるとき）か `Cancel`）
 
-- 編集欄を取り除き、セルの `is-cell-editing` を外す。何も呼ばない。
+- 編集欄を取り除き、セルの `is-cell-editing` を外し、IMP-264 の `closeBox()` を呼ぶ（控えた描画があれば当てる）。`deps.focusViewer()` で本文ペインへフォーカスを戻す（UI-055）。Go は呼ばない。
 
 ### IMP-263: 取り消し・やり直し **MUST**
 
@@ -1539,8 +1653,216 @@ export function redoEdit()
 - `api.undoEdit()` / `api.redoEdit()` を呼ぶ。**見た目を先に変えない。** どこが変わるかをフロントエンドは知らない（`Patch` は Go 側にある。IMP-108）。表示は `document:changed` で届く。
 - `error` なら `notify` する。`changed` が偽（取り消すものが無い）なら何もしない（FR-144 の「通知しない」）。**`stale` なら何もしない**（通知しない。取り消しは鍵を持たないため、編集モードでなくなっていた・状態画面へ移っていた場合に当たる。FR-143）。
 - **入力欄にフォーカスがあるときは、ここへ来ない**（IMP-244 が素通しする）。
+- **編集欄が開いていて、フォーカスが外にあるときは、IMP-264 の `refuseIfEditing()` で拒む**（FR-144, FR-140。4.75.0）。
 
-## 12.8 UI 文言（IMP-290 系）
+### IMP-264: 編集欄（共通の部品とコードブロック） **MUST**
+
+FR-140 / FR-142 / FR-145 / UI-053 / UI-055 / UI-090 / DSP-128 を実装する（4.75.0）。
+
+```js
+// js/blockedit.js — 編集欄の共通の部品（セル・コードブロック）
+export function initBlockEdit(deps)   // { api, notify, focusViewer, isModalOpen, applyHeld(item) }
+export async function openBox(target) // api.setEditBoxOpen(true) を待ち、出してよければ開いたと登録して true（同時に 1 つだけ。下記）
+export function closeBox()            // 閉じたと登録し、控えたものを当てる。api.setEditBoxOpen(false)
+export function isEditBoxOpen()       // 開いているか（確定の応答を待つ間を含む）
+export function isEditBoxFocused()    // 編集欄（入力欄と Save / Cancel）にフォーカスがあるか
+export function cancelEditBox()       // フォーカスがあれば取り消して true（IMP-244 の Esc の (3)）
+export function refuseIfEditing()     // 開いていれば edit-busy の警告を出し、編集欄へフォーカスを戻して true
+export function holdIfEditing(item)   // 開いていれば、画面を差し替えるものを控えて true
+export function canSubmit()           // 確定してよいか。控えた外部の更新・削除があれば警告を出して false
+
+// js/codeedit.js — コードブロックと図の編集欄
+export function initCodeEdit(deps)    // { api, notify, focusViewer }
+export function markEditableBlocks()  // applyEditMode（IMP-260）から。編集のボタンを付け外しする
+```
+
+**開いている間の操作**（FR-140 の表。**判断はこのモジュールだけに置く**）
+
+| 扱い | 操作 | 入口 |
+| --- | --- | --- |
+| **拒む**（`refuseIfEditing()`） | 文書を開く（ダイアログ・ツリー・ツリーのメニューの `Open`・リンク（**同一文書内のアンカーを除き、外部の URL と開けないファイルへのリンクも拒む**。4.76.0。利用者の判断。IMP-223）・戻る / 進む・同じファイルの開き直し）、再読み込み | `navigate.js` の各経路の入口（ボタン・キー・サイドボタン・クリックのどれもここを通る） |
+| 〃 | チェックボックス | IMP-261（ブラウザが反転した見た目を戻す） |
+| 〃 | 別の編集欄を開く（セル・コードブロック。ダブルクリックと編集のボタン） | IMP-262 と本 ID |
+| 〃 | 修飾（ツールバー・メニュー・`Ctrl+Shift+X`） | IMP-265 |
+| 〃 | 編集欄の外にフォーカスがあるときの `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` | IMP-263 |
+| 〃 | 編集モードの終了（ボタン・`Ctrl+Shift+M`） | IMP-260 の `toggleEditMode` |
+| 〃 | 表の並べ替え | IMP-229 |
+| 〃 | ドロップ | **Go 側**（`SetEditBoxOpen`。IMP-245, IMP-313）。拒んだ知らせ（`error` イベントの `edit-busy`）を受けて、ここと同じく警告を出す |
+| **保留する**（`holdIfEditing()`） | `document:changed`（外部の更新・自分の書き込みの直後）、`document:opened`（知らせが Go に届く前のドロップ）、状態画面の種別の `error`、`document:removed` | `main.js` の購読と `navigate.js` |
+| **保ったまま行う** | 同一文書内のアンカーへの移動・テーマ・検索・ツリーの展開とフィルター・ペインの開閉・倍率・拡大画面を開く・情報ウィンドウ・エディタ選択ウィンドウ・ツリーのメニュー（`Open` 以外） | （何もしない） |
+
+- **拒んだら、何もせずに `edit-busy` の警告を出し（IMP-315）、フォーカスを編集欄へ戻す。** **ただし情報ウィンドウ・エディタ選択ウィンドウ・拡大画面の表示中（`deps.isModalOpen()`）は、フォーカスを動かさない**（FR-140）——フォーカストラップを破らない。
+- **編集モードを始めたときの描き直し**（IMP-195）は、編集欄が開いている間には届かない（始めるのは編集モードでない間、編集欄を開くのは編集モードの間だけで、終了は拒む）。表に入れない（4.76.0）。
+- **控えるのは最新の 1 つだけ**とし、後から届いたもので置き換える。**置き換える前に控えていたものが文書の切り替え（`sameDocument` が偽・状態画面）なら、後のものも切り替えとして当てる**（`sameDocument` を偽として扱う。並べ替え・原寸表示・拡大画面の解除を落とさない。4.76.0）。**ただし削除の印（`document:removed`）は、その後の再描画で消さず、閉じた時点まで残す**（FR-140 の「閉じた時点で終える」）。警告は次の順に 1 つだけ選ぶ（DSP-151 は前のメッセージを置き換える。4.76.0）: **削除を控えたら `removed-editing`**、**読み直した内容が不正なバイト列を含んでいた（`editable` が偽の再描画）なら `encoding-editing`**（FR-110。その旨と、編集欄を閉じると編集モードを終える旨。4.75.0）、それ以外の外部の更新（`trigger` が `watch` / `reload`）・切り替え・状態画面なら `edit-held`。**自分の書き込みの直後（`trigger` が `edit`）では出さない。**
+- **閉じた時点で、控えたものを当てる**（`deps.applyHeld(item)`。`main.js` が配線し、届いたときと同じ処理——`renderDocument`・`enterStateScreen`・`leaveEditMode`——へ渡す）。削除の印があり、**その後に再描画を控えていなければ**、その後に `leaveEditMode()` を呼ぶ。**削除の後に再描画が届いていれば呼ばない**——ファイルが戻った後の Go 側の状態（編集モードは終わり、開始できる）を運んでおり、それに従う（4.76.0）。
+- **確定の応答を待つ間も「開いている」とみなす**（4.75.0）。待つ間に届いた再描画も控え、失敗で開き直すときに、書き込む先の要素が DOM に残っているようにする。応答で閉じるときに、控えたものを当てる。**待つ間も `is-cell-editing` / `is-code-editing` は付けたままにし、閉じるときに外す**（表の下の余白（DSP-127）と右上のボタンの隠し（DSP-128）を保ち、テーマの描き直しもそのブロックを飛ばす。4.76.0）。**失敗で開き直すときは `openBox` を呼び直さない**——登録は開いたまま続いており、Go 側の `editBoxOpen` も真のままである。
+- **確定の呼び出しそのものが失敗した（`setCell` / `setCode` / `applyFormat` の `Promise` が拒否された）ときは、`stale` と同じに扱う**（IMP-261 のチェックボックスと同じ。編集欄は入力ごと開き直し、修飾は包みを外す。通知しない。4.76.0）。扱わないと「開いている」とみなしたまま固まり、文書の切り替えもドロップも拒まれ続ける。
+- **確定してよいか**（`canSubmit()`）: 外部の更新・切り替え・状態画面を控えていれば `edit-held`、削除の印があれば `edit-removed` の警告を出し直して `false` を返す（FR-145, FR-140）。**編集欄は閉じず、Go へ送らない。** 送っても Go 側は鍵の照合か編集モードの確かめで `Stale` にする（IMP-195）——**安全は Go 側が保ち、ここは知らせ方を決める。** 自分の書き込みの直後の再描画だけを控えているときは確定してよい（鍵は引き継がれている。IMP-102）。
+- **`openBox(target)` は `Promise<boolean>` を返す**（4.76.0。順序は IMP-245）。`api.setEditBoxOpen(true)` を待ち、応答の後で `target`（セルかブロック）がまだ DOM にあり（`isConnected`）、待つ間に文書が描かれていなければ（IMP-220 の手順 8 の描画の世代が同じ）、開いたと登録して `true` を返す。そうでなければ `api.setEditBoxOpen(false)` を呼んで `false` を返す。**呼び出し側（IMP-262 と下のコードブロック）は、`true` が返ってから編集欄を DOM に置く**——待つ間、編集欄は見えない。**待つ間は「開きかけ」とし、`refuseIfEditing()` は拒むが、`holdIfEditing()` は控えない**（届いた描画はそのまま当て、上の世代の確かめで検知する）。`closeBox` は `false` を呼ぶ（IMP-310）。**`setEditBoxOpen` は、前の呼び出しの応答を待ってから送る**——立て続けの `false` と `true` の到着順が入れ替わらないようにする（IMP-210 の `saveConfig` と同じ事情）。Go 側はドロップを拒むためにだけ使う（IMP-313）。
+- **開いている編集欄の入力を、MarkView が黙って捨てる場面を作らない**（FR-140）。閉じるのは、確定の成功・内容が変わらない確定・`Cancel`・フォーカスのある `Esc` だけである（アプリケーションの終了を除く）。
+
+**コードブロックと図の編集欄**（`codeedit.js`。FR-145）
+
+- **対象**: `isOwnRef(block, 'code' | 'mermaid' | 'plantuml')` が真の `.code-block`（PlantUML ファイルの図と Mermaid ファイルを含む。IMP-126, IMP-127）。鍵の合わないブロック（生 HTML）は対象にしない（NFR-030）。
+- **編集のボタン**: 編集モードの間、対象に `<button class="media-btn media-btn-edit">`（`icon-pencil`。`data-tip` と `aria-label` は `S.tipEditBlock`）を置く。図では `.media-actions` の先頭（**無ければ作る**——図の描画は手順 8 で非同期に終わり、手順 6d の時点では器が無い。描けなかった図と描かなかった PlantUML も編集できるようにする。`data-media-key` は IMP-228 と同じ図の鍵とし、後から描き終えた図は同じ器にボタンを足す。4.76.0）、コードブロックでは `.media-actions` を作って入れる（IMP-228, UI-053）。**`data-locked="1"` を持つブロックでは `disabled` とする**（前置きが行ごとに違う。FR-145）。編集モードを終えたら取り除く（`markEditableBlocks`）。ボタンのクリックは `preventDefault()` と `stopPropagation()` を行う。
+- **開き方**: 編集のボタンの押下か、`#markdown` の `dblclick`（`closest('.code-block')` が対象で、`state.editMode` が真）。**右上のボタン（`.copy-btn` / `.media-actions`）と、開いている編集欄の上のダブルクリックは無視する**（FR-145）。**`data-locked` のブロックをダブルクリックしたら、`code-locked` の警告を出して開かない**（FR-145, IMP-315）。既定のダブルクリックによる語の選択は `removeAllRanges()` で消す。**既に編集欄が開いていれば `refuseIfEditing()`。**
+- `api.getCodeSource(ref)`（`ref` は `ownRef(block, kind)`）を呼ぶ。`stale` なら何もしない。`error` なら `notify` して開かない（`code-locked` は警告、`edit-conflict` は Go 側が読み直しを送っている）。応答を待つ間にブロックが DOM から消えた・編集モードが終わった・後から別のブロックを押していたら開かない（IMP-262 と同じ）。
+- **編集欄**: **`await openBox(block)` が `true` を返したら**（4.76.0。偽なら何もしない）、`.code-block` の中に `<div class="code-editor-box">` を置き、`<textarea class="code-editor" spellcheck="false">`（`value` に `text`）と、`Save` / `Cancel` のボタンの行（`.edit-actions`。IMP-262 と同じ）を入れる。**ブロックの元の中身（`pre` や描いた図）は `hidden` にして残し**（取り消したら戻す）、`.code-block` に `is-code-editing` のクラスを付ける（閉じたら外す。右上のボタンを隠す。DSP-128）。**高さ**（DSP-128。4.76.0）: `#viewer` の `clientHeight` の 60 % を `--code-editor-max`（px）として編集欄に入れる（開いたときと、`#viewer` の大きさが変わったとき。IMP-246 の `ResizeObserver`）。`input` のたびに `scrollHeight` を `--code-editor-height` に入れ直す（最小 3 行と上限は CSS の `min-height` / `max-height`）。**利用者が手で高さを変えたら（`resize` が `style.height` を付ける）、以後は入れ直さない**（上限は `max-height` なので、手で変えたときにも効く）。`focus({ preventScroll: true })` し、カーソルを先頭に置く。
+- **キー**（`textarea` の `keydown`。IME の変換中（`isComposing` か `keyCode` 229）は何もしない）:
+  - `Ctrl+Enter`: 確定する（`preventDefault()` と `stopPropagation()`）。
+  - `Enter`: 改行（既定の動作）。**検索の移動へ回さない**（`stopPropagation()`。IMP-244）。
+  - `Tab` / `Shift+Tab`: 字下げを入れる / 外す（`preventDefault()`）。選択が無ければカーソル位置にタブ文字を入れる（`Shift+Tab` は行の先頭のタブ文字を 1 つ除く）。**選択が複数行にかかれば、選択にかかる各行の先頭にタブ文字を足す / 先頭のタブ文字を 1 つ除く。** 変更は `setRangeText` で行い（`textarea` の中の取り消しが効く形）、`input` イベントを発火する。**`Tab` で編集欄の外へ出る手段は持たない**（確定か取り消しで閉じる。FR-145）。
+  - `Esc` はここで扱わない（IMP-244 の (3)）。`Ctrl+Z` / `Ctrl+Y` は素通しする（`textarea` の中の取り消し）。
+- **貼り付け**は既定の動作に任せる（改行をそのまま入れる。FR-145）。右クリックメニューの `Paste` も改行を残す（IMP-249）。
+- **フォーカスが外れても何もしない**（開いたまま。FR-145）。ウィンドウがフォーカスを取り戻したときの扱いは IMP-262 と同じ。
+- **確定**（`Ctrl+Enter` か `Save`）: `canSubmit()` が偽なら何もしない。真なら、入力を控えて編集欄を外し、**ブロックの元の中身の代わりに `<pre class="code-pending">` を置いて、`textContent` で入力をそのまま出す**（ハイライトと図は再描画で戻る。NFR-012, DSP-321）。`focusViewer()` で本文ペインへフォーカスを移し、`api.setCode(ref, text)` を呼ぶ。**文字列の整形（改行コード・前置き・囲いの延長）はフロントエンドで行わない**（Go 側の `PlanCode`。IMP-122）。
+- **結果**: IMP-262 の確定の表と同じに扱う。`changed` なら再描画を待って閉じる。`changed` が偽なら元の中身へ戻して閉じる。**`stale` と `error` では、元の中身へ戻し、編集欄を入力ごと開き直して、フォーカスを編集欄へ戻す**（FR-145。4.74.0）。`error` は `notify`（`edit-rejected` / `code-locked` は警告。IMP-315）。
+- **取り消し**（`Esc`（編集欄にフォーカスがあるとき）か `Cancel`）: 編集欄を取り除き、元の中身を戻し、`closeBox()`（控えたものを当てる）、`focusViewer()`。Go は呼ばない。
+- **テーマの切り替えの図の描き直し（IMP-231, IMP-233）は、編集欄を開いているブロック（`.is-code-editing`）を飛ばす**（FR-140 の表の「保ったまま」）。飛ばしたブロックは、編集欄を閉じた時点の扱い（取り消しなら元の図を、いまのテーマで描き直す。確定なら再描画を待つ）で整える。編集欄の色だけがテーマに追随する（DSP-370）。
+- **拡大画面へ移している図**（IMP-253）の編集のボタンは、閉じるまで本文に無い。拡大画面を開いたまま編集欄を開くことはできない（背後を操作できない）。
+
+### IMP-265: 選んだ文字の修飾 **MUST**
+
+FR-146 / FR-147 / UI-020 / UI-021 / UI-085 / UI-090 / DSP-141 / DSP-321 を実装する（4.75.0）。配置は `js/format.js`。**画面の選択をソースの位置に対応付けるのは Go 側である**（IMP-123, IMP-124）。ここは、選択を「ブロックの目印・見える文字の上の位置・見える文字の全体」に変えて送り、見た目を先に変えて結果で整えることだけを行う。
+
+```js
+// js/format.js
+export const COLORS                     // [{ name: 'red', label: S.colorRed }, …]。FR-147 の順
+export function initFormat(deps)        // { api, notify }
+export function canFormat()             // 使えるか（下記）
+export function selectionState()        // { strike: bool, color: 名前 | null }（メニューと色の一覧の印）
+export function toggleStrike()          // Ctrl+Shift+X・ツールバー・メニュー。使えなければ false
+export function applyColor(name)        // 色の一覧・メニューのサブメニュー。"red" … "gray" / "default"
+export function updateFormatButtons()   // selectionchange と applyEditMode で、ツールバーのボタンの淡色を切り替える
+export function restoreSelection()      // renderDocument の手順 6d。控えた選択を当て直す
+export function clearFormatState()      // leaveDocument（IMP-250）から。控えた選択と Range を捨てる（4.76.0）
+```
+
+**使える条件**（`canFormat()`。FR-146）。次のすべてを満たすとき。
+
+1. `state.editMode` と `state.doc.textRefs` が真（修飾の目印付きの描画。IMP-302）
+2. 選択（`getSelection()` の最初の `Range`）が空でない。**`#btn-strike` / `#btn-color` にフォーカスがある間は、下の控えた `Range` で判定する**（L1 ではボタンへフォーカスが移った時点で選択が解除される。4.76.0）
+3. 選択の両端が、**同じ 1 つの修飾できるブロック**の中にある。ブロックは、端の要素から祖先へたどり、`isOwnRef(el, 'text')` か `isOwnRef(el, 'cell')` が真の最も近い要素とする（IMP-260）
+4. 選択の端が入力欄（検索バー・編集欄）の中に無い（FR-146）
+
+- 満たさないとき、ツールバーのボタンとメニューの項目は淡色、`Ctrl+Shift+X` は何もしない（`false` を返す）。**編集欄が開いていれば、押したときに IMP-264 の `refuseIfEditing()` で拒む。**
+- **値の正規化（両端の空白・部品の全体への広げ）はフロントエンドで行わない**（Go 側の IMP-124 の 3）。2 か所で整えると、見た目と書き込まれる内容が食い違う。
+
+**送るもの**（`api.applyFormat`。IMP-310, IMP-316）
+
+- `ref`: そのブロックの `ownRef(el, 'text' | 'cell')`
+- `start` / `end`: 選択の両端を、**そのブロックの見える文字（IMP-266）の中の Unicode の符号位置**へ変えたもの（JavaScript の文字列の位置は UTF-16 なので変換する。`visible.js` の `offsetOf`）
+- `visible`: そのブロックの見える文字の全体（`visible.js` の `visibleText`）
+- `style`: `{ strike: true }` か `{ color: name }`
+
+**L1 の選択範囲**（[BUG-019](../bugs/2026-09-21-bug-019-context-menu-copy-webkitgtk.md)。UI-021）
+
+- **ツールバーの `#btn-strike` / `#btn-color` は、`pointerdown` と `mousedown` で `preventDefault()` し、フォーカスを移さない。** WebKit は要素へフォーカスを移すと文書の選択範囲を解除する。**ここを外すと、L1 でだけ「押しても何も起きない」になる。**
+- **`Tab` でボタンへ移ってから `Enter` を押す場合に備え、`selectionchange` のたびに、修飾できる選択なら `Range` を控え**、ボタンの実行では控えた `Range` を当て直してから使う。控えた位置が DOM から外れていたら当て直さない。**ボタンが `focus` を受けたときも、控えた `Range` を当て直す**（IMP-249 の `restoreRange` と同じ形。淡色の切り替えが選択の解除で外れないようにする。4.76.0）。
+- 右クリックメニューと色の一覧（IMP-249）は、開く前に `Range` を控え、実行の直前に当て直す（BUG-019 と同じ）。
+
+**見た目を先に変える**（NFR-012, DSP-321）
+
+- 送る前に、選んだ範囲のテキストを仮の `span`（取り消し線は `fmt-pending-strike`、色は `fmt-pending-color md-color-<名前>`、`default` は `fmt-pending-default`）で包む。**テキストノードごとに包み**（要素の境界をまたいで 1 つの `span` で包まない）、包んだ `span` を控える。包みは見える文字を変えない（IMP-266 は包みそのものを数えない）。
+- 結果: `changed` なら再描画を待つ。`changed` が偽・`stale`・`error` なら、包みを外して元に戻す。`error` は `notify`（`format-rejected` は警告。IMP-315）。**`notice` が `format-widened` なら警告を出す**（FR-146。IMP-316）。
+
+**再描画の後も選択を残す**（FR-146）
+
+- 送るときに `{ ref, start, end }` を控え、**自分の修飾の書き込みの直後の再描画（`doc.trigger` が `edit`）**（IMP-220 の手順 6d の `restoreSelection()`）で、**同じ目印のブロックの見える文字の同じ位置**へ選択を当て直す（`visible.js` の `rangeAt`）。修飾は見える文字を変えない（IMP-124 の 9）ため、同じ位置が同じ文字を指す。**取り消し線の直後に続けて色を付けられる。** ブロックが見つからない・見える文字の長さが足りない・結果が失敗だった・`changed` が偽だった・**それ以外の再描画が先に届いた**（DSP-352。4.76.0）ときは当て直さず、控えを捨てる。
+
+**ツールバーの修飾の群**（UI-020）
+
+- `applyEditMode` で、編集モードの間だけ `#tb-format` を出す（IMP-202）。**`updateFormatButtons()` は `document` の `selectionchange` を `requestAnimationFrame` でまとめて呼び、`canFormat()` で `disabled` を切り替える**（UI-021）。
+- `#btn-strike` は `toggleStrike()`、`#btn-color` は IMP-249 の `openColorList(button)` を呼ぶ。
+- **色の一覧の名前と順は FR-147 の表と同じにする**（`COLORS`。Go 側は IMP-123 の `TextColors`、CSS は DSP-010 のトークン）。**値（`#d1242f` など）はフロントエンドに書かない**——ファイルへ書く値は Go 側が決め（IMP-124）、画面の色は CSS が決める。
+
+### IMP-266: 見える文字の数え方 **MUST**
+
+FR-146 / BR-054 を実装する（4.75.0）。配置は `js/visible.js`（自前の他のモジュールを import しない。IMP-200）。**Go 側の IMP-123 と同じ数え方にする。** どちらかを変えたら、もう一方と描画スモーク（BR-054）を同じ変更で直す。
+
+```js
+// js/visible.js
+export function visibleText(block)            // ブロックの見える文字（文字列）
+export function offsetOf(block, node, offset) // DOM の位置 → 見える文字の中の符号位置。範囲の外なら -1
+export function rangeAt(block, start, end)    // 見える文字の符号位置 → DOM の Range（再描画の後の当て直し）
+```
+
+| 本文の中のもの | 数え方 |
+| --- | --- |
+| テキストノード | 文字（符号位置で数える。サロゲートペアは 1 つ） |
+| `br` | **0**（変換器は `<br>` の後ろに改行を書き、そのテキストノードの `\n` が改行の 1 文字になる。IMP-123 の「改行」。4.76.0） |
+| インラインコード（`code`） | 中の文字 |
+| 数式（`.math-inline`。KaTeX が描いた中身を含む） | **要素全体で 1 文字** |
+| 画像（`img`）と、読み込みに失敗した画像（`.img-broken`。IMP-226） | **1 文字** |
+| 脚注の参照（`a.footnote-ref` を含む `sup`） | 1 文字 |
+| 脚注の戻りリンク（`a.footnote-backref`） | 中の文字（`↩`）。直前の `&#160;` も文字として数える（合わせて 2 文字。IMP-123） |
+| タスクのチェックボックス（`input`） | 0。**直後のテキストノードの先頭の半角空白 1 つも数えない**（変換器が書く。構文木には無い。IMP-120。4.76.0） |
+| **UI が足した要素**（見出しのアンカー、並べ替えのボタン、`.media-actions`、`.copy-btn`） | **要素ごと数えない** |
+| **包むだけの要素**（検索の `<mark>`、修飾の仮の `span.fmt-pending-*`、`.cell-pending`） | 要素そのものは数えず、中の文字を数える |
+| リストの項目（`li`） | **最初のブロック要素（`p` / `ul` / `ol` / `pre` / `div` / `blockquote` / `table` / `details` など）の手前まで**。**その手前の空白だけのテキストと、文字の後ろの改行 1 つは数えない**（変換器が書く。IMP-123 の「入れ子のブロックを持つリストの項目」。4.76.0） |
+
+- 対象のブロックは IMP-265 が決める（`text` / `cell` の目印を持つ要素）。
+- **4.75.0 の表は、`br` を 1 つと数え、チェックボックスの後ろの空白と `li` の入れ子の手前の改行を数えていた**（4.76.0 で直した）。Go 側（IMP-123）はどれも数えず、タスクの項目・ハード改行を含む段落・入れ子を持つリストの項目で、修飾が黙って効かなくなる（IMP-124 の 2 の `Stale`）。実現性検討の試作はこの 3 つを扱っていた。
+- **描画スモーク（BR-054）は、全ブロックについて `visibleText` と Go 側の `VisibleTexts`（IMP-123）を突き合わせる**（Chromium だけ）。WebKitGTK との差は手動テストで見る（NFR-061）。
+- **数え方を合わせるために、Go 側の結果を画面へ送らない**（送ると、照合の意味が無くなる。FR-146 は両側が独立に数えて照合することを求めている）。
+
+## 12.8 ファイルツリーの操作（IMP-270 系）
+
+FR-036 / FR-037 / UI-032 / UI-033 のフロントエンド側（4.75.0）。**パスの検査は Go 側が行う**（IMP-135, IMP-196）。ここは、メニューと枚を出し、押された操作を Go へ渡し、結果を画面へ写すことだけを行う。
+
+### IMP-270: ファイルツリーの右クリックメニュー **MUST**
+
+FR-036 / UI-032 / DSP-140 を実装する。配置は `js/treemenu.js`。**器・開閉・キー・フォーカス・閉じる契機は IMP-249 の右クリックメニューを使う**（`#contextmenu`。場所の表の 5）。
+
+```js
+// js/treemenu.js — contextmenu.js / filetree.js / navigate.js を import しない（main.js が配線する）
+export function initTreeMenu(deps)     // { api, notify, openFromTree(path), showEditors(list, opener), applyTreeAction(dto) }
+export function treeMenuItems(place)   // 右クリックした所（ファイル・ディレクトリ・ツリールートの名前の行）の項目
+export function runTreeAction(action, place)
+```
+
+| 右クリックした所 | 判定 | 項目（`strings.js`） | 実行 |
+| --- | --- | --- | --- |
+| ファイル | `li.tree-item` で、ディレクトリでない | `Open` / `Open in editor...` / `Open containing folder` / 区切り / `Copy path` | `deps.openFromTree(path)`（ツリーのクリックと同じ `navigate.js` の経路。編集欄が開いていれば拒む）/ `deps.openEditorsForTree(path)`（`main.js` が `api.listEditorsForTree(path)` を呼び、IMP-252 の確かめ（拡大画面・フィルターの枚）を経て `showEditors` で描く。4.76.0）/ `api.openContainingFolder(path)` / `api.copyTreePath(path)` |
+| ディレクトリ | `li.tree-item` で、ディレクトリ | `Open in file manager` / `Set as tree root` / 区切り / `Copy path` | `api.openInFileManager(path)` / `api.setTreeRoot(path)` / `api.copyTreePath(path)` |
+| ツリールートの名前の行 | `#tree-root-name` | `Open in file manager` / `Set parent as tree root` / 区切り / `Copy path` | `api.openInFileManager(root)` / `api.setTreeRootUp()` / `api.copyTreePath(root)` |
+
+- **パスは `li` の `data-path`（Go が一覧を返したときの値）とツリールート（`state.treeRoot`）を渡す。** 検査は Go 側が行う（IMP-135, IMP-196）。**フロントエンドでパスの形や種類を判断しない**（IMP-300 の 2）。
+- **使えない項目**（淡色。UI-032）:
+  - 画像ファイル（`TreeNodeDTO.kind` が `image`。`li` に `data-kind` として写す。IMP-304）の `Open in editor...`
+  - **ツリールートの名前の行の `Set parent as tree root` は、使えない状態で出してから `api.canSetTreeRootUp()` を呼び、真なら使える状態にする**（ファイルシステムの根とドライブの根では偽。IMP-310）。**右クリックメニューの `Paste` の可否と同じ形**（IMP-249）とし、応答が届く前にメニューが閉じていたら何もしない。根かどうかをフロントエンドでパスから判断しない。
+- **右クリックだけでは項目を選ばず、開かず、ツリーの強調とフォーカスも動かさない**（FR-036）。メニューを閉じたら、フォーカスは開く前の位置（ツリーの項目）へ戻る（IMP-249）。**`Open` で文書を開いたら、フォーカスは本文ペインへ移る**（IMP-220 の手順 11）。`Open in editor...` ではエディタ選択ウィンドウへ移り、閉じたらツリーの項目へ戻る（IMP-252）。
+- **キーボード**（UI-031, UI-032）: ツリーの項目にフォーカスがあるときの `Shift+F10` / アプリケーションキーは、IMP-249 がフォーカスのある項目の下に開く（`li` の矩形ではなく `.tree-row` の矩形を使う。展開中の `li` は配下の木全体を含む）。
+- **結果の反映**:
+  - `TreeActionDTO.error` があれば `notify`（`not-found` / `open-failed` / `clipboard`。IMP-315）。
+  - **`root` が空でなければ、`deps.applyTreeAction(dto)` を呼ぶ**（`main.js` が配線する）。`state.treeRoot` を新しいルートにし、ツリーを読み直し（`loadTreeRoot`。FR-035 の 4 番目の契機。IMP-240）、ステータス領域のパスを `displayPath` / `outsideTree` で差し替える（`state.doc` か `state.target` の表示用パスを書き換えて `updateStatus()`。FR-052）。**表示中の文書・履歴・編集モードは変えない**（FR-030）。**メニューを開いた項目が組み直しで消えたら（フォーカスが `body` に落ちる）、組み直したツリーの `tabindex="0"` の項目（IMP-248）へ `focus({ preventScroll: true })` で移す**（4.76.0。DSP-330）。
+  - `Copy path` の成功は知らせない（UI-060）。
+- **閉じる契機は IMP-249 と同じ**とし、**ツリーのスクロール（`.pane-body` の `scroll`）でも閉じる**（UI-032）。IMP-249 の `scroll` の購読（キャプチャ）に `.pane-body` を含める。
+- **ツリーの項目とツリールートの名前の行の外（ペインの余白・見出しの行・フィルターの枚）では出さない**（UI-032, IMP-249 の場所の表）。
+
+### IMP-271: ファイルツリーのフィルター **MUST**
+
+FR-037 / UI-033 / UI-024 / DSP-115 を実装する。配置は `js/treefilter.js`。
+
+```js
+// js/treefilter.js
+export function initTreeFilter(extensions)    // ExtensionsDTO（IMP-303）。文言の拡張子（このモジュールの変数に持つ）。チェックボックスの初期値は state から（IMP-211）
+export function toggleTreeFilter()            // フィルターボタン（#btn-treefilter）
+export function isTreeFilterOpen()
+export function isTreeFilterFocused()         // IMP-244 の Esc の (4)
+export function closeTreeFilter(restoreFocus) // Esc・閉じるボタン・ボタンでは true、自動で閉じるときは false
+```
+
+- **枚の中身**: 見出しの行（`.treefilter-head`）に見出し `Show in tree`（`.treefilter-title`。`S.filterTitle`）と閉じるボタン（`button.treefilter-close`。`icon-close`。`aria-label` は `S.close`）、その下に 3 つの選択肢（`label.treefilter-option` に `input[type=checkbox]` と文言の `span`）。文言は `S.filterMarkdown(exts)` / `S.filterDiagrams(exts)` / `S.filterImages(exts)`（`exts` は `ExtensionsDTO` の並びを `/` でつないだもの）。**拡張子をこのモジュールにも `strings.js` にも書かない**（FR-037 の「2 か所に書かない」）。`Markdown` は `checked` と `disabled`（淡色だが文言は読める濃さ。DSP-115）。各選択肢の `label` に `data-tip`（`S.tipFilterMarkdown` など。英日併記。UI-024）を置く。
+- **位置**（UI-033, DSP-115）: 開くとき、`#btn-treefilter` の `getBoundingClientRect()` から求める。**枚の右端をボタンの右端にそろえ、ボタンの下に置く。** 左端がウィンドウの左端から 8px より左へ出るなら、左端を 8px に寄せる。**`window` の `resize` とファイルツリーペインの幅の変化（`ResizeObserver`）で位置を求め直す。**
+- **開閉**: `#btn-treefilter` で開閉する（`aria-expanded`。押された見た目は DSP-115 がこれで選ぶ）。**利用者が閉じるのは `Esc`（IMP-244 の (4)）・閉じるボタン・フィルターボタンだけとし、外のクリックでは閉じない**（UI-033）。**自動で閉じる**: ファイルツリーペインを隠したとき（IMP-240）、拡大画面・情報ウィンドウ・エディタ選択ウィンドウを開いたとき（それぞれを開く入口で `closeTreeFilter(false)` を呼ぶ）。検索バー・右クリックメニューとは同時に開ける。
+- **フォーカス**: 開いたら `Diagrams` のチェックボックスへ移し、利用者が閉じたら `#btn-treefilter` へ戻す（UI-033）。自動で閉じたときは戻さない（開いたものへ移る）。**ファイルツリーペインを隠して閉じたときに枚の中にフォーカスがあれば、本文ペインへ移す**（`focusViewer()`。開いたものが無いため。4.76.0）。**`Tab` は枚の中に閉じ込めない**（モーダルではない。FR-110）。
+- **切り替え**（FR-037）: チェックボックスの `change` で `state.treeShowDiagrams` / `state.treeShowImages` を書き換え、**`await saveConfig()`（IMP-210）の後で、ツリーを展開の状態・強調・スクロール位置を保って読み直す**（`filetree.js` の `reloadTreeKeepingState()`。FR-035 の 5 番目の契機）。ボタンのツールチップ（`S.tipFilter`）も書き換える（IMP-247）。
+  - `reloadTreeKeepingState()` は、展開している `li` の `data-path` の集合と `.pane-body` の `scrollTop` を控えて `loadTreeRoot` で組み直し、控えたディレクトリを上から順に展開し直してから、スクロール位置を戻す。**隠した種類だけを含むディレクトリは一覧から無くなり、展開し直さない。** 強調は `state.doc ?? state.target` から付け直す（IMP-250）。**表示中のファイルの種類を隠したら、強調する行は無くなる**（FR-031, FR-052。ステータス領域のパスは変えない）。
+- **編集欄が開いていても使える**（FR-140 の表の「保ったまま」）。ツリーのペインが非表示の間は開けない（ボタンが見えない）。
+- **多重起動**: 切り替えは自分のウィンドウだけに効く（設定は後勝ち。UI-115）。
+
+## 12.9 UI 文言（IMP-290 系）
 
 ### IMP-290: 文言の一元定義 **MUST**
 
@@ -1551,6 +1873,8 @@ UI-024 / AR-050 を実装する。
 export const S = {
   // ツールチップのみ英日併記（UI-024）。
   // キー表記は含めない。shortcuts.js の定義から組み立てる（IMP-244）
+  tipBack:      'Back / 戻る',                       // UI-024（4.75.0）
+  tipForward:   'Forward / 進む',
   tipOpen:      'Open / 開く',
   tipReload:    'Reload / 再読み込み',
   tipThemeDark: 'Dark theme / ダークテーマ',
@@ -1559,7 +1883,15 @@ export const S = {
   tipFileTree:  'File tree / ファイルツリー',
   tipOpenInEditor: 'Open in editor / エディタで開く',   // UI-024（4.39.0 で改名）
   tipEditMode:     'Edit mode / 編集モード',            // UI-024, FR-140
+  tipStrike:       'Strikethrough / 取り消し線',         // UI-024, FR-146（4.75.0）
+  tipColor:        'Text color / 文字色',                // UI-024, FR-147（ショートカットを持たない）
   tipAbout:     'About / アプリケーション情報',
+
+  // ファイルツリーペインの見出しのボタンとフィルターの選択肢も英日併記（UI-024。4.75.0）
+  tipFilter:         (kinds) => `Filter / フィルター (${kinds.join(', ')})`,  // kinds は下の kind* の並び
+  tipFilterMarkdown: 'Markdown / マークダウン (always shown)',
+  tipFilterDiagrams: 'Diagrams / 図 (PlantUML, Mermaid)',
+  tipFilterImages:   'Images / 画像',
 
   // それ以外はすべて英語（UI-024）
   paneFiles:   'Files',
@@ -1571,9 +1903,30 @@ export const S = {
   searchPrevious: 'Previous match',               // アイコンボタンの読み上げ名
   searchNext:     'Next match',
   searchClose:    'Close search',
-  dropHint:    'Drop a Markdown file to open',
+  dropHint:    'Drop a file to open',            // UI-070（4.75.0。種類を名指ししない）
   outsideTree: '(outside tree)',
   treeMore:    (n) => `… and ${n} more`,          // DSP-112
+
+  // ファイルツリーのフィルター（UI-033。4.75.0）。拡張子は ExtensionsDTO から渡す（FR-037）
+  filterTitle:    'Show in tree',
+  filterMarkdown: (exts) => `Markdown (${exts})`,
+  filterDiagrams: (exts) => `Diagrams (${exts})`,
+  filterImages:   (exts) => `Images (${exts})`,
+  kindMarkdown:   'Markdown',
+  kindDiagrams:   'Diagrams',
+  kindImages:     'Images',
+
+  // ファイルツリーの右クリックメニュー（UI-032。4.75.0）
+  menuOpen:              'Open',
+  menuOpenInEditor:      'Open in editor...',
+  menuOpenContaining:    'Open containing folder',
+  menuOpenInFileManager: 'Open in file manager',
+  menuSetTreeRoot:       'Set as tree root',
+  menuSetParentRoot:     'Set parent as tree root',
+  menuCopyPath:          'Copy path',
+
+  // 図のファイル（FR-025, FR-026。4.75.0）
+  noDiagrams:  'No diagrams found.',
 
   // コードブロック（DSP-251）。アイコンだけのボタンに読み上げ名を与える（IMP-295）
   copy:        'Copy',
@@ -1582,6 +1935,7 @@ export const S = {
   tipActualSize: 'Actual size',
   tipExpand:     'Expand',
   tipSort:       'Sort',
+  tipEditBlock:  'Edit',              // コードブロックと図の編集のボタン（UI-053。4.75.0）
 
   // 拡大画面（UI-104, DSP-173）。キーの表記は expand.js のキーの表から足す（IMP-253）
   expandTitle:   'Expanded view',   // #expand-view の aria-label
@@ -1600,9 +1954,16 @@ export const S = {
   menuPaste:     'Paste',
   menuSelectAll: 'Select all',
   menuCopyLink:  'Copy link address',
+  menuStrikethrough: 'Strikethrough',   // FR-146（4.75.0）
+  menuTextColor:     'Text color',      // FR-147。サブメニューを持つ
+
+  // 文字色の一覧（FR-147, DSP-141。4.75.0）。名前と順は FR-147 の表
+  colorRed: 'Red', colorOrange: 'Orange', colorYellow: 'Yellow', colorGreen: 'Green',
+  colorBlue: 'Blue', colorPurple: 'Purple', colorGray: 'Gray', colorDefault: 'Default',
 
   // 編集モード（UI-055, DSP-126）
   editModeBadge: 'Edit mode',
+  save:          'Save',                // 編集欄（UI-055。4.75.0）。Cancel は下の cancel を使う
 
   // 見出しのアンカー（IMP-227, DSP-023）。アイコンだけのリンクに読み上げ名を与える
   headingAnchor: 'Link to this section',
@@ -1611,11 +1972,13 @@ export const S = {
   statusLines: (n) => `${n} lines`,
   statusZoom:  (z) => `${z}%`,
   statusEditor:(name) => `Opened in ${name}`,   // FR-090, DSP-151
+  statusImageSize: (w, h) => `${w} × ${h} px`,  // 画像ファイル（UI-060, DSP-150。4.75.0）
+  statusFileSize:  (bytes) => formatSize(bytes),      // util.js。1024 未満は B、1 MB 未満は整数の KB、それ以上は確認画面と同じ MB（DSP-150, DSP-181）
 
   // 状態画面（DSP-181）
-  welcomeTitle:   'Open a Markdown file',
+  welcomeTitle:   'Open a file',                 // UI-052（4.75.0。種類を名指ししない）
   welcomeHintOpen:'Press Ctrl+O to choose a file',
-  welcomeHintDrop:'Or drop a Markdown file onto this window',
+  welcomeHintDrop:'Or drop a file onto this window',
   welcomeHintTree:'Use the file tree to browse documents',
   openAnyway:     'Open anyway',
   largeTitle:     'This file is large.',
@@ -1652,7 +2015,7 @@ export const S = {
   // エラー（IMP-315 の Kind に対応）
   errNotFound:    (p) => `File not found: ${p}`,
   errPermission:  (p) => `Cannot access: ${p}`,
-  errNotMarkdown: (p) => `Not a Markdown file: ${p}`,
+  errNotSupported:(p) => `Not a supported file: ${p}`,   // not-supported（4.75.0。v1.1.0 の errNotMarkdown）
   errLinkNotFound:(h) => `Link target not found: ${h}`,
   errClipboard:   'Failed to copy.',
   errRemoved:     (p) => `File was deleted: ${p}`,
@@ -1661,17 +2024,28 @@ export const S = {
   errEditConflict:'The file changed on disk and was not saved.',   // IMP-315 の edit-conflict
   errEditFailed:  (p) => `Failed to save: ${p}`,                    // edit-failed
   errPaste:       'Failed to paste.',                               // paste
-  errOpenFailed:  (h) => `Cannot open: ${h}`,                       // open-failed（FR-050, FR-053。BUG-013）
+  errOpenFailed:  (h) => `Cannot open: ${h}`,                       // open-failed（FR-050, FR-036。BUG-013）
+  // 4.75.0。いずれも警告（UI-060, DSP-151）
+  errEditRejected:  'This change would alter the document structure and was not saved.', // edit-rejected
+  errCodeLocked:    'This code block cannot be edited in MarkView.',                      // code-locked
+  errFormatRejected:'This formatting cannot be applied here.',                            // format-rejected
+  warnFormatWidened:'The whole strikethrough was removed.',                               // format-widened
+  warnEditBusy:     'Save or cancel the open edit first.',                                // edit-busy
+  warnEditHeld:     'The file changed on disk. Cancel the edit to see the changes.',      // edit-held
+  warnEditRemoved:  'The file was deleted. The edit cannot be saved.',                    // edit-removed
+  warnRemovedEditing: (p) => `File was deleted: ${p}. Edit mode ends when you close the edit.`, // removed-editing（FR-110）
+  warnEncodingEditing: 'Some characters were replaced. Edit mode ends when you close the edit.', // encoding-editing（FR-110）
   warnEncoding:   'Some characters were replaced.',
 };
 ```
 
 - **文言は、配布物（`frontend/js/strings.js`）・利用者向け文書（`docs/troubleshooting.md`）・描画スモーク（`scripts/smoke`）と一致させる。** PlantUML の 2 つの理由（`pumlUnsupported` / `pumlFailed`）と `aboutVersion` は、v1.0.0 から実物とこの節が食い違っていたため、4.44.0 で実物に合わせた。**この節の文言を変えるときは、実物・文書・`scripts/smoke` を同じ変更で直す。**
 
+- **`errNotMarkdown` を残さない**（4.75.0）。種別の名前ごと `not-supported` / `errNotSupported` へ改めた（IMP-315）。古いキーを参照する箇所が残っていれば、読み込みの時点で気づける。
 - **`tipEdit` を残さない。** v1.0.0 の `Edit / 編集` は、編集モード（`tipEditMode`）と並ぶと区別がつかない（UI-024 の NOTE）。キーの名前ごと `tipOpenInEditor` へ改め、古いキーを参照する箇所が残っていれば読み込みの時点で気づけるようにする。
 
 - 引数を取る文言は関数として定義し、呼び出し側で文字列を組み立てない。表示文言の全体像がこのファイルだけで読める状態を保つ。
-- `IMP-315` の `Kind` と、ここのキーを 1 対 1 で対応させる。未知の `Kind` を受け取った場合は `ErrorDTO.Message` をそのまま表示する。
+- `IMP-315` の `Kind` と、ここのキーを 1 対 1 で対応させる。未知の `Kind` を受け取った場合は `ErrorDTO.message` をそのまま表示する。
 - `DocumentDTO.warnings`（IMP-302）も同じ `Kind` の並びであり、同じ対応表で文言を選ぶ。こちらにはフォールバックの `Message` がないため、未知の `Kind` は無視する。
 - **ツールチップのキー表記だけは例外とし、この定義に含めない。** ショートカットの割り当ては `shortcuts.js` の 1 箇所で管理しており（IMP-244）、キー表記を文言側にも書くと二重管理になる。ツールバーは `${S.tipOpen} (${keyLabel('open')})` の形で組み立て、UI-024 が定める `Open / 開く (Ctrl+O)` という表示結果を得る。
 
@@ -1692,7 +2066,7 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 - ロケール判定・言語切り替えの仕組みを設けない（NFR-062）。
 - Go 側が返すエラーメッセージも英語だが、UI に出す最終的な文言はこのファイルの定義を用いる（IMP-315）。
 
-## 12.9 アクセシビリティ（IMP-295 系）
+## 12.10 アクセシビリティ（IMP-295 系）
 
 ### IMP-295: 最低限の対応 **SHOULD**
 
@@ -1709,7 +2083,7 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
   - 拡大画面は `role="dialog"` / `aria-modal="true"` と `aria-label`（`S.expandTitle`）（IMP-253）
   - アイコンだけのボタン（図と画像・並べ替え・拡大画面の操作バー）は、ツールチップと同じ文字列の `aria-label` を持つ（IMP-247）
 
-## 12.10 要求一覧
+## 12.11 要求一覧
 
 | ID | 概要 | 必須度 |
 | --- | --- | --- |
@@ -1751,5 +2125,10 @@ export function keyLabel(id)  // ツールチップに載せる代表キーを�
 | IMP-261 | チェックボックスの切り替え | MUST |
 | IMP-262 | セルの編集欄 | MUST |
 | IMP-263 | 取り消し・やり直し | MUST |
+| IMP-264 | 編集欄（共通の部品とコードブロック） | MUST |
+| IMP-265 | 選んだ文字の修飾 | MUST |
+| IMP-266 | 見える文字の数え方 | MUST |
+| IMP-270 | ファイルツリーの右クリックメニュー | MUST |
+| IMP-271 | ファイルツリーのフィルター | MUST |
 | IMP-290 | UI 文言の一元定義 | MUST |
 | IMP-295 | アクセシビリティの最低限の対応 | SHOULD |

@@ -46,8 +46,10 @@ go_MarkView/
 │   ├── drop.go                 ファイルのドロップの受け取りと判定（IMP-313）
 │   ├── bind.go                 バインドメソッド（IMP-310）
 │   ├── clipboard.go            クリップボードのバインドメソッド（IMP-310, AR-062）
-│   ├── editor.go               エディタで開く 3 つのバインドメソッド（IMP-310, IMP-331）
+│   ├── editor.go               エディタで開くバインドメソッド（IMP-310, IMP-331）
 │   ├── editmode.go             編集モードのバインドメソッド。錠・読み書きの呼び出し・イベント送出だけ（IMP-195, IMP-316）。外部エディタの editor.go と混ぜない
+│   ├── tree.go                 ファイルツリーの操作のバインドメソッド。検査は filetree（IMP-196, IMP-135）
+│   ├── history.go              history:changed の送出（IMP-191, IMP-323）
 │   ├── link.go                 リンク遷移の判定（IMP-312）
 │   ├── recover.go              バインドメソッドの入口で回復したパニックの扱い（IMP-022, IMP-310）
 │   ├── errors.go               エラーの分類（IMP-315）
@@ -55,25 +57,28 @@ go_MarkView/
 │   ├── dto_about.go            アプリケーション情報の型（IMP-306）
 │   ├── dto_editor.go           外部エディタの型（IMP-309）
 │   ├── dto_editmode.go         編集モードの型（IMP-316）
+│   ├── dto_tree.go             ファイルツリーの操作と履歴の型（IMP-317, IMP-323）
 │   ├── webview_windows.go      WebView2 の版の取得（IMP-031, IMP-181）
 │   └── webview_other.go        WebKitGTK の版の取得（IMP-031, IMP-181）
 ├── go.mod / go.sum
 ├── wails.json
 ├── internal/
 │   ├── mdfile/                 IMP-105（依存を持たない葉パッケージ）
-│   │   ├── mdfile.go           Markdown 拡張子の判定
+│   │   ├── mdfile.go           開けるファイルの拡張子と種類の判定（Markdown・図・画像。IMP-105）
 │   │   └── mdfile_test.go
 │   ├── localurl/               AR-040（依存を持たない葉パッケージ）
-│   │   ├── localurl.go         /__local/ URL の組み立てと解読
+│   │   ├── localurl.go         /__local/ URL の組み立てと解読、画像の版（IMP-118）
 │   │   └── localurl_test.go
 │   ├── applog/                 IMP-023（依存を持たない葉パッケージ）
 │   │   ├── applog.go           MARKVIEW_DEBUG の判定とログの初期化
 │   │   └── applog_test.go
 │   ├── document/               IMP-100 系
-│   │   ├── document.go         Document 型、Load、サイズ判定、番兵エラー
+│   │   ├── document.go         Document 型、Load（種類ごとの変換。画像は中身を読まない）、サイズ判定、番兵エラー
 │   │   ├── encoding.go         BOM・改行・UTF-8 検証、行数
 │   │   ├── edit.go             書き換え位置と生バイト列の対応、Patch（IMP-106）
 │   │   ├── editcell.go         表のセルの書き換え（PlanCell / CellSource）と、書いた後の表の形の確かめ（IMP-106）
+│   │   ├── editcode.go         コードブロックと図の書き換え（PlanCode / CodeSource）と確かめ（IMP-122）
+│   │   ├── editformat.go       修飾のタグの差し込み・取り除き（PlanFormat）と確かめ（IMP-124）
 │   │   ├── write.go            一時ファイル + リネームによる置き換え（IMP-107）
 │   │   ├── editlog.go          取り消し履歴（IMP-108）
 │   │   ├── editsession.go      編集モードの状態と判断（IMP-109）
@@ -87,10 +92,15 @@ go_MarkView/
 │   │   ├── highlight.go        chroma 設定
 │   │   ├── anchor.go           見出しスラッグ生成
 │   │   ├── editref.go          編集・並べ替え・リンクの目印と、書き換え位置の特定（IMP-120, IMP-121）
+│   │   ├── visible.go          修飾するブロックの見える文字の対応付け、文字色の一覧（IMP-123）
+│   │   ├── plantumlfile.go     PlantUML ファイルの切り分けと変換（IMP-126）
+│   │   ├── mermaidfile.go      Mermaid ファイルの変換（IMP-127）
+│   │   ├── imagefile.go        画像ファイルの変換（IMP-128）
 │   │   ├── sanitize.go         bluemonday ポリシー
 │   │   └── *_test.go
 │   ├── filetree/               IMP-130 系
-│   │   ├── filetree.go         Node 型、Read / Filter
+│   │   ├── filetree.go         Node 型、Read / Filter、表示する種類（IMP-134）
+│   │   ├── check.go            ツリーの操作の検査と種類の判定（IMP-135）
 │   │   └── filetree_test.go
 │   ├── watcher/                IMP-140 系
 │   │   └── watcher.go          単一ファイル監視
@@ -101,12 +111,12 @@ go_MarkView/
 │   │   ├── path_other.go       $TMPDIR/MarkView-<uid>（IMP-031, IMP-152）
 │   │   └── config_test.go
 │   ├── assetsrv/               IMP-160 系
-│   │   └── assetsrv.go         埋め込み資産とローカル画像の配信
+│   │   └── assetsrv.go         埋め込み資産とローカル画像の配信（画像の拡張子の表は mdfile。IMP-161）
 │   ├── opener/                 IMP-170 系
-│   │   ├── opener.go           既定ブラウザ・既定アプリへの委譲
+│   │   ├── opener.go           既定ブラウザ・既定アプリ・ファイルマネージャへの委譲（IMP-170, IMP-173）
 │   │   ├── editor.go           選ばれたエディタの起動（IMP-171）
-│   │   ├── open_windows.go     rundll32.exe（IMP-031, IMP-170）
-│   │   ├── open_other.go       xdg-open（IMP-031, IMP-170）
+│   │   ├── open_windows.go     rundll32.exe（IMP-031, IMP-170, IMP-173）
+│   │   ├── open_other.go       xdg-open（IMP-031, IMP-170, IMP-173）
 │   │   ├── presets_windows.go  既知パスの探索（IMP-031, IMP-172）
 │   │   └── presets_other.go    $PATH の探索（IMP-031, IMP-172）
 │   ├── ostheme/                IMP-175（`app.go` からのみ使う。IMP-012 の例外の葉ではない）
@@ -173,7 +183,9 @@ flowchart TD
     DOC --> MDF
     TREE --> MDF
     SESS --> MDF
+    ASSET --> MDF
     REND --> LURL["localurl"]
+    DOC --> LURL
     ASSET --> LURL
     REND --> ALOG["applog"]
     WATCH --> ALOG
@@ -181,12 +193,12 @@ flowchart TD
 ```
 
 - `internal/` 同士の依存は、**`document` → `renderer`** と、**任意のパッケージ → `mdfile` / `localurl` / `applog`** の 2 系統のみとする。それ以外は作らない。共通で必要になった処理は、呼び出し側（`app.go`）で組み合わせる。
-- `mdfile`（IMP-105）を例外としているのは、Markdown の拡張子判定を `filetree`（IMP-132）と `session`（IMP-193）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、両者が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
-- `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
+- `mdfile`（IMP-105）を例外としているのは、開けるファイルの拡張子と種類の判定を `document`（IMP-102。種類ごとの読み込み）と `filetree`（IMP-132, IMP-135）と `session`（IMP-193）と `assetsrv`（IMP-161。画像の拡張子と Content-Type の表。4.75.0）が必要とするためである。**`mdfile` は他のどのパッケージにも依存しない葉**であり、これを参照しても重い依存はテストバイナリに入らない。逆に判定を `document` に置くと、`document` 以外の使い手が `renderer` 経由で goldmark と chroma を引き込むことになる。**`mdfile` に依存を追加してはならない。** 依存を持たないことがこの例外の唯一の根拠である。
+- `localurl`（AR-040）を例外としているのは、`/__local/` URL を**組み立てる側**（`renderer` の IMP-118）と**解く側**（`assetsrv` の IMP-161）が互いに依存できない一方（**`document` も画像ファイルの版 `Version` を使う**。IMP-102。4.75.0）、両者の規則は必ず一致していなければならないためである。食い違えばローカル画像がすべて 404 になる。逆変換の対を 1 か所に置くことで、片方だけが変わる事故を防ぐ。`mdfile` と同じく**依存を持たない葉**であり、**`localurl` に依存を追加してはならない**。
 - `applog`（IMP-023）を例外としているのは、「既定ではログを出さない」（NFR-041）が**判定を 1 か所に集めないと守れない**ためである。`MARKVIEW_DEBUG` の判定が散れば、そのうち 1 か所が漏れて配布物が出力を始める。実際に go-webview2 が標準ロガーへ直接書いていた件（IMP-023）を E2E-104 で検出しており、これは自前のコードでも同じように起こりうる。`mdfile` / `localurl` と同じく**標準ライブラリしか使わない葉**であり、**`applog` に依存を追加してはならない**。
 - `internal/` の各パッケージは Wails に依存しない。**Wails の API を呼んでよいのは `package main`（`main.go`）と `desktop` パッケージ（`desktop/` の `.go`。IMP-011）だけとする。** これにより、GUI なしのユニットテストが可能になる（NFR-070）。**「`main.go` と `app.go` の 2 つだけ」ではない。** `desktop/` は責務ごとに分割されており（`bind.go` / `editor.go` / `link.go` ほか）、ファイル名を数え上げる書き方では、追加されたファイルの扱いが読めなくなる。境界は**パッケージ**で引く。**`internal/` から `desktop` を import しない。**
-- **編集モードの書き換え処理と判断（IMP-106〜IMP-109）は `document` に置く。新しいパッケージ（`internal/editor` など）を作らない。** 位置を求めるには `renderer` の goldmark の構成が要り（IMP-121）、上の 2 系統のうち `renderer` を呼べるのは `document` だけである。**`internal/editor` という名前は特に使わない**——外部エディタの起動（IMP-171）と取り違えやすく、そちらを別パッケージに分けない理由（IMP-170）とも紛れる。
-- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作、起動時の対象解決、表示用パスの算出は `internal/session` に、**編集モードの状態と書き込みの判断は `internal/document`（IMP-109）に**置き、`app.go` と `editmode.go` からは呼ぶだけにする。`app.go` に置いたロジックは `desktop` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
+- **編集モードの書き換え処理と判断（IMP-106〜IMP-109、コードブロックと図の IMP-122、修飾の IMP-124）は `document` に置く。新しいパッケージ（`internal/editor` など）を作らない。** 位置を求めるには `renderer` の goldmark の構成が要り（IMP-121）、上の 2 系統のうち `renderer` を呼べるのは `document` だけである。**`internal/editor` という名前は特に使わない**——外部エディタの起動（IMP-171）と取り違えやすく、そちらを別パッケージに分けない理由（IMP-170）とも紛れる。
+- **判断を伴うロジックを `app.go` に置かない。** 履歴の操作（戻る・進むで開けなかった項目の取り除きを含む。IMP-191）、起動時の対象解決、表示用パスの算出は `internal/session` に、**編集モードの状態と書き込みの判断は `internal/document`（IMP-109）に**、**ツリーの操作の検査は `internal/filetree`（IMP-135）に**置き、`app.go` と `editmode.go` と `tree.go` からは呼ぶだけにする。`app.go` に置いたロジックは `desktop` のテストとなり、テストバイナリに Wails（Linux では cgo と WebKitGTK）がリンクされるため、単体テストの前提（UT-002）が崩れる。
 
 ## 10.3 実装規約（IMP-020 系）
 
@@ -197,7 +209,7 @@ flowchart TD
 | パッケージ名 | 小文字 1 語。複数形にしない | `document`, `filetree` |
 | 公開型 | パッケージ名を語頭で繰り返さない | `filetree.Node`（`filetree.FileTreeNode` としない） |
 | コンストラクタ | `New` + 型名（型が 1 つなら `New`） | `renderer.New(opts)` |
-| エラー変数 | `Err` + 内容 | `ErrTooLarge`, `ErrNotMarkdown` |
+| エラー変数 | `Err` + 内容 | `ErrTooLarge`, `ErrNotSupported` |
 | テスト | `Test` + 対象 + `_` + 条件 | `TestLoad_InvalidUTF8` |
 
 ### IMP-021: エラー処理 **MUST**
@@ -214,7 +226,7 @@ flowchart TD
 var (
     ErrNotFound     = errors.New("file not found")
     ErrPermission   = errors.New("permission denied")
-    ErrNotMarkdown  = errors.New("not a markdown file")
+    ErrNotSupported = errors.New("not a supported file") // 4.75.0。v1.1.0 の ErrNotMarkdown（IMP-102）
     ErrTooLarge     = errors.New("file exceeds the maximum size")
     ErrNeedsConfirm = errors.New("file requires confirmation before rendering")
 
@@ -224,6 +236,16 @@ var (
     ErrNotEditable = errors.New("document is not editable")
     ErrChanged     = errors.New("file changed on disk")
     ErrStale       = errors.New("edit instruction is stale") // IMP-109。通知しない
+    ErrRejected     = errors.New("edit would change the document structure") // IMP-106, IMP-122（edit-rejected）
+    ErrLocked       = errors.New("code block cannot be edited")              // IMP-122（code-locked）
+    ErrCannotFormat = errors.New("formatting cannot be applied")             // IMP-124（format-rejected）
+)
+
+// internal/filetree（IMP-131, IMP-135。4.75.0）
+var (
+    ErrOutsideRoot = errors.New("target is outside the tree root")  // PathTo（IMP-131）。表示中の文書がツリー外（FR-052）
+    ErrNotInTree   = errors.New("path is not shown in the tree")    // 何もしない
+    ErrMissing     = errors.New("path no longer exists")            // not-found
 )
 
 // internal/opener（IMP-170, IMP-171）
@@ -232,16 +254,17 @@ var (
     ErrNotFound          = errors.New("file not found")
     ErrNotAbsolute       = errors.New("editor path must be absolute")
     ErrSelf              = errors.New("MarkView cannot be used as an editor")
+    ErrNotDir            = errors.New("not a directory") // IMP-173（4.75.0）
 )
 ```
 
-- **パッケージが違えば、同じ名前の番兵エラーも別の値である**（`document.ErrNotFound` と `opener.ErrNotFound`）。写すときは経路ごとに分ける（IMP-315。エディタは `editor-failed`、リンクの委譲は `open-failed`）。
+- **パッケージが違えば、同じ名前の番兵エラーも別の値である**（`document.ErrNotFound` と `opener.ErrNotFound`）。写すときは経路ごとに分ける（IMP-315。エディタは `editor-failed`、リンクの委譲とファイルマネージャは `open-failed`）。
 
 ### IMP-022: パニックの遮断 **MUST**
 
 FR-111（異常終了の回避）を実装レベルで保証するため、以下の 2 点で `recover` を行う。
 
-1. `desktop` の各バインドメソッドの入口（`bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go`。回復の関数は `recover.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタの 3 つは `editor-failed`、書き込みの 4 つは `edit-failed`、`SetEditMode` と `GetCellSource` は通知しない。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
+1. `desktop` の各バインドメソッドの入口（`bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go` / `tree.go`。回復の関数は `recover.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタのメソッドは `editor-failed`、編集モードの書き込みは `edit-failed`、`SetEditMode` とソースの取得（`GetCellSource` / `GetCodeSource`）とツリーの操作（`OpenFromTree` と、エディタのメソッドでもある `ListEditorsForTree` を除く）と `CloseEditor` / `SetEditBoxOpen` は通知しない（IMP-310 が正。4.76.0）。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
 2. `renderer` の変換処理。goldmark 拡張や chroma の想定外の入力で発生したパニックを、変換エラーとして返す。
 
 `recover` した内容は、開発モード（IMP-023）でのみ標準エラー出力へスタックトレースを出力する。
@@ -364,19 +387,19 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 
 | パッケージ | 主なテスト対象 | 対応要求 |
 | --- | --- | --- |
-| `mdfile` | 拡張子の判定（大小の別、多重拡張子、境界） | FR-010, FR-031 |
-| `localurl` | `/__local/` URL の組み立てと解読（**逆変換の対**。UT-808） | AR-040 |
-| `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類、**書き換え位置と生バイト列の対応・`Patch`・置き換え・取り消し履歴・編集モードの状態と判断（`EditSession`。IMP-109）・鍵の引き継ぎの条件（IMP-102）** | FR-021, FR-016, FR-110, FR-140〜FR-144, NFR-030 |
-| `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・**PlantUML 抽出と指令の検査**・サニタイズ・アンカー生成・**文書の id の接頭辞（AR-053）**・**目印の付与（図のブロックを含む）と書き換え位置の特定**（`Render` と `Locate` の番号が一致すること） | MD-020〜MD-085, FR-141, FR-142, AR-053, NFR-030 |
-| `filetree` | フィルタ規則、除外ディレクトリ、並び順、件数上限 | FR-031, FR-032 |
-| `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め | UI-112, UI-113 |
+| `mdfile` | 拡張子と種類の判定（Markdown・図・画像。大小の別、多重拡張子、境界）、`IsText` / `IsOpenable`、画像の Content-Type の表 | FR-010, FR-025, FR-026, FR-027, FR-031 |
+| `localurl` | `/__local/` URL の組み立てと解読（**逆変換の対**。UT-808）、画像の版（`Version`。IMP-118） | AR-040, FR-014 |
+| `document` | BOM・改行コード・不正 UTF-8 の処理、サイズ判定、読み込みエラーの分類、**書き換え位置と生バイト列の対応・`Patch`・置き換え・取り消し履歴・編集モードの状態と判断（`EditSession`。IMP-109）・鍵の引き継ぎの条件（IMP-102）**、**コードブロックと図の書き換え（`PlanCode`。IMP-122）・修飾（`PlanFormat`。IMP-124）・画像ファイルの読み込み（中身を読まない。IMP-102）**（4.76.0） | FR-021, FR-016, FR-110, FR-140〜FR-147, FR-027, NFR-030 |
+| `renderer` | GFM・Alerts・脚注・絵文字・数式・Mermaid 抽出・**PlantUML 抽出と指令の検査**・サニタイズ・アンカー生成・**文書の id の接頭辞（AR-053）**・**目印の付与（図のブロックを含む）と書き換え位置の特定**（`Render` と `Locate` の番号が一致すること。**脚注の中も**。BUG-027）、**見える文字の対応付け（IMP-123）・図のファイルと画像ファイルの変換（IMP-126〜IMP-128）**（4.76.0） | MD-020〜MD-087, FR-025〜FR-027, FR-141, FR-142, FR-145〜FR-147, AR-053, NFR-030 |
+| `filetree` | フィルタ規則、除外ディレクトリ、並び順、件数上限、**表示する種類（IMP-134）・ツリーの操作の検査（IMP-135）**（4.76.0） | FR-031, FR-032, FR-036, FR-037, NFR-030, NFR-035 |
+| `config` | 保存先の解決、破損時のフォールバック、範囲外値の丸め、ツリーのフィルターの既定値（4.76.0） | UI-112, UI-113, FR-037 |
 | `watcher` | デバウンス、削除とリネームの区別、監視対象の切り替え、**実体のディレクトリの監視（IMP-141）** | FR-014, AR-070 |
 | `assetsrv` | 拡張子の許可・拒否、パス正規化、ヘッダ | AR-041, NFR-031 |
-| `opener` | 引数の組み立てと起動前の検査（実際の起動は行わない） | FR-053, FR-090 |
+| `opener` | 引数の組み立てと起動前の検査（実際の起動は行わない） | FR-050, FR-036, FR-090 |
 | `ostheme` | レジストリ値と gsettings 出力の解釈（実際の問い合わせは行わない） | FR-071 |
 | `applog` | `MARKVIEW_DEBUG` の判定と出力先の切り替え（`"1"` 以外はすべて無効） | NFR-041 |
 | `buildinfo` | `vendor.json` の解析と環境情報の組み立て | BR-042, UI-100 |
-| `session` | 表示履歴、起動時の対象解決、表示用パスの算出、**同じファイルの判定（`SameFile`。UT-809）** | FR-051, FR-013, FR-052, FR-140 |
+| `session` | 表示履歴（**戻る・進むで開けなかった項目の取り除き**。BUG-023。4.76.0）、起動時の対象解決、表示用パスの算出、**同じファイルの判定（`SameFile`。UT-809）** | FR-051, FR-013, FR-052, FR-140 |
 | `scripts/domids`・`scripts/smoke`（**判定だけ**） | 同梱資産と画面の id の衝突、描画スモークの結果の判定（ページが返した事実から合否を決める関数） | BR-043, BR-054, AR-053 |
 
 ### IMP-041: ゴールデンテスト **SHOULD**
