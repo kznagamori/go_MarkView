@@ -135,7 +135,7 @@ Get-FileHash MarkView-<version>-windows-amd64.zip -Algorithm SHA256
 
 ### 必要条件
 
-- [Go](https://go.dev/dl/) 1.25 以上（ビルドに使う版は `go.mod` の `toolchain` が決めます。
+- [Go](https://go.dev/dl/) 1.26 以上（ビルドに使う版は `go.mod` の `toolchain` が決めます。
   手元の Go がそれより古ければ、`go` コマンドが自動で取得します）
 - [Wails CLI](https://wails.io/) v2 系
 - Linux では次のパッケージ

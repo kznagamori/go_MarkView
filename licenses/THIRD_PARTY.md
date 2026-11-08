@@ -27,8 +27,8 @@ the bundled assets are the JavaScript, CSS, font and icon files shipped inside t
 | github.com/yuin/goldmark-emoji | v1.0.6 | MIT |
 | github.com/yuin/goldmark-highlighting/v2 | v2.0.0-20230729083705-37449abec8cc | MIT |
 | github.com/yuin/goldmark-meta | v1.1.0 | MIT |
-| golang.org/x/net | v0.56.0 | BSD-3-Clause |
-| golang.org/x/sys | v0.46.0 | BSD-3-Clause |
+| golang.org/x/net | v0.62.0 | BSD-3-Clause |
+| golang.org/x/sys | v0.49.0 | BSD-3-Clause |
 | gopkg.in/yaml.v2 | v2.3.0 | Apache-2.0 |
 | Mermaid | 12.1.0 | MIT |
 | KaTeX | 0.19.0 | MIT |
@@ -467,7 +467,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-### golang.org/x/net v0.56.0 (BSD-3-Clause)
+### golang.org/x/net v0.62.0 (BSD-3-Clause)
 
 Copyright 2009 The Go Authors.
 
@@ -522,7 +522,7 @@ infringement, or inducement of patent infringement, then any patent
 rights granted to you under this License for this implementation of Go
 shall terminate as of the date such litigation is filed.
 
-### golang.org/x/sys v0.46.0 (BSD-3-Clause)
+### golang.org/x/sys v0.49.0 (BSD-3-Clause)
 
 Copyright 2009 The Go Authors.
 
