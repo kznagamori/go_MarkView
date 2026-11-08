@@ -38,6 +38,10 @@ func TestFindReadme(t *testing.T) {
 		{name: "Markdown が 1 つもない", files: []string{"a.txt", "b.png"}, want: ""},
 		{name: "README.markdown", files: []string{"README.markdown"}, want: "README.markdown"},
 
+		// UT-802 ケース 8: 探すのは Markdown のまま（v1.2.0 で開けるファイルが増えても、README には
+		// 図や画像を使わない。IMP-193）
+		{name: "README.puml と README.png だけ", files: []string{"README.puml", "README.png"}, want: ""},
+
 		// UT-090 に従って追加した境界値
 		{name: "README 以外の Markdown は対象外", files: []string{"index.md"}, want: ""},
 		{name: "空のディレクトリ", files: nil, want: ""},
@@ -375,4 +379,28 @@ func TestResolveStartup_Requested(t *testing.T) {
 			t.Errorf("Requested = %q, want %q", got.Requested, want)
 		}
 	})
+}
+
+// TestResolveStartup_Kinds は、引数のファイルの種類を問わず同じ規則で解決することを検証する
+// （UT-803 のケース 12・13。根拠: FR-012 / IMP-193）。
+//
+// 開けるかは読み込みが決める（開けない旨は document の ErrNotSupported から出す）。ここで絞らない。
+func TestResolveStartup_Kinds(t *testing.T) {
+	for _, name := range []string{"a.puml", "a.mmd", "a.png", "a.txt"} {
+		t.Run(name, func(t *testing.T) {
+			cwd := t.TempDir()
+			writeFiles(t, cwd, name)
+
+			got, err := ResolveStartup([]string{name}, cwd, t.TempDir())
+			if err != nil {
+				t.Fatalf("ResolveStartup() = %v", err)
+			}
+			if got.TreeRoot != cwd {
+				t.Errorf("TreeRoot = %q, want %q（親ディレクトリ）", got.TreeRoot, cwd)
+			}
+			if want := filepath.Join(cwd, name); got.Initial != want {
+				t.Errorf("Initial = %q, want %q（そのファイル）", got.Initial, want)
+			}
+		})
+	}
 }

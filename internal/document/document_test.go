@@ -312,12 +312,15 @@ func TestLoad_SizeErrors(t *testing.T) {
 // （UT-106。根拠: FR-110 / IMP-021, IMP-102）。
 //
 // エラーメッセージの文字列は比較しない。種別のみを errors.Is で見る（UT-042）。
+// **v1.2.0 で ErrNotMarkdown を ErrNotSupported に改名した**（4.75.0）。開けるファイルが
+// Markdown・図のファイル・画像ファイルの 3 種類になった（1.7）。
 func TestLoad_Errors(t *testing.T) {
 	dir := t.TempDir()
 	r := renderer.New()
 
-	writeFile(t, dir, "note.txt", "x")
-	for _, name := range []string{"sub", "dir.md"} {
+	writeFile(t, dir, "a.txt", "x")
+	writeFile(t, dir, "a.iuml", "x")
+	for _, name := range []string{"docs", "x.md", "x.puml", "x.mmd", "x.png"} {
 		if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -328,20 +331,28 @@ func TestLoad_Errors(t *testing.T) {
 		path string
 		want error
 	}{
-		// UT-106 ケース 1
-		{"存在しないパス", filepath.Join(dir, "nosuch.md"), ErrNotFound},
-		{"存在しないディレクトリの下", filepath.Join(dir, "nosuch", "a.md"), ErrNotFound},
+		// UT-106 ケース 1: 存在しないパス（3 種類とも）
+		{"1 存在しないa.md", filepath.Join(dir, "a.md"), ErrNotFound},
+		{"1 存在しないa.puml", filepath.Join(dir, "a.puml"), ErrNotFound},
+		{"1 存在しないa.png", filepath.Join(dir, "a.png"), ErrNotFound},
+		{"1 存在しないディレクトリの下", filepath.Join(dir, "nosuch", "a.md"), ErrNotFound},
 
-		// UT-106 ケース 3
-		{"拡張子が Markdown でない", filepath.Join(dir, "note.txt"), ErrNotMarkdown},
-		{"拡張子がない", filepath.Join(dir, "README"), ErrNotMarkdown},
+		// UT-106 ケース 3: 拡張子が開けるものでない（取り込み用の断片 .iuml も）
+		{"3 a.txt", filepath.Join(dir, "a.txt"), ErrNotSupported},
+		{"3 a.iuml", filepath.Join(dir, "a.iuml"), ErrNotSupported},
+		{"3 拡張子がない", filepath.Join(dir, "README"), ErrNotSupported},
 
-		// UT-106 ケース 4: ディレクトリ
-		{"ディレクトリ", filepath.Join(dir, "sub"), ErrNotMarkdown},
-		{"Markdown の拡張子を持つディレクトリ", filepath.Join(dir, "dir.md"), ErrNotMarkdown},
+		// UT-106 ケース 4: 拡張子の判定が存在の確認より先（IMP-102 の図）
+		{"4 存在しないa.txt", filepath.Join(dir, "nosuch.txt"), ErrNotSupported},
 
-		// 検査順序（IMP-102）: 拡張子は存在確認より先に見る
-		{"存在しないうえ拡張子も違う", filepath.Join(dir, "nosuch.txt"), ErrNotMarkdown},
+		// UT-106 ケース 5: 開ける拡張子の名前でも、通常のファイルでなければ開けない（4.78.0）
+		{"5 ディレクトリ", filepath.Join(dir, "docs"), ErrNotSupported},
+		{"5 x.mdのディレクトリ", filepath.Join(dir, "x.md"), ErrNotSupported},
+		{"5 x.pumlのディレクトリ", filepath.Join(dir, "x.puml"), ErrNotSupported},
+		{"5 x.mmdのディレクトリ", filepath.Join(dir, "x.mmd"), ErrNotSupported},
+
+		// UT-106 ケース 6: 画像も 5 と同じ（4.77.0 までは ErrNotFound としていた）
+		{"6 x.pngのディレクトリ", filepath.Join(dir, "x.png"), ErrNotSupported},
 	}
 
 	for _, tt := range tests {
@@ -365,6 +376,9 @@ func TestLoad_Errors(t *testing.T) {
 func TestLoad_Permission(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows では読み取り権限を落としたファイルを再現できない（UT-106 ケース 2）")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("実行ユーザが root のため、権限を無視して読める（UT-106 ケース 2。UT-035）")
 	}
 
 	dir := t.TempDir()

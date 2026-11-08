@@ -293,3 +293,105 @@ func TestLocate_DoesNotCrash(t *testing.T) {
 		})
 	}
 }
+
+// lineAt は source の pos を含む行を返す（改行を含まない）。
+func lineAt(source string, pos int) string {
+	if pos < 0 || pos > len(source) {
+		return ""
+	}
+	start := strings.LastIndexByte(source[:pos], '\n') + 1
+	end := strings.IndexByte(source[pos:], '\n')
+	if end < 0 {
+		return source[start:]
+	}
+	return source[start : pos+end]
+}
+
+// footnoteTableDoc は UT-110 のケース 23 の文書（UT-109 のケース 13 の形 1 で、タスクの代わりに
+// 1 列の表）。脚注の定義の中の表が、本文の表より前にある。
+const footnoteTableDoc = "本文[^1]\n\n[^1]: 脚注:\n\n" +
+	"    | h |\n    | --- |\n    | 脚注のセル |\n\n" +
+	"| h |\n| --- |\n| 本文のセル |\n"
+
+// TestLocate_FootnoteOrder は、Locate の番号が Render の目印と同じく描画される順であることを
+// 検証する（UT-218 のケース 15〜17。根拠: FR-141, FR-142, FR-145 / IMP-120, IMP-121。BUG-027）。
+//
+// ケース 15〜17 は、ケース 1 を脚注で崩した形である。v1.1.0 は walkRefs を共有していたが、
+// **走らせる時点の木が違った**（目印は脚注の変換の前、Locate は後）。
+func TestLocate_FootnoteOrder(t *testing.T) {
+	r := New()
+
+	// ケース 15: Render が付けた task:<n> の n 番目の Tasks が、同じ項目の括弧の中を指す。
+	t.Run("ケース15_脚注の中のタスク", func(t *testing.T) {
+		for _, f := range footnoteTaskForms {
+			t.Run(f.name, func(t *testing.T) {
+				locs, err := r.Locate([]byte(f.src))
+				if err != nil {
+					t.Fatalf("Locate がエラーを返した: %v", err)
+				}
+				_, els := renderWithKey(t, f.src, testRefKey)
+
+				// 目印の n と、その n 番目の Tasks の行が同じ項目であること。
+				inputs := byTag(els, "input")
+				labels := taskLabels(els)
+				if len(locs.Tasks) != len(inputs) {
+					t.Fatalf("Tasks が %d 個、描画されたタスクは %d 個（参照されていない脚注は数えない）", len(locs.Tasks), len(inputs))
+				}
+				for i, in := range inputs {
+					v, _ := in.Attr("data-ref")
+					var n int
+					if _, err := fmt.Sscanf(strings.TrimPrefix(v, testRefKey+":"), "task:%d", &n); err != nil || n >= len(locs.Tasks) {
+						t.Fatalf("%d 番目のタスクの目印 %q を読めない", i, v)
+					}
+					line := lineAt(f.src, locs.Tasks[n].Start)
+					if !strings.HasSuffix(line, labels[i]) {
+						t.Errorf("task:%d（画面の %q）の Tasks[%d] が指す行 = %q", n, labels[i], n, line)
+					}
+				}
+				// 期待する順は人が書いた（UT-031）。Tasks[i] の行が order[i] で終わる。
+				for i, want := range f.order {
+					if i < len(locs.Tasks) {
+						if line := lineAt(f.src, locs.Tasks[i].Start); !strings.HasSuffix(line, want) {
+							t.Errorf("Tasks[%d] が指す行 = %q, want %q で終わる行", i, line, want)
+						}
+					}
+				}
+			})
+		}
+	})
+
+	// ケース 16: 脚注の定義の中の表が本文の表より前にある文書（UT-110 のケース 23）では、
+	// Tables[0] が本文の表。
+	t.Run("ケース16_脚注の中の表", func(t *testing.T) {
+		locs, err := r.Locate([]byte(footnoteTableDoc))
+		if err != nil {
+			t.Fatalf("Locate がエラーを返した: %v", err)
+		}
+		if len(locs.Tables) != 2 {
+			t.Fatalf("Tables が %d 個, want 2", len(locs.Tables))
+		}
+		cell := locs.Tables[0].Cells[1][0]
+		if cell == nil {
+			t.Fatal("Tables[0] の本体の 1 行目 1 列目が nil")
+		}
+		if got := footnoteTableDoc[cell.Content.Start:cell.Content.Stop]; got != "本文のセル" {
+			t.Errorf("Tables[0] の本体のセル = %q, want %q（本文の表）", got, "本文のセル")
+		}
+	})
+
+	// ケース 17: 脚注の定義の中のコードブロックが本文のものより前にある文書（UT-217 のケース 28）
+	// では、Codes[0] が本文のコードブロック。
+	t.Run("ケース17_脚注の中のコードブロック", func(t *testing.T) {
+		locs, err := r.Locate([]byte(footnoteBlocksDoc))
+		if err != nil {
+			t.Fatalf("Locate がエラーを返した: %v", err)
+		}
+		if len(locs.Codes) != 2 {
+			t.Fatalf("Codes が %d 個, want 2", len(locs.Codes))
+		}
+		b := locs.Codes[0].Body
+		if got := footnoteBlocksDoc[b.Start:b.Stop]; got != "x\n" {
+			t.Errorf("Codes[0] の中身 = %q, want %q（本文のコードブロック）", got, "x\n")
+		}
+	})
+}

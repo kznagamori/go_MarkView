@@ -102,6 +102,21 @@ func TestServeLocal(t *testing.T) {
 		}
 	})
 
+	// UT-601 ケース 5: クエリ（版）を見ない。版は取り直させるためだけのもの（IMP-118, IMP-160。BUG-026）
+	t.Run("クエリの版を見ない", func(t *testing.T) {
+		p := writeFile(t, dir, "v.png", "versioned")
+		for _, q := range []string{"?v=3b9aca00-3", "?v=0-0"} {
+			res := get(t, h, localurl.Encode(p)+q)
+			if res.StatusCode != http.StatusOK {
+				t.Errorf("%s のステータス = %d, want 200", q, res.StatusCode)
+				continue
+			}
+			if got := body(t, res); got != "versioned" {
+				t.Errorf("%s の本文 = %q, want %q", q, got, "versioned")
+			}
+		}
+	})
+
 	t.Run("拡張子の大文字小文字を区別しない", func(t *testing.T) {
 		p := writeFile(t, dir, "upper.PNG", "x")
 

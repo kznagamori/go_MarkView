@@ -19,12 +19,19 @@ const (
 	originWrongKey = "raw-wrong-key" // 生 HTML で別の鍵を書いた目印
 	originNoKey    = "raw-no-key"    // 目印の無い生 HTML
 	originBadShape = "raw-bad-shape" // 形の崩れた目印
+
+	// originGFMNone は GFM が出すが、その種類の目印を持たない要素（4.78.0）。Alerts の見出しの p・
+	// 広いリストと脚注の li（目印は中の p に付く）・字下げ形式のコードブロック・脚注の参照と戻りリンクなど、
+	// **要素を種類で集めると必ず混ざるもの**であり、どの種類で照合しても偽（null）が正しい。
+	originGFMNone = "gfm-none"
 )
 
+// allOrigins は、種類ごとの一覧が必ず含む由来（UT-815 のケース 9）。gfm-none は、それを持つ種類にだけある。
 var allOrigins = []string{originGFM, originWrongKey, originNoKey, originBadShape}
 
-// refKinds は isOwnRef の種類（IMP-260）。ページはどの要素にも 5 種類すべてで呼ぶ。
-var refKinds = []string{"task", "table", "cell", "mermaid", "plantuml"}
+// refKinds は isOwnRef の種類（IMP-260）。ページはどの要素にも 7 種類すべてで呼ぶ。
+// **code と text は v1.2.0 で書き換えの対象になった**（FR-145, FR-146。4.77.0。UT-815 のケース 19〜24）。
+var refKinds = []string{"task", "table", "cell", "mermaid", "plantuml", "code", "text"}
 
 // 図のブロックの種類（blockSpec.Kind）。code は data-source だけを持つコードブロック。
 const (
@@ -52,55 +59,11 @@ type refLayout struct {
 	Cells      []string
 	Links      []linkSpec
 	Blocks     []blockSpec
-}
 
-// smokeRefLayout は testdata/smoke.md の並び。**testdata/smoke.md と一致させる。**
-// 食い違うと「数が違う」で落ちる（UT-815 のケース 9）。
-var smokeRefLayout = refLayout{
-	Checkboxes: []string{
-		originGFM, originGFM, // - [ ] / - [x]
-		originWrongKey, originNoKey, originBadShape,
-	},
-	Tables: []string{
-		originGFM, // 本体 2 行（ボタンが付く）
-		originGFM, // 本体 1 行（ボタンが付かない）
-		originWrongKey, originNoKey, originBadShape,
-	},
-	Cells: []string{
-		// 本体 2 行の表: 見出し 2 + 本体 2 行 x 2 列
-		originGFM, originGFM, originGFM, originGFM, originGFM, originGFM,
-		// 本体 1 行の表: 見出し 2 + 本体 1 行 x 2 列
-		originGFM, originGFM, originGFM, originGFM,
-		// 生 HTML の表（1 列。見出し 1 + 本体 2 行）
-		originWrongKey, originWrongKey, originWrongKey,
-		originNoKey, originNoKey, originNoKey,
-		originBadShape, originBadShape, originBadShape,
-	},
-	Links: []linkSpec{
-		{originGFM, "../docs/bugs/2026-09-06-bug-008-broken-image-alt-webkitgtk.md"},
-		{originGFM, "../docs/bugs/2026-09-14-bug-011-document-id-collision.md"},
-		{originGFM, "./e2e/docs/design.md#api"},
-		{originGFM, "https://example.com/p"},
-		{Origin: originWrongKey},
-		{Origin: originNoKey},
-		{Origin: originBadShape},
-		{originGFM, "../docs/bugs/2026-09-14-bug-014-diagram-marker-spoofing.md"},
-	},
-	Blocks: []blockSpec{
-		// Mermaid の 7 種類
-		{originGFM, blockMermaid}, {originGFM, blockMermaid}, {originGFM, blockMermaid},
-		{originGFM, blockMermaid}, {originGFM, blockMermaid}, {originGFM, blockMermaid},
-		{originGFM, blockMermaid},
-		// PlantUML の 2 種類
-		{originGFM, blockPlantUML}, {originGFM, blockPlantUML},
-		// ラベルに id を書いた Mermaid
-		{originGFM, blockMermaid},
-		// 生 HTML で偽装したブロック
-		{originWrongKey, blockPlantUML}, // !include を含む
-		{originNoKey, blockMermaid},
-		{originBadShape, blockMermaid},
-		{originNoKey, blockCode}, // data-source だけを偽装したコードブロック
-	},
+	// v1.2.0（4.77.0）。Codes は図でない div.code-block（data-mermaid / data-plantuml / data-puml-error /
+	// data-source を持たないもの）、Texts は p / h1〜h6 / li（図の器と svg の子孫を除く）。
+	Codes []string
+	Texts []string
 }
 
 // refReport は照合の結果（harness.js と対になる）。
@@ -114,6 +77,8 @@ type refReport struct {
 	Cells      []refElement   `json:"cells"`
 	Links      []linkElement  `json:"links"`
 	Blocks     []blockElement `json:"blocks"`
+	Codes      []refElement   `json:"codes"` // v1.2.0。図でない div.code-block
+	Texts      []refElement   `json:"texts"` // v1.2.0。p / h1〜h6 / li
 }
 
 // refElement はチェックボックス・表・セル 1 つの事実。
@@ -190,6 +155,8 @@ func checkRefMatching(layout refLayout, got refReport) []string {
 		{"チェックボックス", "task", layout.Checkboxes, got.Checkboxes},
 		{"表", "table", layout.Tables, got.Tables},
 		{"セル", "cell", layout.Cells, got.Cells},
+		{"コードブロック", "code", layout.Codes, got.Codes},
+		{"修飾できるブロック", "text", layout.Texts, got.Texts},
 	}
 
 	for _, ek := range elementKinds {
@@ -232,8 +199,8 @@ func checkRefMatching(layout refLayout, got refReport) []string {
 
 			switch {
 			case spec.Origin != originGFM && link.Target != nil:
-				set.add(fmt.Sprintf("目印の照合: 生 HTML のリンク（%s）に ownLinkTarget が文字列を返した"+
-					"（見えているリンク先と違う文字列をコピーする。FR-063, NFR-030）", spec.Origin), i)
+				set.add(fmt.Sprintf("目印の照合: %sのリンク（%s）に ownLinkTarget が文字列を返した"+
+					"（見えているリンク先と違う文字列をコピーする。FR-063, NFR-030）", originLabel(spec.Origin), spec.Origin), i)
 			case spec.Origin == originGFM && link.Target == nil:
 				set.add("目印の照合: GFM のリンクで ownLinkTarget が null を返した", i)
 			case spec.Origin == originGFM && *link.Target != spec.Target:
@@ -281,6 +248,8 @@ func checkLayout(layout refLayout) []string {
 		{"セル", layout.Cells},
 		{"リンク", links},
 		{"図のブロック", blocks},
+		{"コードブロック", layout.Codes},
+		{"修飾できるブロック", layout.Texts},
 	} {
 		for _, origin := range allOrigins {
 			if !containsString(kind.origins, origin) {
@@ -298,7 +267,7 @@ func checkOwn(set *failureSet, name, kind, origin string, own map[string]bool, i
 	for _, k := range refKinds {
 		switch {
 		case origin != originGFM && own[k]:
-			set.add(fmt.Sprintf("目印の照合: 生 HTML の%s（%s）で isOwnRef(%s) が真（NFR-030）", name, origin, k), index)
+			set.add(fmt.Sprintf("目印の照合: %sの%s（%s）で isOwnRef(%s) が真（NFR-030）", originLabel(origin), name, origin, k), index)
 		case origin == originGFM && k == kind && !own[k]:
 			set.add(fmt.Sprintf("目印の照合: GFM の%sで isOwnRef(%s) が偽", name, k), index)
 		case origin == originGFM && k != kind && own[k]:
@@ -339,6 +308,15 @@ func checkBlock(set *failureSet, spec blockSpec, block blockElement, index int) 
 	if !block.Rendered {
 		set.add("目印の照合: GFM の図のブロックに図の器ができていない", index)
 	}
+}
+
+// originLabel は失敗の文言の由来の呼び名を返す。gfm-none は「目印を持たない GFM」（4.78.0。UT-815 のケース 25）。
+func originLabel(origin string) string {
+	if origin == originGFMNone {
+		return "目印を持たない GFM "
+	}
+
+	return "生 HTML "
 }
 
 func containsString(list []string, want string) bool {

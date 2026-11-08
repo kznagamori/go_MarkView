@@ -181,8 +181,16 @@ export function collectSort(tablesort, cases, report) {
   }
 }
 
-// REF_KINDS は isOwnRef の種類（IMP-260）。どの要素にも 5 種類すべてで呼ぶ。
-const REF_KINDS = ["task", "table", "cell", "mermaid", "plantuml"];
+// REF_KINDS は isOwnRef の種類（IMP-260）。どの要素にも 7 種類すべてで呼ぶ。
+// code と text は v1.2.0 で書き換えの対象になった（FR-145, FR-146。UT-815 のケース 19〜24）。
+const REF_KINDS = ["task", "table", "cell", "mermaid", "plantuml", "code", "text"];
+
+// TEXT_SELECTOR は修飾できるブロックになりうる要素（IMP-120 の p / h1〜h6 / li）。
+const TEXT_SELECTOR = "p, h1, h2, h3, h4, h5, h6, li";
+
+// outsideDiagram は、要素が図の SVG と図の器の中に無いことを返す。**図の器と svg の子孫は集めない**——
+// Mermaid のラベルの <p> の数は資産の版で変わり、出現順のリテラルが資産の更新のたびに崩れる（UT-815。4.78.0）。
+const outsideDiagram = (element) => !element.closest("svg, .mermaid-rendered, .plantuml-rendered");
 
 // collectRefs は本番の refs.js の照合結果を、要素の種類ごとに文書の順で集める（UT-815）。
 //
@@ -235,6 +243,49 @@ export function collectRefs(refs, root, blocks, report) {
       rendered: block.querySelector(".mermaid-rendered, .plantuml-rendered") !== null,
     };
   });
+
+  // v1.2.0: 図でない div.code-block（code）と、修飾できるブロックになりうる要素（text）。
+  const diagram = new Set(blocks);
+  report.refs.codes = [...root.querySelectorAll("div.code-block")]
+    .filter((block) => outsideDiagram(block) && !diagram.has(block))
+    .map((block) => ({ own: own(block), sortButtons: 0, bodyRows: 0 }));
+
+  report.refs.texts = [...root.querySelectorAll(TEXT_SELECTOR)]
+    .filter(outsideDiagram)
+    .map((element) => ({ own: own(element), sortButtons: 0, bodyRows: 0 }));
+}
+
+// collectVisible は、鍵の合う text と cell の目印を持つブロックの見える文字を、本番の visible.js で
+// 数えて集める（BR-054 の「見える文字の照合」。UT-817）。
+//
+// **判定しない。Go 側の結果を受け取らない**（IMP-266）。目印は refs.js の ownRef で読み
+// （data-ref を読むのは refs.js だけ。IMP-260）、鍵を除いた値（text:3 / cell:0:1:2）で返す。
+export function collectVisible(visible, refs, root, refKey, report) {
+  if (!visible) return;
+
+  if (typeof visible.visibleText !== "function") {
+    report.visible.error = "visible.js に visibleText がない（IMP-266 が未実装）";
+    return;
+  }
+  if (!refs || typeof refs.ownRef !== "function") {
+    report.visible.error = "refs.js に ownRef がない（IMP-260）";
+    return;
+  }
+
+  report.visible.imported = true;
+
+  const prefix = refKey + ":";
+  const targets = [
+    ...[...root.querySelectorAll(TEXT_SELECTOR)].filter(outsideDiagram).map((element) => [element, "text"]),
+    ...[...root.querySelectorAll("th, td")].filter(outsideDiagram).map((element) => [element, "cell"]),
+  ];
+
+  for (const [element, kind] of targets) {
+    const ref = refs.ownRef(element, kind);
+    if (typeof ref !== "string" || !ref.startsWith(prefix)) continue;
+
+    report.visible.blocks.push({ ref: ref.slice(prefix.length), text: String(visible.visibleText(element)) });
+  }
 }
 
 // settleImages は本文中の img がすべて決着するのを待つ。

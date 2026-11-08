@@ -16,7 +16,7 @@ const testRefKey = "0123456789abcdef"
 func renderWithKey(t *testing.T, source, key string) (Result, []element) {
 	t.Helper()
 
-	res, err := New().Render([]byte(source), "", key)
+	res, err := New().Render([]byte(source), Options{RefKey: key})
 	if err != nil {
 		t.Fatalf("Render(%q) がエラーを返した: %v", source, err)
 	}
@@ -59,7 +59,7 @@ func wantCount(t *testing.T, what string, els []element, want int, html string) 
 }
 
 // TestRender_RefMarkers_Absent は、目印を付けてはならない要素に付けないことを
-// 検証する（UT-217 ケース 1〜4・17〜19。根拠: FR-130, FR-141, FR-142, MD-084,
+// 検証する（UT-217 ケース 1〜4・17〜19（18 は 4.77.0 で改めた）。根拠: FR-130, FR-141, FR-142, MD-084,
 // NFR-030 / IMP-115, IMP-119, IMP-120）。
 //
 // **付かないことを確かめるケースを先に書く**（UT-013）。「すべてに目印を付ける」
@@ -153,15 +153,18 @@ func TestRender_RefMarkers_Absent(t *testing.T) {
 		}
 	})
 
-	t.Run("ケース18_図でないコードブロックに data-ref が無い", func(t *testing.T) {
+	// ケース 18: 字下げ形式のコードブロック・```math・生 HTML の <pre> には付かない（FR-145 の対象外）。
+	// 4.77.0 で改めた——v1.1.0 は「図でないコードブロックに付かない」を見ていたが、
+	// v1.2.0 でフェンス付きのコードブロックにも code: を付ける（ケース 22）。
+	t.Run("ケース18_字下げ形式と数式と生HTMLのpreに data-ref が無い", func(t *testing.T) {
 		tests := []struct {
 			name      string
 			in        string
 			codeBlock bool // div.code-block が出るはずか（math は math-block になる）
 		}{
-			{"go", "```go\nx := 1\n```", true},
-			{"言語指定なし", "```\nplain\n```", true},
+			{"字下げ形式", "para\n\n    x := 1\n", true},
 			{"math", "```math\na+b\n```", false},
+			{"生HTMLのpre", "<pre>raw</pre>\n", false},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -171,8 +174,8 @@ func TestRender_RefMarkers_Absent(t *testing.T) {
 				if tt.codeBlock && len(blocks) != 1 {
 					t.Fatalf("div.code-block が %d 個, want 1 個\n出力: %s", len(blocks), res.HTML)
 				}
-				for _, d := range byTag(els, "div") {
-					wantNoAttr(t, "div", d, "data-ref", res.HTML)
+				for _, e := range els {
+					wantNoAttr(t, "<"+e.Tag+">", e, "data-ref", res.HTML)
 				}
 			})
 		}

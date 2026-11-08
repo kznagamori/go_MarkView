@@ -1,0 +1,33 @@
+' MarkView の検証用データ（E2E-391）。図が 5 つの PlantUML ファイル
+@startuml login-flow
+Alice -> Bob : login
+Bob --> Alice : welcome
+@enduml
+
+図の外の文。表示しない
+
+@startuml
+title Class model
+class Account {
+  +name : string
+}
+class Session {
+  +token : string
+}
+Account --> Session
+@enduml
+
+@startmindmap
+* MarkView
+** Markdown
+** Diagrams
+@endmindmap
+
+@startuml(id=with-include)
+!include https://example.com/x.puml
+A -> B
+@enduml
+
+@startuml
+this line is not plantuml
+@enduml

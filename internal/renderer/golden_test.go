@@ -42,14 +42,16 @@ const goldenRefKey = "0123456789abcdef"
 // 個別の記法は他のテストが見ている。ここで守りたいのは、**それらを 1 つの
 // 文書に混ぜたときに意図しない描画変化が起きていないこと**である。
 //
-// **v1.1.0 の実装（IMP-120, AR-053）で出力が 2 種類変わる。** 目印の属性
-// （data-ref / data-link。図のブロックの div を含む）と、見出し・脚注の id の
-// 接頭辞（user-content-。脚注の href も）である。**差分がこの 2 種類だけで
-// あることを読んでから -update する**（UT-214, UT-039）。
+// **v1.2.0 の入力（入れ子の Alert・<strike> / <s> / <del>・7 色の span）は、テストの
+// 先行実装で showcase.md に足し、v1.1.0 の実装の出力のまま更新した**（入力を足した差分と
+// 実装の差分を分けて読むため。利用者の判断）。**v1.2.0 の実装で出力が変わるのは、
+// code: の目印（IMP-115, IMP-120）・入れ子の Alert が普通の引用になること（BUG-025）・
+// 色の span の class="md-color-<名前>"（IMP-116）・<strike> が残ること（MD-072）である。**
+// **差分がこれだけであることを読んでから -update する**（UT-214, UT-039）。
 func TestRender_Golden(t *testing.T) {
 	source := readShowcase(t)
 
-	res, err := New().Render(source, goldenBaseDir, goldenRefKey)
+	res, err := New().Render(source, Options{BaseDir: goldenBaseDir, RefKey: goldenRefKey})
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
@@ -79,7 +81,7 @@ func TestRender_Golden(t *testing.T) {
 // ゴールデンは「変わっていないこと」しか言わない。**中身が薄くなっても
 // 気づけない**ため、要となる性質だけを別に主張しておく。
 func TestRender_GoldenExpectations(t *testing.T) {
-	res, err := New().Render(readShowcase(t), goldenBaseDir, goldenRefKey)
+	res, err := New().Render(readShowcase(t), Options{BaseDir: goldenBaseDir, RefKey: goldenRefKey})
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}

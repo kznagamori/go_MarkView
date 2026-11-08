@@ -14,186 +14,204 @@ func pushPaths(h *History, paths ...string) {
 	}
 }
 
-// mustBack は Back が成功することを前提に 1 つ戻る。
-func mustBack(t *testing.T, h *History) Entry {
+// peek は delta 先の項目の Path を返す。無ければ "-"。
+//
+// **現在位置は Peek(-1) と Peek(+1) の結果で観測する**（UT-011。UT-804 の前置き）。
+func peek(h *History, delta int) string {
+	e, ok := h.Peek(delta)
+	if !ok {
+		return "-"
+	}
+	return e.Path
+}
+
+// wantAround は Peek(-1) / Peek(+1) / CanBack / CanForward をまとめて確かめる。
+// back / fwd の "-" は ok が偽であること。
+func wantAround(t *testing.T, h *History, back, fwd string) {
 	t.Helper()
 
-	e, ok := h.Back()
-	if !ok {
-		t.Fatal("Back できない")
+	if got := peek(h, -1); got != back {
+		t.Errorf("Peek(-1) = %q, want %q", got, back)
 	}
-	return e
-}
-
-// TestHistory_BackForward は前後移動を検証する
-// （UT-804 ケース 1・2。根拠: FR-051 / IMP-191）。
-func TestHistory_BackForward(t *testing.T) {
-	h := NewHistory()
-	pushPaths(h, "a", "b", "c")
-
-	// UT-804 ケース 1: A → B → C を積んで 2 回戻る
-	if got := mustBack(t, h); got.Path != "b" {
-		t.Errorf("1 回目の Back = %q, want b", got.Path)
+	if got := peek(h, +1); got != fwd {
+		t.Errorf("Peek(+1) = %q, want %q", got, fwd)
 	}
-	if got := mustBack(t, h); got.Path != "a" {
-		t.Errorf("2 回目の Back = %q, want a", got.Path)
+	if got, want := h.CanBack(), back != "-"; got != want {
+		t.Errorf("CanBack = %v, want %v", got, want)
 	}
-
-	// UT-804 ケース 2: そこから 1 回進む
-	got, ok := h.Forward()
-	if !ok {
-		t.Fatal("Forward できない")
-	}
-	if got.Path != "b" {
-		t.Errorf("Forward = %q, want b", got.Path)
+	if got, want := h.CanForward(), fwd != "-"; got != want {
+		t.Errorf("CanForward = %v, want %v", got, want)
 	}
 }
 
-// TestHistory_Limits は端での振る舞いを検証する
-// （UT-804 ケース 4。根拠: FR-051 / IMP-191）。
+// TestHistory は戻る・進むの履歴を検証する（UT-804 のケース 1〜12。根拠: FR-051, UI-021 / IMP-191, IMP-323。
+// BUG-023）。
 //
-// **空の履歴で Back を呼んでも落ちない。** 起動直後に Alt+← を押されうる。
-func TestHistory_Limits(t *testing.T) {
-	t.Run("空の履歴で Back", func(t *testing.T) {
-		if got, ok := NewHistory().Back(); ok {
-			t.Errorf("Back = %+v, true。want 失敗", got)
-		}
-	})
-
-	t.Run("空の履歴で Forward", func(t *testing.T) {
-		if got, ok := NewHistory().Forward(); ok {
-			t.Errorf("Forward = %+v, true。want 失敗", got)
-		}
-	})
-
-	t.Run("1 件だけの履歴では戻れない", func(t *testing.T) {
+// **v1.2.0 で、戻る・進むを「位置を動かさずに見る（Peek）→ 開く → 開けたら動かす（Step）/
+// 開けなければ取り除く（Drop）」に分けた**（4.75.0〜4.76.0。v1.1.0 の Back / Forward は開く前に
+// 位置を動かしていた）。「A・B・C で C にいる」は、A → B → C の順に Push した直後をいう。
+//
+// **ケース 12 が BUG-023 そのものである。** **ケース 2 と 8 も同じ誤りを捕まえる**——Peek が位置を
+// 動かす実装は 2 で、Drop の後に位置をずらさない実装は 8 で落ちる。
+func TestHistory(t *testing.T) {
+	// ケース 1: 空の履歴（起動直後に Alt+← を押されうる）。panic しない。
+	t.Run("1 空の履歴", func(t *testing.T) {
 		h := NewHistory()
-		pushPaths(h, "a")
-
-		if got, ok := h.Back(); ok {
-			t.Errorf("Back = %+v, true。want 失敗（現在位置が先頭）", got)
-		}
+		wantAround(t, h, "-", "-")
+		h.Drop(-1)
+		h.Drop(0)
+		h.SetScrollTop(100) // 落ちないことが要求（FR-111）
+		wantAround(t, h, "-", "-")
 	})
 
-	t.Run("先頭から先へは戻れない", func(t *testing.T) {
+	// ケース 2: Peek は位置を動かさない。
+	t.Run("2 Peekは位置を動かさない", func(t *testing.T) {
 		h := NewHistory()
-		pushPaths(h, "a", "b")
-
-		mustBack(t, h)
-		if got, ok := h.Back(); ok {
-			t.Errorf("Back = %+v, true。want 失敗", got)
+		pushPaths(h, "A", "B", "C")
+		if a, b := peek(h, -1), peek(h, -1); a != "B" || b != "B" {
+			t.Errorf("Peek(-1) を 2 回 = %q, %q, want B, B", a, b)
 		}
+		wantAround(t, h, "B", "-")
 	})
 
-	t.Run("末尾から先へは進めない", func(t *testing.T) {
+	// ケース 3・4: Step(-1) で位置が動く。
+	t.Run("3・4 Step", func(t *testing.T) {
 		h := NewHistory()
-		pushPaths(h, "a", "b")
+		pushPaths(h, "A", "B", "C")
+		h.Step(-1)
+		wantAround(t, h, "A", "C") // 3: 位置が B へ動いた
+		h.Step(-1)
+		wantAround(t, h, "-", "B") // 4: 位置が A
+	})
 
-		if got, ok := h.Forward(); ok {
-			t.Errorf("Forward = %+v, true。want 失敗", got)
+	// ケース 5: B にいるときに D を Push すると、前方の C を捨てる。
+	t.Run("5 Pushは前方を捨てる", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B", "C")
+		h.Step(-1)
+		h.Push(Entry{Path: "D"})
+		wantAround(t, h, "B", "-")
+	})
+
+	// ケース 6: 保持は 50 件。捨てるのは最も古い P1（件数だけを見ると、51 件目を積まない実装や
+	// 新しい方を捨てる実装が通る。4.78.0）。
+	t.Run("6 保持は50件", func(t *testing.T) {
+		h := NewHistory()
+		for i := 1; i <= MaxHistory+1; i++ {
+			h.Push(Entry{Path: fmt.Sprintf("P%d", i)})
+		}
+		if got := peek(h, -1); got != "P50" {
+			t.Fatalf("積んだ直後の Peek(-1) = %q, want P50", got)
+		}
+		for i := 1; i <= 49; i++ {
+			if got, want := peek(h, -1), fmt.Sprintf("P%d", 51-i); got != want {
+				t.Fatalf("%d 回目の Peek(-1) = %q, want %q", i, got, want)
+			}
+			if i == 49 {
+				break
+			}
+			h.Step(-1)
+			if i == 48 {
+				if got := peek(h, -1); got != "P2" {
+					t.Errorf("48 回戻った後の Peek(-1) = %q, want P2", got)
+				}
+			}
+		}
+		h.Step(-1) // 49 回目
+		if got := peek(h, -1); got != "-" {
+			t.Errorf("50 回目の Peek(-1) = %q, want ok が偽（P1 は捨てた）", got)
 		}
 	})
 
-	t.Run("空の履歴で SetScrollTop", func(t *testing.T) {
-		// 落ちないことが要求（FR-111）。
-		NewHistory().SetScrollTop(100)
-	})
-}
-
-// TestHistory_PushDiscardsForward は前方履歴の破棄を検証する
-// （UT-804 ケース 3。根拠: FR-051 / IMP-191）。
-//
-// 戻った状態から別の文書を開くと、進む先は失われる。ブラウザと同じ挙動。
-func TestHistory_PushDiscardsForward(t *testing.T) {
-	h := NewHistory()
-	pushPaths(h, "a", "b", "c")
-
-	mustBack(t, h) // b
-	mustBack(t, h) // a
-
-	h.Push(Entry{Path: "d"})
-
-	if got, ok := h.Forward(); ok {
-		t.Errorf("Forward = %+v, true。want 失敗（前方履歴は破棄される）", got)
-	}
-	if got := mustBack(t, h); got.Path != "a" {
-		t.Errorf("Back = %q, want a", got.Path)
-	}
-}
-
-// TestHistory_MaxEntries は保持上限を検証する
-// （UT-804 ケース 5。根拠: FR-051 / IMP-191）。
-//
-// 内部の件数を数えるのではなく、**戻れる回数と、戻り着いた先**で確かめる
-// （UT-011）。
-func TestHistory_MaxEntries(t *testing.T) {
-	h := NewHistory()
-	for i := range MaxHistory + 1 {
-		h.Push(Entry{Path: fmt.Sprintf("p%02d", i)})
-	}
-
-	// 上限は 50 件。現在位置は最後に積んだもので、そこから 49 回戻れる。
-	for i := range MaxHistory - 1 {
-		if _, ok := h.Back(); !ok {
-			t.Fatalf("%d 回目の Back ができない。want %d 回", i+1, MaxHistory-1)
+	// ケース 7: Push の前に現在位置のスクロール位置を記録している（FR-050）。
+	t.Run("7 スクロール位置", func(t *testing.T) {
+		h := NewHistory()
+		h.Push(Entry{Path: "A"})
+		h.SetScrollTop(120)
+		h.Push(Entry{Path: "B"})
+		e, ok := h.Peek(-1)
+		if !ok || e.Path != "A" || e.ScrollTop != 120 {
+			t.Errorf("Peek(-1) = %+v, %v, want A の ScrollTop 120", e, ok)
 		}
-	}
+	})
 
-	// 最も古い p00 は捨てられ、先頭は p01 になっている。
-	if got, ok := h.Forward(); !ok || got.Path != "p02" {
-		t.Errorf("Forward = %+v, %v。want p02", got, ok)
-	}
-	mustBack(t, h)
+	// ケース 8: 位置より前を取り除いたら、位置を 1 つ前へずらして同じ文書を指す。
+	// C を末尾に置かない——末尾だと、範囲外になった位置を末尾へ寄せる実装と見分けられない。
+	t.Run("8 位置より前をDrop", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B", "C", "D")
+		h.Step(-1) // C
+		h.Drop(-1) // B を取り除く
+		wantAround(t, h, "A", "D")
+	})
 
-	if got, ok := h.Back(); ok {
-		t.Errorf("さらに Back = %+v, true。want 失敗（p01 が先頭）", got)
-	}
-}
+	// ケース 9: 位置より後ろを取り除いても、位置は B のまま。続けて X を Push すると Peek(-1) が B
+	// （今いる B を誤って取り除く実装を捕まえる。ケース 12 と対。4.78.0）。
+	t.Run("9 位置より後ろをDrop", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B", "C")
+		h.Step(-1) // B
+		h.Drop(+1) // C を取り除く
+		wantAround(t, h, "A", "-")
+		h.Push(Entry{Path: "X"})
+		if got := peek(h, -1); got != "B" {
+			t.Errorf("Push の後の Peek(-1) = %q, want B", got)
+		}
+	})
 
-// TestHistory_ScrollTop はスクロール位置の記録と復元を検証する
-// （UT-804 ケース 6。根拠: FR-050, FR-051 / IMP-191）。
-//
-// リンクをクリックした位置へ戻れることが、この機能の要である。
-func TestHistory_ScrollTop(t *testing.T) {
-	h := NewHistory()
-	h.Push(Entry{Path: "a"})
+	// ケース 10: Drop(0) は位置の項目を取り除く。先頭なら位置は 0（App はこの使い方をしない境界）。
+	t.Run("10 Drop(0)", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B", "C")
+		h.Step(-1) // B
+		h.Drop(0)  // B を取り除き、位置が A
+		wantAround(t, h, "-", "C")
 
-	// a を 480 px スクロールした位置でリンクを踏み、b を開いた。
-	h.SetScrollTop(480)
-	h.Push(Entry{Path: "b"})
+		h2 := NewHistory()
+		pushPaths(h2, "A", "B", "C")
+		h2.Step(-1)
+		h2.Step(-1) // A
+		h2.Drop(0)  // A を取り除き、位置が B
+		wantAround(t, h2, "-", "C")
+		if e, ok := h2.Peek(+1); !ok || e.Path != "C" {
+			t.Errorf("位置が B でない: Peek(+1) = %+v, %v", e, ok)
+		}
+	})
 
-	got := mustBack(t, h)
-	if got.Path != "a" {
-		t.Fatalf("Back = %q, want a", got.Path)
-	}
-	if got.ScrollTop != 480 {
-		t.Errorf("ScrollTop = %d, want 480", got.ScrollTop)
-	}
+	// ケース 11: 範囲外の delta は何もしない。panic しない。
+	t.Run("11 範囲外のDrop", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B", "C")
+		h.Step(-1)
+		h.Step(-1) // A
+		h.Drop(-1)
+		wantAround(t, h, "-", "B")
 
-	// 進んだ先の位置は書き換わっていない。
-	if fwd, ok := h.Forward(); !ok || fwd.ScrollTop != 0 {
-		t.Errorf("Forward = %+v, %v。want ScrollTop 0", fwd, ok)
-	}
-}
+		h2 := NewHistory()
+		pushPaths(h2, "A", "B", "C") // C
+		h2.Drop(+1)
+		h2.Drop(+5)
+		wantAround(t, h2, "B", "-")
+	})
 
-// TestHistory_ScrollTop_Middle は、途中の位置に対して記録されることを
-// 検証する（UT-804 ケース 6）。
-//
-// 履歴が 1 件だけだと現在位置が常に先頭になり、「現在位置へ書いているか」を
-// 確かめられない。2 件以上ある状態で見る。
-func TestHistory_ScrollTop_Middle(t *testing.T) {
-	h := NewHistory()
-	pushPaths(h, "a", "b")
-
-	h.SetScrollTop(200)
-	h.Push(Entry{Path: "c"})
-
-	if got := mustBack(t, h); got.Path != "b" || got.ScrollTop != 200 {
-		t.Errorf("1 つ前 = %+v, want b の ScrollTop 200", got)
-	}
-	if got := mustBack(t, h); got.Path != "a" || got.ScrollTop != 0 {
-		t.Errorf("2 つ前 = %+v, want a の ScrollTop 0", got)
-	}
+	// ケース 12: A・B・C で C にいて、B を開けなかったとして Drop(-1)、続けて D を Push すると、
+	// 見ていた C が履歴に残る（BUG-023 の 2 つ目の症状）。
+	t.Run("12 BUG-023", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B", "C")
+		if got := peek(h, -1); got != "B" {
+			t.Fatalf("前提: Peek(-1) = %q, want B", got)
+		}
+		h.Drop(-1) // B を開けなかった
+		h.Push(Entry{Path: "D"})
+		if got := peek(h, -1); got != "C" {
+			t.Errorf("Peek(-1) = %q, want C（見ていた C が履歴に残る）", got)
+		}
+		h.Step(-1)
+		if got := peek(h, -1); got != "A" {
+			t.Errorf("Step(-1) の後の Peek(-1) = %q, want A", got)
+		}
+	})
 }
 
 // TestHistory_Anchor はアンカーが保持されることを検証する（IMP-191）。
@@ -201,11 +219,11 @@ func TestHistory_Anchor(t *testing.T) {
 	h := NewHistory()
 	h.Push(Entry{Path: "a"})
 	h.Push(Entry{Path: "b", Anchor: "section-1"})
+	h.Push(Entry{Path: "c"})
 
-	mustBack(t, h)
-	got, ok := h.Forward()
+	got, ok := h.Peek(-1)
 	if !ok {
-		t.Fatal("Forward できない")
+		t.Fatal("Peek(-1) できない")
 	}
 	if got.Anchor != "section-1" {
 		t.Errorf("Anchor = %q, want section-1", got.Anchor)
@@ -237,6 +255,9 @@ func TestDisplayPath(t *testing.T) {
 
 		// UT-805 ケース 4: ツリールート未確定
 		{"ルートが空", "", "/any/a.md", "/any/a.md", false},
+
+		// UT-805 ケース 6: 名前の頭が同じ兄弟（文字列の前方一致で相対パスにしない。4.78.0）
+		{"名前の頭が同じ兄弟", "/r", "/r2/a.md", "/r2/a.md", true},
 
 		// UT-090 に従って追加
 		{"冗長な区切り", "/r/", "/r/./docs/a.md", "docs/a.md", false},

@@ -184,15 +184,34 @@ func TestParseRef(t *testing.T) {
 		}
 	})
 
+	// ケース 10: v1.2.0 の書き換えの対象（FR-145〜FR-147）。
+	for _, tt := range []struct {
+		in   string
+		want Ref
+	}{
+		{testKey + ":code:0", Ref{Key: testKey, Kind: RefCode, Index: 0}},
+		{testKey + ":mermaid:2", Ref{Key: testKey, Kind: RefMermaid, Index: 2}},
+		{testKey + ":plantuml:1", Ref{Key: testKey, Kind: RefPlantUML, Index: 1}},
+		{testKey + ":text:4", Ref{Key: testKey, Kind: RefText, Index: 4}},
+	} {
+		t.Run("10: "+tt.in, func(t *testing.T) {
+			got, err := ParseRef(tt.in)
+			if err != nil {
+				t.Fatalf("ParseRef がエラーを返した: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseRef = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+
 	bad := []struct {
 		name string
 		in   string
 	}{
 		// ケース 3: 表の目印は書き込みの対象ではない
+		// （v1.1.0 は図のブロックの目印もここに入れていた。v1.2.0 で書き換えの対象になった。ケース 10）
 		{"3: 表の目印", testKey + ":table:1"},
-		// 図のブロックの目印も書き込みの対象ではない（IMP-106 の ParseRef の定義）
-		{"3: Mermaid の目印", testKey + ":mermaid:0"},
-		{"3: PlantUML の目印", testKey + ":plantuml:0"},
 		{"4: 鍵が 15 文字", "0123456789abcde:task:3"},
 		{"4: 鍵が 17 文字", "0123456789abcdef0:task:3"},
 		{"4: 鍵が大文字の 16 進", "0123456789ABCDEF:task:3"},
@@ -204,6 +223,13 @@ func TestParseRef(t *testing.T) {
 		{"8: 空文字", ""},
 		// ケース 9: int に収まらない。panic しない
 		{"9: int に収まらない", testKey + ":task:99999999999999999999"},
+		// ケース 11: 数が無い・負・区切りが多い・符号付き（v1.2.0 の種類でも形を縛る）
+		{"11: code の数が無い", testKey + ":code:"},
+		{"11: text の負の数", testKey + ":text:-1"},
+		{"11: code の区切りが多い", testKey + ":code:1:2"},
+		{"11: text の符号付きの数", testKey + ":text:+3"},
+		// ケース 12: 知らない種類
+		{"12: 知らない種類", testKey + ":foo:1"},
 	}
 
 	for _, tt := range bad {

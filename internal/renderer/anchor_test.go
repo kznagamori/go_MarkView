@@ -120,6 +120,19 @@ func TestRender_HeadingID(t *testing.T) {
 
 		// UT-202 ケース 10: アンカーを持たない見出しには id を出さない
 		{"空の見出しに id を付けない", "#\n\npara", []string{"<h1></h1>"}},
+
+		// UT-202 ケース 13: 空の見出しが 2 つ。2 つ目にも連番を付けない（IMP-117 の 5・6。4.78.0）
+		{"空の見出しが 2 つ", "#\n\n#\n", []string{"<h1></h1>\n<h1></h1>"}},
+
+		// UT-202 ケース 14: 生 HTML のタグを除き、中の文字だけを残す（MD-021 の 1。4.78.0）。
+		// 修飾（FR-146, FR-147）を付けてもアンカーが変わらない。
+		{"del のタグを除く", "## a<del>b</del>c", []string{`<h2 id="user-content-abc">`}},
+		{"色の span のタグを除く", "## <span style=\"color: #d1242f\">赤</span>い", []string{`<h2 id="user-content-赤い">`}},
+
+		// UT-202 ケース 15: 文字参照とエスケープを解いてから記号を除く（MD-021 の 1・3・4。4.78.0）。
+		// & を落とした跡の空白は詰めない。
+		{"文字参照を解いてから除く", "## A &amp; B", []string{`<h2 id="user-content-a--b">`}},
+		{"エスケープを解いてから除く", "## a\\*b", []string{`<h2 id="user-content-ab">`}},
 	}
 
 	for _, tt := range tests {
@@ -223,6 +236,13 @@ func TestRender_Headings(t *testing.T) {
 			want: []Heading{{Level: 1, Text: "???", ID: ""}},
 		},
 		{
+			// UT-203 ケース 8: 生 HTML のタグを除き、文字参照を解く（MD-021 の 1、IMP-117。4.78.0）。
+			// アウトラインに &amp; を出さない。
+			name: "生 HTML のタグと文字参照を含む見出し",
+			in:   "## <del>a</del> &amp; b",
+			want: []Heading{{Level: 2, Text: "a & b", ID: "user-content-a--b"}},
+		},
+		{
 			// UT-203 ケース 7: ID は user-content- に続く部分が UT-202 の規則と一致する
 			// （接頭辞は AR-053。UT-219）
 			name: "重複した見出しの ID に連番が付く",
@@ -236,7 +256,7 @@ func TestRender_Headings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := New().Render([]byte(tt.in), "", "")
+			res, err := New().Render([]byte(tt.in), Options{})
 			if err != nil {
 				t.Fatalf("Render(%q) がエラーを返した: %v", tt.in, err)
 			}

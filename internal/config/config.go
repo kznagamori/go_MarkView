@@ -53,6 +53,11 @@ type Config struct {
 	WindowWidth     int    `json:"windowWidth"`
 	WindowHeight    int    `json:"windowHeight"`
 	Editor          string `json:"editor"` // 実行ファイルの絶対パス（UI-116）
+
+	// ツリーのフィルター（FR-037, UI-110。IMP-150。4.75.0）。
+	// TODO(v1.2.0): Default() の既定（TreeShowDiagrams は true）をまだ入れていない（宣言だけ）。
+	TreeShowDiagrams bool `json:"treeShowDiagrams"` // 既定 true
+	TreeShowImages   bool `json:"treeShowImages"`   // 既定 false
 }
 
 // Default は UI-110 の既定値を返す（IMP-151）。

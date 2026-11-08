@@ -70,6 +70,33 @@ func (h *History) Forward() (Entry, bool) {
 	return h.entries[h.index], true
 }
 
+// Peek は位置を動かさずに、delta（-1: 戻る / +1: 進む）先の項目を返す（IMP-191。4.75.0。BUG-023）。
+//
+// TODO(v1.2.0): 未実装（テストの先行実装で置いたスタブ）。Back / Forward を置き換える。
+func (h *History) Peek(delta int) (Entry, bool) {
+	return Entry{}, false
+}
+
+// Step は位置を delta 動かす。開けた後（状態画面を含む）に呼ぶ（IMP-191）。
+//
+// TODO(v1.2.0): 未実装。
+func (h *History) Step(delta int) {}
+
+// Drop は delta 先の項目を取り除く。位置が指す文書は変えない。開けなかった後に呼ぶ（IMP-191。4.76.0）。
+//
+// TODO(v1.2.0): 未実装。
+func (h *History) Drop(delta int) {}
+
+// CanBack は戻れるかを返す（FR-051 のボタンの淡色。IMP-323）。
+//
+// TODO(v1.2.0): 未実装。
+func (h *History) CanBack() bool { return false }
+
+// CanForward は進めるかを返す。
+//
+// TODO(v1.2.0): 未実装。
+func (h *History) CanForward() bool { return false }
+
 // SetScrollTop は現在位置のスクロール位置を更新する（IMP-191, FR-050）。
 //
 // 履歴が空のときは何もしない。

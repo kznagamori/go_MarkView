@@ -6,8 +6,18 @@ import (
 	"os"
 	"testing"
 
+	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/renderer"
 )
+
+// planMD は Markdown の文書に対する Plan を、v1.1.0 からのテストの呼び方（戻り値 3 つ）で呼ぶ。
+//
+// 4.75.0 で Plan に文書の種類（kind）と widened が足された（IMP-109）。v1.1.0 のケースは
+// Markdown だけを扱い widened を見ないため、ここで包む。v1.2.0 のケースは Plan を直接呼ぶ。
+func planMD(s *EditSession, r *renderer.Renderer, raw []byte, op Op) (Patch, bool, error) {
+	p, changed, _, err := s.Plan(r, raw, mdfile.KindMarkdown, op)
+	return p, changed, err
+}
 
 // loadDoc は content のファイルを dir に作り、document.Load で読んだ文書とパスを返す。
 func loadDoc(t *testing.T, r *renderer.Renderer, dir, name, content string) (*Document, string) {
@@ -60,7 +70,7 @@ func commitWrite(t *testing.T, s *EditSession, r *renderer.Renderer, path string
 	t.Helper()
 
 	raw := readRaw(t, path)
-	p, changed, err := s.Plan(r, raw, op)
+	p, changed, err := planMD(s, r, raw, op)
 	if err != nil {
 		t.Fatalf("前提: Plan がエラーを返した: %v", err)
 	}
@@ -248,7 +258,7 @@ func TestEditSession_AfterLoad(t *testing.T) {
 			t.Error("On が偽")
 		}
 		// 取り消せる
-		_, changed, err := s.Plan(r, readRaw(t, path), Op{Kind: OpUndo})
+		_, changed, err := planMD(&s, r, readRaw(t, path), Op{Kind: OpUndo})
 		if err != nil {
 			t.Fatalf("取り消しの Plan がエラーを返した: %v", err)
 		}
@@ -277,14 +287,14 @@ func TestEditSession_AfterLoad(t *testing.T) {
 			t.Error("On が偽")
 		}
 		raw := readRaw(t, path)
-		_, changed, err := s.Plan(r, raw, Op{Kind: OpUndo})
+		_, changed, err := planMD(&s, r, raw, Op{Kind: OpUndo})
 		if err != nil {
 			t.Errorf("取り消しの Plan がエラーを返した: %v", err)
 		}
 		if changed {
 			t.Error("取り消しの changed が真（取り消すものが無いはず）")
 		}
-		if _, _, err := s.Plan(r, raw, taskOp(external.RefKey, 1, true)); err != nil {
+		if _, _, err := planMD(&s, r, raw, taskOp(external.RefKey, 1, true)); err != nil {
 			t.Errorf("新しい内容に対する書き込みの Plan がエラーを返した: %v（ErrChanged にならない）", err)
 		}
 	})
@@ -317,7 +327,7 @@ func TestEditSession_AfterLoad(t *testing.T) {
 		if !s.On() {
 			t.Error("On が偽")
 		}
-		_, changed, err := s.Plan(r, readRaw(t, path), Op{Kind: OpUndo})
+		_, changed, err := planMD(&s, r, readRaw(t, path), Op{Kind: OpUndo})
 		if err != nil {
 			t.Fatalf("取り消しの Plan がエラーを返した: %v", err)
 		}

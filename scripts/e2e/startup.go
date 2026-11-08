@@ -28,6 +28,11 @@ func checkStartup(result *report, exe, data string, alive time.Duration) {
 		{1, "引数なしで起動", nil},
 		{3, "README.md を指定して起動", []string{"README.md"}},
 		{4, "docs/ を指定して起動", []string{"docs"}},
+		// ケース 7・8: 図と画像のファイルを読み込む経路を、手動テストの走らない LA（arm64）も含めて
+		// 配布物で通す（FR-025, FR-027。4.80.0。利用者の判断）。見るのは起動して落ちないことだけで、
+		// 描けたかどうかは手動テスト（G19）が見る。
+		{7, "diagrams/multi.puml を指定して起動", []string{filepath.Join("diagrams", "multi.puml")}},
+		{8, "images/alpha.png を指定して起動", []string{filepath.Join("images", "alpha.png")}},
 	}
 
 	// ケース 6 は起動の前後を比べる必要があるため、先に現状を控える。

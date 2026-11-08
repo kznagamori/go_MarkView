@@ -19,7 +19,7 @@ func ownFor(kind string) map[string]bool {
 	return own
 }
 
-// ownIf は origin が GFM なら kind だけが真、それ以外はすべて偽の結果を作る。
+// ownIf は origin が GFM なら kind だけが真、それ以外（生 HTML と gfm-none）はすべて偽の結果を作る。
 func ownIf(origin, kind string) map[string]bool {
 	if origin == originGFM {
 		return ownFor(kind)
@@ -68,6 +68,14 @@ func refsOK(layout refLayout) refReport {
 		}
 
 		r.Links = append(r.Links, link)
+	}
+
+	for _, origin := range layout.Codes {
+		r.Codes = append(r.Codes, refElement{Own: ownIf(origin, "code")})
+	}
+
+	for _, origin := range layout.Texts {
+		r.Texts = append(r.Texts, refElement{Own: ownIf(origin, "text")})
 	}
 
 	for _, spec := range layout.Blocks {
@@ -289,6 +297,104 @@ func TestCheckRefMatching(t *testing.T) {
 			want: []string{"本体が 2 行以上の GFM の表に並べ替えのボタンが無い"},
 		},
 		{
+			name: "9 コードブロックの数が一覧と違えば落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Codes = r.Codes[:len(r.Codes)-1]
+			},
+			want: []string{"コードブロックが 4 個（一覧は 5 個"},
+		},
+		{
+			name: "9 修飾できるブロックの一覧に 4 種類の由来のどれかが無ければ落ちる",
+			layout: func(l *refLayout) {
+				var texts []string
+				for _, origin := range l.Texts {
+					if origin != originWrongKey {
+						texts = append(texts, origin)
+					}
+				}
+
+				l.Texts = texts
+			},
+			want: []string{"修飾できるブロックの一覧に由来 raw-wrong-key が無い"},
+		},
+		{
+			name: "19 GFM のコードブロックで code が真、生 HTML のコードブロックで偽なら合格する",
+		},
+		{
+			name: "20 生 HTML で別の鍵の code を書いたブロックが真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Codes[indexOf(t, smokeRefLayout.Codes, originWrongKey, 0)].Own["code"] = true
+			},
+			want: []string{"生 HTML のコードブロック（raw-wrong-key）で isOwnRef(code) が真"},
+		},
+		{
+			name: "21 GFM の段落・見出し・項目で text が真、生 HTML の p で偽なら合格する",
+		},
+		{
+			name: "22 生 HTML の text の目印が真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Texts[indexOf(t, smokeRefLayout.Texts, originWrongKey, 0)].Own["text"] = true
+			},
+			want: []string{"生 HTML の修飾できるブロック（raw-wrong-key）で isOwnRef(text) が真"},
+		},
+		{
+			name: "23 GFM のコードブロックで code が偽なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Codes[indexOf(t, smokeRefLayout.Codes, originGFM, 0)].Own["code"] = false
+			},
+			want: []string{"GFM のコードブロックで isOwnRef(code) が偽"},
+		},
+		{
+			name: "23 GFM の修飾できるブロックで text が偽なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Texts[indexOf(t, smokeRefLayout.Texts, originGFM, 0)].Own["text"] = false
+			},
+			want: []string{"GFM の修飾できるブロックで isOwnRef(text) が偽"},
+		},
+		{
+			name: "24 code の目印を mermaid として照合して真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Codes[indexOf(t, smokeRefLayout.Codes, originGFM, 0)].Own["mermaid"] = true
+			},
+			want: []string{"GFM のコードブロックで種類の違う isOwnRef(mermaid) が真"},
+		},
+		{
+			name: "24 text の目印を cell として照合して真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Texts[indexOf(t, smokeRefLayout.Texts, originGFM, 0)].Own["cell"] = true
+			},
+			want: []string{"GFM の修飾できるブロックで種類の違う isOwnRef(cell) が真"},
+		},
+		{
+			name: "24 GFM のセルを text として照合して真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Cells[indexOf(t, smokeRefLayout.Cells, originGFM, 0)].Own["text"] = true
+			},
+			want: []string{"GFM のセルで種類の違う isOwnRef(text) が真"},
+		},
+		{
+			name: "25 gfm-none の要素がどれかの種類の照合で真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Texts[indexOf(t, smokeRefLayout.Texts, originGFMNone, 0)].Own["text"] = true
+			},
+			want: []string{"目印を持たない GFM の修飾できるブロック（gfm-none）で isOwnRef(text) が真"},
+		},
+		{
+			name: "25 gfm-none のコードブロック（字下げ形式）が真なら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				r.Codes[indexOf(t, smokeRefLayout.Codes, originGFMNone, 0)].Own["code"] = true
+			},
+			want: []string{"目印を持たない GFM のコードブロック（gfm-none）で isOwnRef(code) が真"},
+		},
+		{
+			name: "25 gfm-none のリンク（脚注の参照）に ownLinkTarget が文字列を返したら落ちる",
+			mutate: func(t *testing.T, r *refReport) {
+				fake := "#user-content-fn:1"
+				r.Links[linkIndex(t, originGFMNone)].Target = &fake
+			},
+			want: []string{"目印を持たない GFM のリンク（gfm-none）に ownLinkTarget が文字列を返した"},
+		},
+		{
 			name: "tablesort.js を読めなかったときはボタンの数を見ない（失敗は並べ替えの検査が 1 件だけ出す）",
 			mutate: func(t *testing.T, r *refReport) {
 				r.SortImported = false
@@ -358,6 +464,12 @@ func TestSmokeRefLayout(t *testing.T) {
 	// 偽装したコードブロックを欠かさない（BUG-014。UT-815 のケース 14・15）。
 	blockIndex(t, originWrongKey, blockPlantUML)
 	blockIndex(t, originNoKey, blockCode)
+
+	// v1.2.0: 目印を持たない GFM の要素（gfm-none）を、修飾できるブロック・コードブロック・リンクに
+	// 欠かさない（UT-815 のケース 25。4.78.0）。
+	indexOf(t, smokeRefLayout.Texts, originGFMNone, 0)
+	indexOf(t, smokeRefLayout.Codes, originGFMNone, 0)
+	linkIndex(t, originGFMNone)
 }
 
 // TestGFMBlocks は既存の図の検査に渡すブロックを、GFM の由来だけに絞ることを見る。

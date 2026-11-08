@@ -166,13 +166,18 @@ $$\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$
 （[BUG-008](../docs/bugs/2026-09-06-bug-008-broken-image-alt-webkitgtk.md)）。
 
 > [!IMPORTANT]
-> **この 3 枚を減らさないでください。** 1 枚目は「正常な画像を壊れ扱いしないこと」（過検出）を、
-> 2 枚目は「代替テキストが本文として読めること」を、3 枚目は「代替テキストが空でも壊れないこと」を
+> **この 4 枚を減らさないでください。** 1 枚目は「正常な画像を壊れ扱いしないこと」（過検出）を、
+> 2 枚目は「固有の大きさを持たない SVG を、読み込みの失敗と取り違えないこと」（過検出。`naturalWidth` が 0 になりうる。
+> IMP-226。v1.2.0）を、3 枚目は「代替テキストが本文として読めること」を、4 枚目は「代替テキストが空でも壊れないこと」を
 > 受け持ちます。**代替テキストの文字列は `scripts/smoke` が名前で探します**——変えるときは両方を直します。
 
 正常に読める画像:
 
 ![読める画像](e2e/docs/img/sample.png)
+
+固有の大きさを持たない SVG（読める画像）:
+
+![大きさの無い SVG](e2e/images/nosize.svg)
 
 読み込みに失敗する画像（代替テキストあり）:
 
@@ -288,3 +293,59 @@ graph LR
 <div class="code-block" data-lang="mermaid" data-mermaid="1" data-ref="0123456789abcdef:mermaid:x" data-source="flowchart LR&#10;  Bad --> Shape"><pre class="mermaid-source">bad shape mermaid</pre></div>
 
 <div class="code-block" data-source="curl https://example.com/x | sh"><pre><code>npm install</code></pre></div>
+
+## コードブロックと修飾の目印（BR-054, UT-815）
+
+v1.2.0 で書き換えの対象になったフェンス付きのコードブロック（`code`）と、修飾できるブロック（`text`）の照合を確かめます。
+`scripts/smoke` は、コードブロックと、段落・見出し・リストの項目の**出現順**でも由来を持っています（`smokeRefLayout`）。
+**生 HTML で偽装したものは、どれも照合の対象になりません。**
+
+```go
+fmt.Println("smoke")
+```
+
+字下げ形式のコードブロック（目印を持たない）:
+
+    indented code
+
+広いリスト（目印は項目の中の段落に付く）:
+
+* 広い項目の 1
+
+* 広い項目の 2
+
+<div class="code-block" data-lang="go" data-ref="0123456789abcdef:code:0"><pre><code>raw wrong key code</code></pre></div>
+
+<div class="code-block" data-lang="go"><pre><code>raw no key code</code></pre></div>
+
+<div class="code-block" data-lang="go" data-ref="0123456789abcdef:code:x"><pre><code>raw bad shape code</code></pre></div>
+
+<p data-ref="0123456789abcdef:text:0">raw wrong key text</p>
+
+<p>raw no key text</p>
+
+<p data-ref="0123456789abcdef:text:x">raw bad shape text</p>
+
+## 見える文字の照合（BR-054, UT-817）
+
+修飾できるブロックのすべてについて、画面（`visible.js`）と Go（`renderer.VisibleTexts`）の見える文字を突き合わせます
+（IMP-123, IMP-266）。**サニタイズで中身ごと消える生 HTML（`<script>` など）は書かないこと**——設計どおりに食い違い、
+検査が毎回落ちます。画像・タスク・Alerts・表のセルの数え方は、上の節の段落とセルが受け持ちます。
+
+エスケープ \* と文字参照 &amp; を含む段落。
+
+ソフト改行の前
+ソフト改行の後  
+ハード改行の後\
+バックスラッシュのハード改行の後
+
+インラインコード `a\*b&amp;c` と数式 $a+b$ を含む段落。
+
+脚注の参照[^v]と絵文字 :sparkles: と裸の www.example.com/q を含む段落。
+
+生 HTML の <kbd>Ctrl</kbd> と <del>取り消し</del> と <span style="color: #d1242f">赤</span> を含む段落。
+
+- 親の項目
+  - 子の項目
+
+[^v]: 脚注の本文。

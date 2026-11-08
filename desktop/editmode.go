@@ -139,7 +139,8 @@ func (a *App) writeEdit(op document.Op) EditResultDTO {
 	var patch document.Patch
 	changed := false
 	if err == nil {
-		patch, changed, err = a.edit.Plan(a.renderer, raw, op)
+		// TODO(v1.2.0): 表示中の文書の種類を渡し、widened（IMP-124）で format-widened の警告を出す。
+		patch, changed, _, err = a.edit.Plan(a.renderer, raw, current.Kind, op)
 	}
 	switch {
 	case errors.Is(err, document.ErrChanged):

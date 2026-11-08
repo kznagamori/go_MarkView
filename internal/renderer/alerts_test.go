@@ -107,11 +107,8 @@ func TestRender_Alerts(t *testing.T) {
 			in:       "> [!NOTE]\n> **強調**と`code`",
 			contains: []string{"markdown-alert-note", "<strong>強調</strong>", "<code>code</code>"},
 		},
-		{
-			name:     "入れ子の引用の中の Alert",
-			in:       "> > [!NOTE]\n> > body",
-			contains: []string{"<blockquote>", "markdown-alert-note", "<p>body</p>"},
-		},
+		// v1.1.0 の「入れ子の引用の中の Alert」（Alert にする期待値）は、UT-204 のケース 9 で
+		// 改めた（BUG-025。4.75.0 で MD-040 を改訂した）。TestRender_AlertsNested が見る。
 		{
 			name:        "空の種別",
 			in:          "> [!]\n> body",
@@ -167,7 +164,7 @@ func TestRender_AlertStructure(t *testing.T) {
 // Alert への差し替えで Blockquote が別のノードに変わるため、見出しの走査が
 // 途切れていないかを見る。
 func TestRender_AlertHeadings(t *testing.T) {
-	res, err := New().Render([]byte("> [!NOTE]\n> # 見出し"), "", "")
+	res, err := New().Render([]byte("> [!NOTE]\n> # 見出し"), Options{})
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
@@ -176,4 +173,68 @@ func TestRender_AlertHeadings(t *testing.T) {
 	if len(res.Headings) != 1 || res.Headings[0] != want[0] {
 		t.Errorf("Headings = %+v, want %+v", res.Headings, want)
 	}
+}
+
+// TestRender_AlertsNested は、文書の一番外側の引用だけを Alert にすることを検証する
+// （UT-204 のケース 8〜11。根拠: MD-040, MD-023 / IMP-112。BUG-025）。
+//
+// GitHub は入れ子の引用を Alert として描かない（「Alerts cannot be nested within other elements.」）。
+// v1.0.0 から、入れ子の引用も Alert にしていた。**ケース 11 と対で書く**——8〜10 だけなら
+// 「Alert を一切作らない」実装が通る。
+func TestRender_AlertsNested(t *testing.T) {
+	// ケース 8〜10 の入れ子の形。
+	const (
+		inList     = "- > [!NOTE]\n  > 本文\n"
+		inQuote    = "> > [!NOTE]\n> > 本文\n"
+		inFootnote = "本文[^1]\n\n[^1]: 注\n\n    > [!TIP]\n    > 中身\n"
+	)
+
+	tests := []struct {
+		name       string
+		in         string
+		blockquote int // 通常の <blockquote> の数
+	}{
+		// ケース 8: リストの項目の中の引用。[!NOTE] の文字が本文に残る。
+		{"8 リストの項目の中", inList, 1},
+		// ケース 9: 引用の中の引用。外側も内側も通常の <blockquote>。
+		{"9 引用の中の引用", inQuote, 2},
+		// ケース 10: 本文から参照する脚注の定義の中の引用（参照されていない定義は goldmark が除く）。
+		{"10 脚注の定義の中", inFootnote, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := render(t, tt.in)
+			els := scanElements(t, got)
+
+			if n := len(withClass(els, "markdown-alert")); n != 0 {
+				t.Errorf("入れ子の引用が Alert になった（%d 個）\n出力: %s", n, got)
+			}
+			if n := len(byTag(els, "blockquote")); n != tt.blockquote {
+				t.Errorf("<blockquote> が %d 個、want %d\n出力: %s", n, tt.blockquote, got)
+			}
+			if !strings.Contains(got, "[!") {
+				t.Errorf("[!種別] の文字が本文に残っていない\n出力: %s", got)
+			}
+		})
+	}
+
+	// ケース 11: 8〜10 と同じ文書の、文書の一番外側の > [!WARNING] は Alert になる（過検出の検査）。
+	t.Run("11 一番外側の引用は Alert", func(t *testing.T) {
+		doc := inList + "\n" + inQuote + "\n> [!WARNING]\n> 外側\n\n" + inFootnote
+		got := render(t, doc)
+		els := scanElements(t, got)
+
+		alerts := withClass(els, "markdown-alert")
+		if len(alerts) != 1 {
+			t.Fatalf("Alert が %d 個、want 1（一番外側の WARNING だけ）\n出力: %s", len(alerts), got)
+		}
+		if len(withClass(els, "markdown-alert-warning")) != 1 {
+			t.Errorf("一番外側の WARNING が Alert になっていない\n出力: %s", got)
+		}
+		// 入れ子の 3 つは通常の引用のまま（リスト 1・引用の中 2・脚注 1）。
+		if n := len(byTag(els, "blockquote")); n != 4 {
+			t.Errorf("<blockquote> が %d 個、want 4\n出力: %s", n, got)
+		}
+	})
 }

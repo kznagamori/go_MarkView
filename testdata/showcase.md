@@ -177,6 +177,14 @@ def greet(name: str) -> None:
 > [!SOMETHING]
 > 種別として認識できない場合は、通常の引用として描画します。
 
+リストの項目や引用の中に書いた Alert は、GitHub と同じく通常の引用として描画します（入れ子にできません）。
+
+- > [!NOTE]
+  > リストの項目の中の引用です。
+
+> > [!WARNING]
+> > 引用の中の引用です。
+
 ## 脚注（MD-050）
 
 脚注への参照です[^1]。もう 1 つ[^note]。
@@ -238,6 +246,10 @@ $$\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$
 キーボード操作は <kbd>Ctrl</kbd> + <kbd>C</kbd> のように書きます。
 
 化学式 H<sub>2</sub>O、指数 x<sup>2</sup>、<mark>ハイライト</mark>、<ins>挿入</ins>、<abbr title="HyperText Markup Language">HTML</abbr>。
+
+取り消し線は <strike>strike</strike>・<s>s</s>・<del>del</del> のタグでも書けます。
+
+文字色は <span style="color: #d1242f">赤</span>・<span style="color: #bc4c00">橙</span>・<span style="color: #9a6700">黄</span>・<span style="color: #1a7f37">緑</span>・<span style="color: #0969da">青</span>・<span style="color: #8250df">紫</span>・<span style="color: #59636e">灰</span> の 7 色です（GitHub は `style` を落とすため、色が付きません）。
 
 <table>
 <thead><tr><th>生 HTML の表</th><th>2 列目</th></tr></thead>

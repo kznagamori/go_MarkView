@@ -110,7 +110,7 @@ func TestEditSession_Plan(t *testing.T) {
 
 	t.Run("7: raw が把握している内容と違う", func(t *testing.T) {
 		s, doc, _ := startedSession(t, r, judgeDoc)
-		p, _, err := s.Plan(r, []byte("- [ ] changed outside\n"), taskOp(doc.RefKey, 0, true))
+		p, _, err := planMD(s, r, []byte("- [ ] changed outside\n"), taskOp(doc.RefKey, 0, true))
 		if !errors.Is(err, ErrChanged) {
 			t.Errorf("Plan のエラー = %v, want ErrChanged", err)
 		}
@@ -121,21 +121,21 @@ func TestEditSession_Plan(t *testing.T) {
 
 	t.Run("8: 番号がタスクの数を超える", func(t *testing.T) {
 		s, doc, path := startedSession(t, r, judgeDoc)
-		if _, _, err := s.Plan(r, readRaw(t, path), taskOp(doc.RefKey, 2, true)); !errors.Is(err, ErrStale) {
+		if _, _, err := planMD(s, r, readRaw(t, path), taskOp(doc.RefKey, 2, true)); !errors.Is(err, ErrStale) {
 			t.Errorf("Plan のエラー = %v, want ErrStale", err)
 		}
 	})
 
 	t.Run("8: 補われたセル", func(t *testing.T) {
 		s, doc, path := startedSession(t, r, judgeDoc)
-		if _, _, err := s.Plan(r, readRaw(t, path), cellOp(doc.RefKey, 0, 2, 1, "y")); !errors.Is(err, ErrStale) {
+		if _, _, err := planMD(s, r, readRaw(t, path), cellOp(doc.RefKey, 0, 2, 1, "y")); !errors.Is(err, ErrStale) {
 			t.Errorf("Plan のエラー = %v, want ErrStale", err)
 		}
 	})
 
 	t.Run("9: 既にその状態のチェックボックス", func(t *testing.T) {
 		s, doc, path := startedSession(t, r, judgeDoc)
-		_, changed, err := s.Plan(r, readRaw(t, path), taskOp(doc.RefKey, 1, true))
+		_, changed, err := planMD(s, r, readRaw(t, path), taskOp(doc.RefKey, 1, true))
 		if err != nil {
 			t.Fatalf("Plan のエラー = %v, want nil", err)
 		}
@@ -146,7 +146,7 @@ func TestEditSession_Plan(t *testing.T) {
 
 	t.Run("10: 履歴が空の取り消し", func(t *testing.T) {
 		s, _, path := startedSession(t, r, judgeDoc)
-		_, changed, err := s.Plan(r, readRaw(t, path), Op{Kind: OpUndo})
+		_, changed, err := planMD(s, r, readRaw(t, path), Op{Kind: OpUndo})
 		if err != nil {
 			t.Fatalf("Plan のエラー = %v, want nil", err)
 		}
@@ -160,7 +160,7 @@ func TestEditSession_Plan(t *testing.T) {
 		s, doc, path := startedSession(t, r, judgeDoc)
 		after := commitWrite(t, s, r, path, taskOp(doc.RefKey, 0, true))
 
-		if _, _, err := s.Plan(r, after, taskOp(doc.RefKey, 1, false)); err != nil {
+		if _, _, err := planMD(s, r, after, taskOp(doc.RefKey, 1, false)); err != nil {
 			t.Errorf("次の Plan のエラー = %v, want nil（ErrChanged にならない）", err)
 		}
 	})
@@ -169,14 +169,14 @@ func TestEditSession_Plan(t *testing.T) {
 	t.Run("12: Plan の後に Commit を呼ばない", func(t *testing.T) {
 		s, doc, path := startedSession(t, r, judgeDoc)
 		raw := readRaw(t, path)
-		if _, _, err := s.Plan(r, raw, taskOp(doc.RefKey, 0, true)); err != nil {
+		if _, _, err := planMD(s, r, raw, taskOp(doc.RefKey, 0, true)); err != nil {
 			t.Fatalf("前提: Plan がエラーを返した: %v", err)
 		}
 
-		if _, _, err := s.Plan(r, raw, taskOp(doc.RefKey, 0, true)); err != nil {
+		if _, _, err := planMD(s, r, raw, taskOp(doc.RefKey, 0, true)); err != nil {
 			t.Errorf("元の raw に対する次の Plan のエラー = %v, want nil", err)
 		}
-		_, changed, err := s.Plan(r, raw, Op{Kind: OpUndo})
+		_, changed, err := planMD(s, r, raw, Op{Kind: OpUndo})
 		if err != nil {
 			t.Fatalf("取り消しの Plan がエラーを返した: %v", err)
 		}
@@ -191,7 +191,7 @@ func TestEditSession_Plan(t *testing.T) {
 		s, doc, path := startedSession(t, r, table)
 		after := commitWrite(t, s, r, path, cellOp(doc.RefKey, 0, 1, 0, "12345"))
 
-		p, _, err := s.Plan(r, after, cellOp(doc.RefKey, 0, 1, 1, "9"))
+		p, _, err := planMD(s, r, after, cellOp(doc.RefKey, 0, 1, 1, "9"))
 		if err != nil {
 			t.Fatalf("右のセルの Plan がエラーを返した: %v", err)
 		}
@@ -223,7 +223,7 @@ func TestEditSession_Plan(t *testing.T) {
 		commitWrite(t, s, r, path, Op{Kind: OpUndo})
 		commitWrite(t, s, r, path, taskOp(doc.RefKey, 1, true))
 
-		_, changed, err := s.Plan(r, readRaw(t, path), Op{Kind: OpRedo})
+		_, changed, err := planMD(s, r, readRaw(t, path), Op{Kind: OpRedo})
 		if err != nil {
 			t.Fatalf("やり直しの Plan がエラーを返した: %v", err)
 		}
@@ -286,7 +286,7 @@ func TestEditSession_KeyCarryOver(t *testing.T) {
 		if err := s.Check(doc2, true, op2); err != nil {
 			t.Fatalf("2 回目の Check のエラー = %v, want nil（ErrStale にならない）", err)
 		}
-		p, _, err := s.Plan(r, readRaw(t, path), op2)
+		p, _, err := planMD(s, r, readRaw(t, path), op2)
 		if err != nil {
 			t.Fatalf("2 回目の Plan がエラーを返した: %v", err)
 		}

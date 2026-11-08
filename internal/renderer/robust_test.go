@@ -20,7 +20,7 @@ func renderWithin(t *testing.T, source string, limit time.Duration) (Result, err
 	done := make(chan outcome, 1)
 
 	go func() {
-		res, err := New().Render([]byte(source), "", "")
+		res, err := New().Render([]byte(source), Options{})
 		done <- outcome{res, err}
 	}()
 
@@ -204,7 +204,7 @@ func TestRender_LazyLoadFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := New().Render([]byte(tt.in), "", "")
+			res, err := New().Render([]byte(tt.in), Options{})
 			if err != nil {
 				t.Fatalf("Render がエラーを返した: %v", err)
 			}

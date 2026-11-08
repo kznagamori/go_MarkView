@@ -68,9 +68,14 @@ func printV110(got report) {
 	}
 
 	if got.Refs.Imported || got.Refs.Error != "" {
-		fmt.Printf("  refs     imported=%t checkboxes=%d tables=%d cells=%d links=%d blocks=%d %s\n",
+		fmt.Printf("  refs     imported=%t checkboxes=%d tables=%d cells=%d links=%d blocks=%d codes=%d texts=%d %s\n",
 			got.Refs.Imported, len(got.Refs.Checkboxes), len(got.Refs.Tables), len(got.Refs.Cells),
-			len(got.Refs.Links), len(got.Refs.Blocks), got.Refs.Error)
+			len(got.Refs.Links), len(got.Refs.Blocks), len(got.Refs.Codes), len(got.Refs.Texts), got.Refs.Error)
+	}
+
+	// v1.2.0: 見える文字の照合（UT-817）。
+	if got.Visible.Imported || got.Visible.Error != "" {
+		fmt.Printf("  visible  imported=%t blocks=%d %s\n", got.Visible.Imported, len(got.Visible.Blocks), got.Visible.Error)
 	}
 }
 

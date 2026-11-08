@@ -26,6 +26,11 @@ var (
 	ErrNeedsConfirm = errors.New("file requires confirmation before rendering")
 )
 
+// ErrNotSupported は開けるファイルでないことを表す（IMP-021, IMP-102。4.75.0 で ErrNotMarkdown を改名した）。
+//
+// TODO(v1.2.0): ErrNotMarkdown を改名する（テストの先行実装では同じ値を指す別名として置いた）。
+var ErrNotSupported = ErrNotMarkdown
+
 // サイズ閾値（IMP-101, FR-016）。
 //
 // 仕様上の「10 MB」「50 MB」は 2 進接頭辞として解釈する。
@@ -48,6 +53,11 @@ type Document struct {
 	Warnings      []Warning          // 描画は継続するが利用者に伝える事象
 	Digest        [sha256.Size]byte  // 読み込んだ生バイト列の要約（FR-143 の「把握している内容」）
 	RefKey        string             // この描画の目印の鍵（IMP-120）。描画のたびに作り直す
+
+	// TODO(v1.2.0): 以下は Load がまだ埋めない（テストの先行実装で置いた宣言。IMP-100）。
+	Kind       mdfile.Kind // 種類（IMP-105）。変換の分け方と編集の可否を決める（4.75.0）
+	TextRefs   bool        // 修飾の目印（text:<n>）を付けて描画したか（IMP-120。編集モードの間だけ真）
+	NoDiagrams bool        // 図のファイルで、図が 1 つも無い（FR-025, FR-026。IMP-126, IMP-127）
 }
 
 // Editable は編集モードを開始できる文書かを返す（IMP-100, FR-140 の表）。
@@ -95,6 +105,11 @@ type LoadOptions struct {
 	// 編集モードの書き込みの直後の読み直しだけが渡す（IMP-195 の 8, FR-143）。
 	RefKey       string
 	ExpectDigest [sha256.Size]byte // RefKey を使ってよい内容の要約（書き込んだ内容の SHA-256）
+
+	// TextRefs が true なら、修飾の目印（text:<n>）も付けて描画する（IMP-120, renderer.Options）。
+	// 編集モードの間の、同じ文書の読み直しだけが渡す（IMP-192）。
+	// TODO(v1.2.0): Load がまだ見ない。
+	TextRefs bool
 }
 
 // SizeError はサイズ超過を、判断に必要な数値とともに伝える（IMP-102）。
@@ -169,7 +184,7 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	// ツリールートを基準にしてはならない。
 	// **自分の鍵を渡す。** 渡さないと目印が付かず、編集・並べ替え・リンクのコピーが
 	// 働かない（IMP-110, UT-116 ケース 8・9）。
-	res, err := r.Render(text, filepath.Dir(abs), key)
+	res, err := r.Render(text, renderer.Options{BaseDir: filepath.Dir(abs), RefKey: key})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", abs, err)
 	}

@@ -1,10 +1,12 @@
 package renderer
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kznagamori/go_MarkView/internal/localurl"
 )
@@ -13,7 +15,7 @@ import (
 func render(t *testing.T, source string) string {
 	t.Helper()
 
-	res, err := New().Render([]byte(source), "", "")
+	res, err := New().Render([]byte(source), Options{})
 	if err != nil {
 		t.Fatalf("Render(%q) がエラーを返した: %v", source, err)
 	}
@@ -213,7 +215,7 @@ func TestRender_DoesNotModifyInput(t *testing.T) {
 	const source = "---\ntitle: T\n\n# H"
 	raw := []byte(source)
 
-	if _, err := New().Render(raw, "", ""); err != nil {
+	if _, err := New().Render(raw, Options{}); err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
 	if string(raw) != source {
@@ -336,7 +338,7 @@ func TestRender_ImageAndLink(t *testing.T) {
 // エスケープが二重に掛かったり、相対 URL が落とされたりすると画像が出ない。
 func TestRender_ImageURLSurvivesSanitize(t *testing.T) {
 	// 宛先に空白を含める場合、Markdown では <> で囲む必要がある。
-	res, err := New().Render([]byte("![alt](<a b.png>)"), "/docs", "")
+	res, err := New().Render([]byte("![alt](<a b.png>)"), Options{BaseDir: "/docs"})
 	if err != nil {
 		t.Fatalf("Render がエラーを返した: %v", err)
 	}
@@ -348,4 +350,101 @@ func TestRender_ImageURLSurvivesSanitize(t *testing.T) {
 	if p := localPathOf(t, m[1]); p != "/docs/a b.png" {
 		t.Errorf("src が指すパス = %q, want %q（出力: %s）", p, "/docs/a b.png", res.HTML)
 	}
+}
+
+// imgSrcs は出力 HTML の img の src を文書の順に返す。
+func imgSrcs(t *testing.T, html string) []string {
+	t.Helper()
+	var srcs []string
+	for _, e := range byTag(scanElements(t, html), "img") {
+		v, _ := e.Attr("src")
+		srcs = append(srcs, v)
+	}
+	return srcs
+}
+
+// TestRender_ImageVersion は、ローカルの画像の URL にファイルの版を付けることを検証する
+// （UT-210 のケース 8〜11。根拠: FR-022, FR-014 / IMP-118, IMP-160。BUG-026）。
+//
+// **ケース 8 と 9 は対で意味を持つ。** 8 だけなら「固定の値を付ける」実装が通るが、版が
+// 変わらなければ WebView は書き換えた画像を取り直さない（Cache-Control: no-store でも、
+// ページの中で一度読んだ画像を使い回す。IMP-162 の NOTE）。
+//
+// 期待値はケースの中で決めた更新時刻（Unix 時刻の 1 秒 = 0x3b9aca00 ナノ秒）と大きさから
+// 人が書いた（UT-031, UT-035）。更新時刻は秒の単位で与える——NTFS は 100 ナノ秒単位でしか
+// 持たず、端数のあるナノ秒は丸められる。
+func TestRender_ImageVersion(t *testing.T) {
+	dir := t.TempDir()
+	img := filepath.Join(dir, "a.png")
+	mtime := time.Unix(1, 0)
+
+	write := func(t *testing.T, data string) {
+		t.Helper()
+		if err := os.WriteFile(img, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(img, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	renderIn := func(t *testing.T, source, baseDir string) string {
+		t.Helper()
+		res, err := New().Render([]byte(source), Options{BaseDir: baseDir})
+		if err != nil {
+			t.Fatalf("Render がエラーを返した: %v", err)
+		}
+		return res.HTML
+	}
+	// checkVersion は src が img を指し、版が want であることを確かめる。
+	checkVersion := func(t *testing.T, html, want string) {
+		t.Helper()
+		srcs := imgSrcs(t, html)
+		if len(srcs) != 1 {
+			t.Fatalf("img が %d 個, want 1\n出力: %s", len(srcs), html)
+		}
+		path, query, found := strings.Cut(srcs[0], "?")
+		if !found || query != "v="+want {
+			t.Errorf("src = %q, クエリが v=%s で終わらない", srcs[0], want)
+		}
+		if got, wantPath := localPathOf(t, path), filepath.ToSlash(img); got != wantPath {
+			t.Errorf("src が指すパス = %q, want %q", got, wantPath)
+		}
+	}
+
+	// ケース 8: 3 バイトの a.png。更新時刻のナノ秒の 16 進と大きさの 16 進。
+	t.Run("8 版を付ける", func(t *testing.T) {
+		write(t, "abc")
+		checkVersion(t, renderIn(t, "![](a.png)", dir), "3b9aca00-3")
+	})
+
+	// ケース 9: 4 バイトに書き換え、更新時刻を戻して変換し直すと、URL が変わる。
+	t.Run("9 書き換えると版が変わる", func(t *testing.T) {
+		write(t, "abcd")
+		checkVersion(t, renderIn(t, "![](a.png)", dir), "3b9aca00-4")
+	})
+
+	// ケース 10: 存在しないローカルの画像には版を付けない（os.Stat に失敗したら付けない）。
+	t.Run("10 存在しない画像", func(t *testing.T) {
+		for _, src := range imgSrcs(t, renderIn(t, "![](a.png) ![](../img/a.png) ![](/abs/a.png)", "/docs")) {
+			if strings.Contains(src, "?") {
+				t.Errorf("存在しない画像の src に版が付いた: %q", src)
+			}
+		}
+	})
+
+	// ケース 11: 版を付けるのはローカルの画像の src だけ。
+	t.Run("11 リモート・data・リンクには付けない", func(t *testing.T) {
+		write(t, "abc")
+		html := renderIn(t, "![](https://example.com/b.png) ![](data:image/png;base64,iVBORw0KGgo=) [link](a.png)", dir)
+		for _, src := range imgSrcs(t, html) {
+			if strings.Contains(src, "v=") {
+				t.Errorf("ローカルでない画像の src に版が付いた: %q", src)
+			}
+		}
+		for _, a := range byTag(scanElements(t, html), "a") {
+			if href, _ := a.Attr("href"); href != "a.png" {
+				t.Errorf("リンクの href = %q, want %q（版を付けない）", href, "a.png")
+			}
+		}
+	})
 }

@@ -20,6 +20,11 @@ func okImg() imageInfo {
 	return imageInfo{Alt: okImageAlt, Complete: true, NaturalWidth: 1600}
 }
 
+// noSizeImg は固有の大きさを持たない SVG 1 枚ぶんの結果を作る（naturalWidth が 0 になりうる。UT-811 のケース 10）。
+func noSizeImg() imageInfo {
+	return imageInfo{Alt: noSizeImageAlt, Complete: true, NaturalWidth: 0}
+}
+
 // brokenSpan は置き換え後の要素 1 つぶんの結果を作る。
 func brokenSpan(text string) brokenInfo {
 	return brokenInfo{TagName: "SPAN", ClassName: "img-broken", Text: text}
@@ -27,12 +32,12 @@ func brokenSpan(text string) brokenInfo {
 
 // fixedImages は BUG-008 を修正したあとに期待される状態を作る。
 //
-// 読める画像が 1 枚残り、失敗した 2 枚は span へ置き換わっている。
-// 片方は代替テキストを持ち、もう片方は空である。
+// 読める画像が 2 枚（1 枚は固有の大きさを持たない SVG）残り、失敗した 2 枚は span へ置き換わっている。
+// 片方は代替テキストを持ち、もう片方は空である（UT-811 のケース 1）。
 func fixedImages() imageReport {
 	return imageReport{
 		Imported: true,
-		Imgs:     []imageInfo{okImg()},
+		Imgs:     []imageInfo{okImg(), noSizeImg()},
 		Broken:   []brokenInfo{brokenSpan(brokenImageAlt), brokenSpan("")},
 	}
 }
@@ -52,7 +57,7 @@ func TestCheckBrokenImages(t *testing.T) {
 			name: "代替テキストが空の画像だけでも合格する（過検出の検査）",
 			images: imageReport{
 				Imported: true,
-				Imgs:     []imageInfo{okImg()},
+				Imgs:     []imageInfo{okImg(), noSizeImg()},
 				Broken:   []brokenInfo{brokenSpan(brokenImageAlt), brokenSpan("")},
 			},
 		},
@@ -62,7 +67,7 @@ func TestCheckBrokenImages(t *testing.T) {
 				Imported: true,
 				Legacy:   2,
 				Imgs: []imageInfo{
-					okImg(),
+					okImg(), noSizeImg(),
 					{Alt: brokenImageAlt, ClassName: "is-broken", Complete: true},
 					{Alt: "", ClassName: "is-broken", Complete: true},
 				},
@@ -73,7 +78,7 @@ func TestCheckBrokenImages(t *testing.T) {
 			name: "枠はできたが代替テキストを描いていないと落ちる",
 			images: imageReport{
 				Imported: true,
-				Imgs:     []imageInfo{okImg()},
+				Imgs:     []imageInfo{okImg(), noSizeImg()},
 				Broken:   []brokenInfo{brokenSpan(""), brokenSpan("")},
 			},
 			want: []string{"が本文として読めない"},
@@ -82,16 +87,17 @@ func TestCheckBrokenImages(t *testing.T) {
 			name: "正常な画像まで置き換えると落ちる（過検出）",
 			images: imageReport{
 				Imported: true,
-				Imgs:     nil,
+				Imgs:     []imageInfo{noSizeImg()},
 				Broken:   []brokenInfo{brokenSpan(brokenImageAlt), brokenSpan(""), brokenSpan(okImageAlt)},
 			},
-			want: []string{".img-broken が 3 個", "読める画像が 0 枚"},
+			want: []string{".img-broken が 3 個", "読める画像が 1 枚"},
 		},
 		{
+			// UT-811 ケース 6: 固有の大きさを持つ読めるはずの画像（sample.png）の naturalWidth が 0
 			name: "読めるはずの画像が読めていないと落ちる",
 			images: imageReport{
 				Imported: true,
-				Imgs:     []imageInfo{{Alt: okImageAlt, Complete: true, NaturalWidth: 0}},
+				Imgs:     []imageInfo{{Alt: okImageAlt, Complete: true, NaturalWidth: 0}, noSizeImg()},
 				Broken:   []brokenInfo{brokenSpan(brokenImageAlt), brokenSpan("")},
 			},
 			want: []string{"読めるはずの画像が読めていない"},
@@ -100,13 +106,32 @@ func TestCheckBrokenImages(t *testing.T) {
 			name: "span 以外の要素にすると落ちる",
 			images: imageReport{
 				Imported: true,
-				Imgs:     []imageInfo{okImg()},
+				Imgs:     []imageInfo{okImg(), noSizeImg()},
 				Broken: []brokenInfo{
 					{TagName: "DIV", ClassName: "img-broken", Text: brokenImageAlt},
 					brokenSpan(""),
 				},
 			},
 			want: []string{"DIV 要素"},
+		},
+		{
+			// UT-811 ケース 10: 大きさを持たない SVG は naturalWidth で判定しない（過検出の検査。4.80.0）
+			name: "固有の大きさを持たない SVG の naturalWidth が 0 でも合格する",
+			images: imageReport{
+				Imported: true,
+				Imgs:     []imageInfo{okImg(), {Alt: noSizeImageAlt, Complete: true, NaturalWidth: 0}},
+				Broken:   []brokenInfo{brokenSpan(brokenImageAlt), brokenSpan("")},
+			},
+		},
+		{
+			// UT-811 ケース 11: naturalWidth で読み込みの失敗を判定する実装（4.80.0）
+			name: "固有の大きさを持たない SVG を置き換えると落ちる",
+			images: imageReport{
+				Imported: true,
+				Imgs:     []imageInfo{okImg()},
+				Broken:   []brokenInfo{brokenSpan(brokenImageAlt), brokenSpan(""), brokenSpan(noSizeImageAlt)},
+			},
+			want: []string{"固有の大きさを持たない SVG が .img-broken に置き換えられた", "読める画像が 1 枚"},
 		},
 		{
 			name:   "viewer.js を読めないときは、それだけを報告する",

@@ -1,9 +1,11 @@
 package localurl
 
 import (
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestEncodeDecode_RoundTrip は組み立てと解読が対になっていることを検証する
@@ -106,4 +108,67 @@ func TestDecode_Rejects(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeInfo はテスト用に組み立てた fs.FileInfo（UT-808 のケース 9〜12）。
+//
+// 版は更新時刻と大きさだけで決まる。実ファイルの更新時刻を使わない（UT-035）。
+type fakeInfo struct {
+	name  string
+	mtime time.Time
+	size  int64
+}
+
+func (f fakeInfo) Name() string       { return f.name }
+func (f fakeInfo) Size() int64        { return f.size }
+func (f fakeInfo) Mode() fs.FileMode  { return 0o644 }
+func (f fakeInfo) ModTime() time.Time { return f.mtime }
+func (f fakeInfo) IsDir() bool        { return false }
+func (f fakeInfo) Sys() any           { return nil }
+
+// TestVersion は画像の URL に付ける版の規則を検証する
+// （UT-808 のケース 9〜12。根拠: FR-014, FR-022, FR-027 / IMP-118, IMP-160。BUG-026）。
+//
+// 期待値は、テスト用の fs.FileInfo で決めた値から人が書いた（UT-031）。
+func TestVersion(t *testing.T) {
+	base := fakeInfo{name: "a.png", mtime: time.Unix(0, 4096), size: 3}
+
+	// ケース 9: 更新時刻のナノ秒と大きさを、それぞれ 16 進で "-" でつなぐ。
+	t.Run("9 更新時刻と大きさ", func(t *testing.T) {
+		if got := Version(base); got != "1000-3" {
+			t.Errorf("Version(4096ns, 3B) = %q, want %q", got, "1000-3")
+		}
+	})
+
+	// ケース 10: 片方だけを見る実装は、同じ秒に大きさだけ変わった書き換えを見落とす。
+	t.Run("10 更新時刻だけ違う", func(t *testing.T) {
+		other := base
+		other.mtime = time.Unix(0, 4097)
+		if a, b := Version(base), Version(other); a == b {
+			t.Errorf("更新時刻が 1ns 違うのに版が同じ: %q", a)
+		}
+	})
+	t.Run("10 大きさだけ違う", func(t *testing.T) {
+		other := base
+		other.size = 4
+		if a, b := Version(base), Version(other); a == b {
+			t.Errorf("大きさが 1B 違うのに版が同じ: %q", a)
+		}
+	})
+
+	// ケース 11: 版は中身を見ない。名前も見ない。
+	t.Run("11 同じ更新時刻と大きさの別の FileInfo", func(t *testing.T) {
+		other := fakeInfo{name: "b.png", mtime: time.Unix(0, 4096), size: 3}
+		if got := Version(other); got != "1000-3" {
+			t.Errorf("Version(別の FileInfo) = %q, want %q", got, "1000-3")
+		}
+	})
+
+	// ケース 12: 16 進は小文字。
+	t.Run("12 16 進は小文字", func(t *testing.T) {
+		ten := fakeInfo{name: "a.png", mtime: time.Unix(0, 4096), size: 10}
+		if got := Version(ten); got != "1000-a" {
+			t.Errorf("Version(4096ns, 10B) = %q, want %q", got, "1000-a")
+		}
+	})
 }

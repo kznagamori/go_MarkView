@@ -171,6 +171,21 @@
 <p>[!SOMETHING]
 種別として認識できない場合は、通常の引用として描画します。</p>
 </blockquote>
+<p>リストの項目や引用の中に書いた Alert は、GitHub と同じく通常の引用として描画します（入れ子にできません）。</p>
+<ul>
+<li>
+<div class="markdown-alert markdown-alert-note">
+<p class="markdown-alert-title">Note</p>
+<p>リストの項目の中の引用です。</p>
+</div>
+</li>
+</ul>
+<blockquote>
+<div class="markdown-alert markdown-alert-warning">
+<p class="markdown-alert-title">Warning</p>
+<p>引用の中の引用です。</p>
+</div>
+</blockquote>
 <h2 id="user-content-脚注md-050">脚注（MD-050）</h2>
 <p>脚注への参照です<sup id="user-content-fnref:1"><a href="#user-content-fn:1" class="footnote-ref" role="doc-noteref">1</a></sup>。もう 1 つ<sup id="user-content-fnref:2"><a href="#user-content-fn:2" class="footnote-ref" role="doc-noteref">2</a></sup>。</p>
 <h2 id="user-content-絵文字md-051">絵文字（MD-051）</h2>
@@ -205,6 +220,8 @@
 <h2 id="user-content-生-htmlmd-072">生 HTML（MD-072）</h2>
 <p>キーボード操作は <kbd>Ctrl</kbd> + <kbd>C</kbd> のように書きます。</p>
 <p>化学式 H<sub>2</sub>O、指数 x<sup>2</sup>、<mark>ハイライト</mark>、<ins>挿入</ins>、<abbr title="HyperText Markup Language">HTML</abbr>。</p>
+<p>取り消し線は strike・<s>s</s>・<del>del</del> のタグでも書けます。</p>
+<p>文字色は <span>赤</span>・<span>橙</span>・<span>黄</span>・<span>緑</span>・<span>青</span>・<span>紫</span>・<span>灰</span> の 7 色です（GitHub は <code>style</code> を落とすため、色が付きません）。</p>
 <table>
 <thead><tr><th>生 HTML の表</th><th>2 列目</th></tr></thead>
 <tbody><tr><td>a</td><td>b</td></tr></tbody>

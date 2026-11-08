@@ -46,6 +46,18 @@ type Result struct {
 	NeedsMermaid  bool
 	NeedsKaTeX    bool
 	NeedsPlantUML bool // AR-021, MD-085。IMP-119 が立てる
+	// NoDiagrams は、図のファイルで図が 1 つも無いことを示す（IMP-126, IMP-127。FR-025, FR-026）。
+	// TODO(v1.2.0): 図のファイルの変換（RenderPlantUMLFile / RenderMermaidFile）が立てる。
+	NoDiagrams bool
+}
+
+// Options は変換の指定（IMP-110。4.75.0 で位置引数から改めた）。
+type Options struct {
+	BaseDir string // 相対パス解決の基準ディレクトリ（表示中ファイルのディレクトリ。AR-042）
+	RefKey  string // 目印の鍵（IMP-120）。空文字なら目印を付けない
+	// TextRefs は修飾の目印（text:<n>）も付けるか（IMP-120。編集モードの間だけ真）。
+	// TODO(v1.2.0): まだ見ていない（修飾の目印を付けない）。
+	TextRefs bool
 }
 
 // Renderer は goldmark のパイプラインを保持する（IMP-110）。
@@ -131,12 +143,13 @@ func New() *Renderer {
 
 // Render は Markdown を変換する（IMP-110）。
 //
-// baseDir は相対パス解決の基準ディレクトリ（表示中ファイルのディレクトリ。
+// opts.BaseDir は相対パス解決の基準ディレクトリ（表示中ファイルのディレクトリ。
 // AR-042）。source は正規化済みの UTF-8 テキストであることを前提とする
-// （IMP-103）。refKey は目印の鍵（IMP-120）。空文字なら目印を付けない。
+// （IMP-103）。opts.RefKey は目印の鍵（IMP-120）。空文字なら目印を付けない。
 //
 // **アプリケーションは必ず鍵を渡す**（IMP-102）。空にできるのはテストのためである。
-func (r *Renderer) Render(source []byte, baseDir, refKey string) (result Result, err error) {
+func (r *Renderer) Render(source []byte, opts Options) (result Result, err error) {
+	baseDir, refKey := opts.BaseDir, opts.RefKey
 	// 変換中のパニックをエラーへ変える（IMP-022, FR-111）。
 	defer recoverRender(&result, &err)
 

@@ -145,6 +145,8 @@ func skipRunChecks(result *report, why string) {
 		{"E2E-104", 4, "docs/ を指定して起動"},
 		{"E2E-104", 5, "標準エラーに自前のログが無い"},
 		{"E2E-104", 6, "WebView のデータが %APPDATA% に無い"},
+		{"E2E-104", 7, "diagrams/multi.puml を指定して起動"},
+		{"E2E-104", 8, "images/alpha.png を指定して起動"},
 		{"E2E-105", 1, "存在しないパス"},
 		{"E2E-105", 2, "デバイスファイル"},
 		{"E2E-105", 3, "権限のないファイル"},

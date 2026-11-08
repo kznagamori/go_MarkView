@@ -35,6 +35,9 @@ type Node struct {
 	Name  string `json:"name"`
 	Path  string `json:"path"` // 絶対パス（IMP-025）
 	IsDir bool   `json:"isDir"`
+	// Kind はファイルの種類（IMP-135 の Classify）。ディレクトリは空（4.75.0。UI-030 のアイコン）。
+	// TODO(v1.2.0): ReadDir がまだ埋めない。
+	Kind mdfile.Kind `json:"kind"`
 
 	Children []Node `json:"children"` // 未読込のディレクトリでは nil
 	Loaded   bool   `json:"loaded"`   // 子を読み込み済みか
@@ -55,7 +58,10 @@ type Node struct {
 //
 // 絞り込みと並び順は IMP-132 に従う。Markdown を含まないディレクトリは
 // 除く（FR-031）が、判定は 1 階層下までとする（IMP-133）。
-func ReadDir(dir string) ([]Node, error) {
+//
+// show はツリーに表示する種類（FR-037。IMP-134）。件数の上限は絞り込み後の件数に対して適用する。
+// TODO(v1.2.0): show をまだ見ない（4.75.0 で足した引数の宣言だけ。Markdown だけを並べる）。
+func ReadDir(dir string, show Show) ([]Node, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve the directory: %w", err)

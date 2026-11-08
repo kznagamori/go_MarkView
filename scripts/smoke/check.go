@@ -42,7 +42,7 @@ func checkCommon(got report) []string {
 // **図の検査は GFM の由来のブロックだけで行う。** 検証用文書は生 HTML で偽装した
 // 図のブロックも含み（BUG-014）、それらも data-mermaid / data-plantuml を持つ。
 // 数えると 7 種類の検査が数え違える。偽装したブロックは目印の照合（UT-815）が見る。
-func checkAssets(rendered renderer.Result, got report) []string {
+func checkAssets(rendered renderer.Result, visible goVisible, got report) []string {
 	drawn := got
 	drawn.Mermaid = gfmBlocks(smokeRefLayout, got.Mermaid)
 	drawn.PlantUML = gfmBlocks(smokeRefLayout, got.PlantUML)
@@ -56,12 +56,14 @@ func checkAssets(rendered renderer.Result, got report) []string {
 	failures = append(failures, checkIDNamespace(got.IDs)...)
 	failures = append(failures, checkTableSort(got.Sort)...)
 
-	return append(failures, checkRefMatching(smokeRefLayout, got.Refs)...)
+	failures = append(failures, checkRefMatching(smokeRefLayout, got.Refs)...)
+
+	return append(failures, checkVisibleText(visible, got.Visible)...)
 }
 
 // checkLimits は描けないものが理由とともに示されるかを検査する
 // （MD-083, MD-084, DSP-272, BUG-010）。
-func checkLimits(_ renderer.Result, got report) []string {
+func checkLimits(_ renderer.Result, _ goVisible, got report) []string {
 	return append(checkCommon(got), checkPlantUMLLimits(got)...)
 }
 
@@ -207,8 +209,8 @@ func checkBrokenImages(htmlImages int, got report) []string {
 		return append(failures, "viewer.js の markBrokenImages を読めない: "+got.Images.Error)
 	}
 
-	// 読める 1 枚を除いた残りが、失敗する画像である。
-	wantBroken := htmlImages - 1
+	// 読める画像（readableImageAlts）を除いた残りが、失敗する画像である。
+	wantBroken := htmlImages - len(readableImageAlts)
 
 	// **旧いフックが残っていたら、修正が入っていない。**
 	if got.Images.Legacy > 0 {
@@ -221,12 +223,16 @@ func checkBrokenImages(htmlImages int, got report) []string {
 			fmt.Sprintf(".img-broken が %d 個（%d 個を期待）", len(got.Images.Broken), wantBroken))
 	}
 
-	// **残っている img は「読める画像」1 枚だけ**（過検出の検査）。
+	// **残っている img は読める画像（readableImageAlts）だけ**（過検出の検査）。
 	// 正常な画像まで置き換えていたら、ここで落ちる。
 	readable := 0
 
 	for _, img := range got.Images.Imgs {
 		switch {
+		case img.Alt == noSizeImageAlt:
+			// **固有の大きさを持たない SVG は naturalWidth で判定しない**（0 になりうる。IMP-226。
+			// UT-811 のケース 10）。img のまま残っていれば読めている。
+			readable++
 		case img.Alt != okImageAlt:
 			failures = append(failures,
 				fmt.Sprintf("img が残っている: alt=%q（失敗した画像は置き換える。IMP-226）", img.Alt))
@@ -238,8 +244,16 @@ func checkBrokenImages(htmlImages int, got report) []string {
 		}
 	}
 
-	if readable != 1 {
-		failures = append(failures, fmt.Sprintf("読める画像が %d 枚（1 枚を期待）", readable))
+	if readable != len(readableImageAlts) {
+		failures = append(failures, fmt.Sprintf("読める画像が %d 枚（%d 枚を期待）", readable, len(readableImageAlts)))
+	}
+
+	// **固有の大きさを持たない SVG を、読み込みの失敗と取り違えない**（UT-811 のケース 11。4.80.0）。
+	for _, el := range got.Images.Broken {
+		if el.Text == noSizeImageAlt {
+			failures = append(failures,
+				"固有の大きさを持たない SVG が .img-broken に置き換えられた（naturalWidth で読み込みの失敗を判定していないか。IMP-226）")
+		}
 	}
 
 	// **代替テキストが本文として読めること。ここが BUG-008 の本体である。**

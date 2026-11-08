@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 
+	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/renderer"
 )
 
@@ -20,18 +21,21 @@ var ErrStale = errors.New("edit instruction is stale")
 type OpKind int
 
 const (
-	OpTask OpKind = iota // SetTask（FR-141）
-	OpCell               // SetCell（FR-142）
-	OpUndo               // UndoEdit（FR-144）
-	OpRedo               // RedoEdit（FR-144）
+	OpTask   OpKind = iota // SetTask（FR-141）
+	OpCell                 // SetCell（FR-142）
+	OpUndo                 // UndoEdit（FR-144）
+	OpRedo                 // RedoEdit（FR-144）
+	OpCode                 // SetCode（FR-145。4.75.0）
+	OpFormat               // ApplyFormat（FR-146, FR-147。4.75.0）
 )
 
 // Op はフロントエンドから届いた 1 回の書き込みの指示。
 type Op struct {
 	Kind    OpKind
-	Ref     string // OpTask / OpCell: data-ref の値そのもの（IMP-316）
-	Checked bool   // OpTask
-	Text    string // OpCell
+	Ref     string   // OpTask / OpCell / OpCode / OpFormat: data-ref の値そのもの（IMP-316）
+	Checked bool     // OpTask
+	Text    string   // OpCell / OpCode
+	Format  FormatOp // OpFormat（IMP-124）
 }
 
 // EditSession は編集モードの状態（FR-140）。ゼロ値は「編集モードでない」。
@@ -185,7 +189,16 @@ func (s *EditSession) Check(doc *Document, showing bool, op Op) error {
 // そのまま返す**——表の形の確かめ（IMP-106）で拒んだのは古い指示ではなく、黙って戻すと
 // 確定した入力が通知も無く消える（FR-142, FR-110。IMP-195 が edit-failed で通知する）。
 // 変わらない・履歴が空なら changed は偽。
-func (s *EditSession) Plan(r *renderer.Renderer, raw []byte, op Op) (p Patch, changed bool, err error) {
+//
+// kind は表示中の文書の種類。widened は、手書きの取り消し線を全体で外した（FR-146。IMP-124）。
+// TODO(v1.2.0): kind・OpCode・OpFormat・widened はまだ見ない（4.75.0 で引数と戻り値を足した宣言だけ）。
+func (s *EditSession) Plan(r *renderer.Renderer, raw []byte, kind mdfile.Kind, op Op) (p Patch, changed, widened bool, err error) {
+	p, changed, err = s.plan(r, raw, op)
+	return p, changed, false, err
+}
+
+// plan は v1.1.0 の Plan の中身（TODO(v1.2.0): Plan へ戻す）。
+func (s *EditSession) plan(r *renderer.Renderer, raw []byte, op Op) (p Patch, changed bool, err error) {
 	if !s.on || s.log == nil {
 		return Patch{}, false, ErrStale
 	}
@@ -261,6 +274,13 @@ func (s *EditSession) CellSource(r *renderer.Renderer, raw []byte, ref string) (
 		return "", ErrStale
 	}
 	return src, nil
+}
+
+// CodeSource は raw の中の ref のコードブロック・図のソースを返す（GetCodeSource。IMP-122, IMP-195）。
+//
+// TODO(v1.2.0): 未実装（テストの先行実装で置いたスタブ）。
+func (s *EditSession) CodeSource(r *renderer.Renderer, raw []byte, kind mdfile.Kind, ref string) (string, error) {
+	return "", errNotImplemented
 }
 
 // end は編集モードを終え、履歴を捨てる（seq は呼び出し側が進める）。

@@ -56,6 +56,9 @@ func TestDefault(t *testing.T) {
 		{"ウィンドウ幅", d.WindowWidth, 1280},
 		{"ウィンドウ高さ", d.WindowHeight, 860},
 		{"エディタは未選択（空文字）", d.Editor, ""},
+		// ツリーのフィルター（FR-037, UI-110。IMP-151。v1.2.0）
+		{"ツリーに図を出す", d.TreeShowDiagrams, true},
+		{"ツリーに画像を出さない", d.TreeShowImages, false},
 	}
 
 	for _, tt := range tests {
@@ -93,6 +96,9 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 		"outlineWidth": true, "fileTreeWidth": true,
 		"windowWidth": true, "windowHeight": true,
 		"editor": true,
+		// UT-505 ケース 7: ツリーについて書き出すのは、ペインの表示と幅と、フィルターの 2 つだけ
+		// （FR-030, FR-037, NFR-042。IMP-150。v1.2.0）。
+		"treeShowDiagrams": true, "treeShowImages": true,
 	}
 
 	for k := range m {
@@ -111,6 +117,8 @@ func TestConfig_NoWindowPosition(t *testing.T) {
 		"x", "y", "positionX", "positionY", "windowX", "windowY",
 		"zoom", "windowMaximized",
 		"path", "file", "lastFile", "recent", "history", "treeRoot", "search",
+		// UT-505 ケース 7: ツリーの展開の状態も保存しない（NFR-042）
+		"expanded", "treeExpanded",
 	} {
 		if _, ok := m[ng]; ok {
 			t.Errorf("保存してはならないキー %q がある（UI-111, NFR-042）", ng)
@@ -187,11 +195,53 @@ func TestLoad_Fallback(t *testing.T) {
 				writeConfig(t, tt.content)
 			}
 
-			if got := Load(); got != Default() {
+			got := Load()
+			if got != Default() {
 				t.Errorf("Load() = %+v, want %+v", got, Default())
+			}
+			// UT-502 ケース 7: Default() のツリーのフィルター（FR-037 の既定。IMP-151）
+			if !got.TreeShowDiagrams || got.TreeShowImages {
+				t.Errorf("ツリーのフィルター = (%v, %v), want (true, false)", got.TreeShowDiagrams, got.TreeShowImages)
 			}
 		})
 	}
+
+	// UT-502 ケース 5: 読み取り権限がない（Linux。実行ユーザが root なら Skip。UT-035）
+	t.Run("読み取り権限がない", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows では読み取り権限を落としたファイルを再現できない（UT-502 ケース 5）")
+		}
+		if os.Geteuid() == 0 {
+			t.Skip("実行ユーザが root のため、権限を無視して読める（UT-502 ケース 5。UT-035）")
+		}
+		isolateTempDir(t)
+		writeConfig(t, `{"theme":"dark"}`)
+		path, err := Path()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+		if got := Load(); got != Default() {
+			t.Errorf("Load() = %+v, want %+v", got, Default())
+		}
+	})
+
+	// UT-502 ケース 6: ディレクトリが作成できない（テンポラリの場所に通常のファイルを置く）
+	t.Run("ディレクトリが作成できない", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("TMPDIR", file)
+		t.Setenv("TMP", file)
+		t.Setenv("TEMP", file)
+		if got := Load(); got != Default() {
+			t.Errorf("Load() = %+v, want %+v", got, Default())
+		}
+	})
 }
 
 // TestLoad_Partial は部分的な設定の読み込みを検証する
@@ -259,6 +309,39 @@ func TestLoad_Partial(t *testing.T) {
 				}
 				if c.Theme != Default().Theme {
 					t.Errorf("Theme = %q, want 既定値 %q", c.Theme, Default().Theme)
+				}
+			},
+		},
+		{
+			// UT-503 ケース 5: v1.1.0 の設定ファイル（ツリーのフィルターのキーが無い）
+			name:    "v1.1.0 の設定ファイル",
+			content: `{"theme":"dark","outlineVisible":true,"fileTreeVisible":true,"outlineWidth":240,"fileTreeWidth":260,"windowWidth":1280,"windowHeight":860,"editor":""}`,
+			check: func(t *testing.T, c Config) {
+				if !c.TreeShowDiagrams || c.TreeShowImages {
+					t.Errorf("ツリーのフィルター = (%v, %v), want 既定の (true, false)", c.TreeShowDiagrams, c.TreeShowImages)
+				}
+				if c.Theme != "dark" || !c.FileTreeVisible {
+					t.Errorf("Theme / FileTreeVisible = %q / %v, want 書いた値の dark / true", c.Theme, c.FileTreeVisible)
+				}
+			},
+		},
+		{
+			// UT-503 ケース 6: 図を隠した設定（既定の真に戻さない）
+			name:    "treeShowDiagrams が false",
+			content: `{"treeShowDiagrams":false}`,
+			check: func(t *testing.T, c Config) {
+				if c.TreeShowDiagrams || c.TreeShowImages {
+					t.Errorf("ツリーのフィルター = (%v, %v), want (false, false)", c.TreeShowDiagrams, c.TreeShowImages)
+				}
+			},
+		},
+		{
+			// UT-503 ケース 6: 画像を出す設定
+			name:    "treeShowImages が true",
+			content: `{"treeShowImages":true}`,
+			check: func(t *testing.T, c Config) {
+				if !c.TreeShowDiagrams || !c.TreeShowImages {
+					t.Errorf("ツリーのフィルター = (%v, %v), want (true, true)", c.TreeShowDiagrams, c.TreeShowImages)
 				}
 			},
 		},
@@ -355,6 +438,10 @@ func TestNormalize(t *testing.T) {
 		// 確認は起動の直前に行う（IMP-171）。
 		{"エディタが絶対パス（存在しない）", withEditor(d, absentEditor), withEditor(d, absentEditor)},
 		{"エディタが絶対パス（存在する）", withEditor(d, existingEditor), withEditor(d, existingEditor)},
+
+		// UT-504 ケース 14: 既定が真の真偽値が偽のまま残る（真偽値は丸めの対象にしない。IMP-153）。
+		// 落とすと、図を隠した利用者のツリーに、起動のたびに図が戻る（FR-037）。
+		{"TreeShowDiagrams が false", withTreeShowDiagrams(d, false), withTreeShowDiagrams(d, false)},
 	}
 
 	for _, tt := range tests {
@@ -375,8 +462,11 @@ func TestNormalize(t *testing.T) {
 func zeroNormalized() Config {
 	c := Default()
 	c.OutlineVisible = false
+	c.TreeShowDiagrams = false // 既定が真の真偽値もゼロ値のまま残る（UT-504 ケース 14）
 	return c
 }
+
+func withTreeShowDiagrams(c Config, v bool) Config { c.TreeShowDiagrams = v; return c }
 
 func withTheme(c Config, v string) Config  { c.Theme = v; return c }
 func withEditor(c Config, v string) Config { c.Editor = v; return c }

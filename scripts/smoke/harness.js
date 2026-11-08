@@ -6,6 +6,7 @@
 //
 // v1.1.0 からは、本番の tablesort.js と refs.js も呼ぶ（BR-054 の「表の並べ替えの
 // 比較」「目印の照合」）。本文の id の事実も集める（「文書の id の名前空間」）。
+// v1.2.0 からは、本番の visible.js も呼ぶ（「見える文字の照合」。IMP-266。UT-817）。
 // **ここでは判定しない。** どの要素が GFM の由来かも、何を処理系の id とみなすかも、
 // Go 側（scripts/smoke の ids.go / tablesort.go / refs.go）が決める。
 //
@@ -33,6 +34,7 @@ import {
   collectRefs,
   collectRejectedPlantUML,
   collectSort,
+  collectVisible,
   diagramBlocks,
   settleImages,
 } from "./_smoke_collect.js";
@@ -67,6 +69,15 @@ try {
   refs = await import("./js/refs.js");
 } catch (error) {
   refsError = error && error.message ? error.message : String(error);
+}
+
+// **visible.js も動的に読む**（BR-054。4.77.0）。読めなければ、見える文字の照合だけを失敗 1 件にする（UT-817 のケース 7）。
+let visible = null;
+let visibleError = "";
+try {
+  visible = await import("./js/visible.js");
+} catch (error) {
+  visibleError = error && error.message ? error.message : String(error);
 }
 
 const started = performance.now();
@@ -137,7 +148,10 @@ async function main() {
       cells: [],
       links: [],
       blocks: [],
+      codes: [],
+      texts: [],
     },
+    visible: { imported: false, error: visibleError, blocks: [] },
   };
 
   // KaTeX は描画すると要素の中身を置き換えるため、原文を先に控える。
@@ -197,6 +211,10 @@ async function main() {
   // 画像は非同期に読み込まれる。**結果を集める前に決着させる。**
   await settleImages(root);
   collectImages(root, report);
+
+  // **見える文字は最後に数える。** 画像の置き換え（IMP-226）と図・数式の描画が済んだ後の DOM で数える
+  // （画面で利用者が選ぶのはこの DOM である）。
+  collectVisible(visible, refs, root, config.refKey, report);
 
   report.elapsedMs = Math.round(performance.now() - started);
 

@@ -20,7 +20,12 @@ type RefKind int
 
 const (
 	RefTask RefKind = iota // タスクリストのチェックボックス（FR-141）
-	RefCell                // 表のセル（FR-142）
+	RefCell                // 表のセル（FR-142。修飾の対象にもなる。FR-146）
+	// TODO(v1.2.0): ParseRef はまだ以下を解かない（テストの先行実装で置いた宣言。IMP-106）。
+	RefCode     // フェンス付きのコードブロック（FR-145。4.75.0）
+	RefMermaid  // Mermaid のブロックと Mermaid ファイル（FR-145）
+	RefPlantUML // PlantUML のブロックと PlantUML ファイルの図（FR-145）
+	RefText     // 修飾できるブロック（FR-146, FR-147）
 )
 
 // Ref はフロントエンドから届く書き換え対象の指示を解いたもの（IMP-120 の目印の値）。
@@ -38,6 +43,11 @@ var (
 	ErrRefNotFound = errors.New("edit target not found")
 	ErrNotEditable = errors.New("document is not editable")
 	ErrChanged     = errors.New("file changed on disk")
+
+	// v1.2.0 の番兵（IMP-106。4.75.0）。TODO(v1.2.0): PlanCell の確かめで拒んだときは ErrRejected に改める。
+	ErrRejected     = errors.New("edit would change the document structure") // 確かめで拒んだ（FR-143。edit-rejected）
+	ErrLocked       = errors.New("code block cannot be edited")              // 前置きが行ごとに違う（FR-145。code-locked）
+	ErrCannotFormat = errors.New("formatting cannot be applied")             // 修飾を分けられない・確かめで拒んだ（FR-146。format-rejected）
 )
 
 // refPattern は書き込みの対象の目印の値の形（IMP-106, IMP-120）。

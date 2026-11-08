@@ -23,7 +23,7 @@ func TestEditSession_Discard(t *testing.T) {
 	after := commitWrite(t, &s, r, path, taskOp(doc.RefKey, 0, true))
 
 	// 前提: 確定した書き込みは取り消せる（Discard が無ければ changed は真）
-	if _, changed, err := s.Plan(r, after, Op{Kind: OpUndo}); err != nil || !changed {
+	if _, changed, err := planMD(&s, r, after, Op{Kind: OpUndo}); err != nil || !changed {
 		t.Fatalf("前提: 取り消しの Plan = changed %v, err %v, want 真と nil", changed, err)
 	}
 
@@ -38,7 +38,7 @@ func TestEditSession_Discard(t *testing.T) {
 	}
 
 	// 履歴を捨てた
-	_, changed, err := s.Plan(r, after, Op{Kind: OpUndo})
+	_, changed, err := planMD(&s, r, after, Op{Kind: OpUndo})
 	if err != nil {
 		t.Fatalf("取り消しの Plan がエラーを返した: %v", err)
 	}
@@ -47,10 +47,10 @@ func TestEditSession_Discard(t *testing.T) {
 	}
 
 	// 把握している内容は変わらない: 書き込んだ内容と同じ raw は通り、違う raw は拒む
-	if _, _, err := s.Plan(r, after, taskOp(doc.RefKey, 1, true)); err != nil {
+	if _, _, err := planMD(&s, r, after, taskOp(doc.RefKey, 1, true)); err != nil {
 		t.Errorf("書き込んだ内容と同じ raw への Plan のエラー = %v, want nil（ErrChanged にならない）", err)
 	}
-	if _, _, err := s.Plan(r, []byte("- [ ] a\n- [ ] b\n- [ ] c\n"), taskOp(doc.RefKey, 1, true)); !errors.Is(err, ErrChanged) {
+	if _, _, err := planMD(&s, r, []byte("- [ ] a\n- [ ] b\n- [ ] c\n"), taskOp(doc.RefKey, 1, true)); !errors.Is(err, ErrChanged) {
 		t.Errorf("違う raw への Plan のエラー = %v, want ErrChanged", err)
 	}
 }

@@ -225,10 +225,31 @@ type TableLocation struct {
 	Cells [][]*CellSpan // [行][列]。0 行目が見出し行。nil はソース上に存在しないセル
 }
 
+// FenceLocation はフェンス付きのコードブロック・図のブロックの位置（IMP-121, IMP-122。4.75.0）。
+type FenceLocation struct {
+	Open   Span // 開きの囲いの文字の並び（「```」の部分）
+	Close  Span // 閉じの囲いの文字の並び（Closed が偽なら中身の終わりの位置で、長さ 0）
+	Closed bool // 閉じの囲いがあるか（文書や引用の終わりで閉じたものは偽）
+	// Body は中身の行の全体（開きの囲いの行の次の行の頭から、閉じの囲いの行の頭まで。
+	// 閉じが無ければ最後の中身の行の終わりまで。開きの囲いの行に改行が無ければ、文書の終わりで長さ 0）。
+	Body   Span
+	Lines  []Span // 中身の各行の区間（前置きの後ろから、改行の手前まで）
+	Info   string // 言語指定（確かめに使う）
+	Prefix string // ブロックの前置き（IMP-122）
+	Locked bool   // 前置きが行ごとに違う・タブの途中から始まる（FR-145。IMP-122）
+}
+
 // Locations は書き換え位置の一覧（IMP-121）。位置は正規化後のテキストの上の値である。
 type Locations struct {
 	Tasks  []Span          // 各タスクの括弧の中の 1 文字
 	Tables []TableLocation // GFM の表
+
+	// TODO(v1.2.0): 以下は Locate がまだ埋めない（テストの先行実装で置いた宣言）。
+	Codes     []FenceLocation // code:<n>（4.75.0）
+	Mermaids  []FenceLocation // mermaid:<n>
+	PlantUMLs []FenceLocation // plantuml:<n>
+	Texts     int             // 修飾できるブロックの数（text:<n>。位置は IMP-123 が求める）
+	Blocks    []string        // 構文木の順のブロックの種類（ノードの Kind の名前）。書き込みの確かめに使う（IMP-122, IMP-124）
 }
 
 // taskListPattern は GFM のタスクリストの正規表現（goldmark v1.8.5 の

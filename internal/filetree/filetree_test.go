@@ -46,63 +46,82 @@ func names(nodes []Node) []string {
 	return out
 }
 
+// defaultShow は既定の表示する種類（FR-037, UI-110。IMP-134）。図は出し、画像は隠す。
+var defaultShow = Show{Diagrams: true, Images: false}
+
+// readDir は既定の表示する種類で ReadDir を呼ぶ（UT-301 の「断りが無ければ既定」）。
 func readDir(t *testing.T, dir string) []Node {
 	t.Helper()
+	return readDirShow(t, dir, defaultShow)
+}
 
-	nodes, err := ReadDir(dir)
+// readDirShow は表示する種類を指定して ReadDir を呼ぶ。
+func readDirShow(t *testing.T, dir string, show Show) []Node {
+	t.Helper()
+
+	nodes, err := ReadDir(dir, show)
 	if err != nil {
-		t.Fatalf("ReadDir(%q) がエラーを返した: %v", dir, err)
+		t.Fatalf("ReadDir(%q, %+v) がエラーを返した: %v", dir, show, err)
 	}
 	return nodes
 }
 
 // TestReadDir_Filter は絞り込み規則を検証する
-// （UT-301。根拠: FR-031 / IMP-132）。
+// （UT-301 のケース 1〜9。根拠: FR-031, FR-037, UI-030 / IMP-130, IMP-132, IMP-134）。
+//
+// 表示する種類は、断りが無ければ既定の Show{Diagrams: true, Images: false}（4.77.0）。
 func TestReadDir_Filter(t *testing.T) {
+	kinds := []string{"a.md", "b.txt", "c.png", "d.puml", "e.mmd", "f.iuml"}
+
 	tests := []struct {
 		name string
 		tree []string
+		show Show
 		want []string
 	}{
-		// UT-301 ケース 7: 空のディレクトリ（境界値を先に。UT-013）
-		{"空のディレクトリ", nil, []string{}},
+		// UT-301 ケース 9: 空のディレクトリ（境界値を先に。UT-013）
+		{"9 空のディレクトリ", nil, defaultShow, []string{}},
 
-		// UT-301 ケース 1: Markdown 以外のファイルを除く
-		{"Markdown 以外を除く", []string{"a.md", "b.txt", "c.png"}, []string{"a.md"}},
+		// UT-301 ケース 1: 画像は既定で隠す。.iuml と .txt は開けないので出さない
+		{"1 既定の表示する種類", kinds, defaultShow, []string{"a.md", "d.puml", "e.mmd"}},
+		// UT-301 ケース 2: 画像も出す
+		{"2 画像も出す", kinds, Show{Diagrams: true, Images: true}, []string{"a.md", "c.png", "d.puml", "e.mmd"}},
+		// UT-301 ケース 3: Markdown は外せない
+		{"3 図も画像も隠す", kinds, Show{}, []string{"a.md"}},
 
-		// UT-301 ケース 2: ドットで始まる名前
-		{"ドットで始まるファイル", []string{"a.md", ".hidden.md"}, []string{"a.md"}},
-		{"ドットで始まるディレクトリ", []string{"a.md", ".config/x.md"}, []string{"a.md"}},
+		// UT-301 ケース 4: ドットで始まる名前
+		{"4 ドットで始まるファイル", []string{"a.md", ".hidden.md"}, defaultShow, []string{"a.md"}},
+		{"4 ドットで始まるディレクトリ", []string{"a.md", ".config/x.md"}, defaultShow, []string{"a.md"}},
 
-		// UT-301 ケース 3・4: 既定で除外するディレクトリ
-		{"除外ディレクトリ", []string{
-			"a.md",
-			".git/x.md", "node_modules/x.md", "vendor/x.md",
-			"dist/x.md", "build/x.md", "target/x.md",
-		}, []string{"a.md"}},
+		// UT-301 ケース 5・6: 既定で除外するディレクトリ（中に Markdown があっても）
+		{"5 .git", []string{"x.md", ".git/a.md"}, defaultShow, []string{"x.md"}},
+		{"6 除外ディレクトリ", []string{
+			"x.md",
+			"node_modules/a.md", "vendor/a.md", "dist/a.md", "build/a.md", "target/a.md",
+		}, defaultShow, []string{"x.md"}},
 
-		// UT-301 ケース 5: Markdown を含むディレクトリ
-		{"Markdown を含むディレクトリ", []string{"docs/x.md"}, []string{"docs"}},
+		// UT-301 ケース 7: Markdown を含むディレクトリ
+		{"7 Markdown を含むディレクトリ", []string{"docs/x.md"}, defaultShow, []string{"docs"}},
 
-		// UT-301 ケース 6: 拡張子の大文字小文字
-		{"大文字の拡張子", []string{"A.MD"}, []string{"A.MD"}},
-		{"その他の対応拡張子", []string{"a.markdown", "b.mdown", "c.mkd"}, []string{"a.markdown", "b.mdown", "c.mkd"}},
+		// UT-301 ケース 8: 拡張子の大文字小文字
+		{"8 大文字の拡張子", []string{"A.MD", "B.PUML"}, defaultShow, []string{"A.MD", "B.PUML"}},
+		{"その他の対応拡張子", []string{"a.markdown", "b.mdown", "c.mkd"}, defaultShow, []string{"a.markdown", "b.mdown", "c.mkd"}},
 
-		// FR-031: Markdown を含まないディレクトリは表示しない
-		{"Markdown を含まないディレクトリ", []string{"a.md", "img/x.png"}, []string{"a.md"}},
-		{"空のディレクトリは表示しない", []string{"a.md", "empty/"}, []string{"a.md"}},
+		// FR-031: 表示する種類を含まないディレクトリは表示しない
+		{"表示する種類を含まないディレクトリ", []string{"a.md", "img/x.png"}, defaultShow, []string{"a.md"}},
+		{"空のディレクトリは表示しない", []string{"a.md", "empty/"}, defaultShow, []string{"a.md"}},
 
 		// IMP-133: 1 階層下に Markdown があれば表示する
-		{"1 階層下に Markdown", []string{"docs/sub/x.md"}, []string{"docs"}},
+		{"1 階層下に Markdown", []string{"docs/sub/x.md"}, defaultShow, []string{"docs"}},
 		// 2 階層下は判定できないため表示する（IMP-133 が許容する状態）
-		{"2 階層下は判定できないので表示する", []string{"docs/a/b/x.md"}, []string{"docs"}},
+		{"2 階層下は判定できないので表示する", []string{"docs/a/b/x.md"}, defaultShow, []string{"docs"}},
 		// 除外対象しか含まないディレクトリは表示しない
-		{"除外対象しか含まないディレクトリ", []string{"a.md", "pkg/node_modules/x.md"}, []string{"a.md"}},
+		{"除外対象しか含まないディレクトリ", []string{"a.md", "pkg/node_modules/x.md"}, defaultShow, []string{"a.md"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := names(readDir(t, mkTree(t, tt.tree...)))
+			got := names(readDirShow(t, mkTree(t, tt.tree...), tt.show))
 
 			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
 				t.Errorf("結果 = %v, want %v", got, tt.want)
@@ -145,6 +164,14 @@ func TestReadDir_Order(t *testing.T) {
 			}
 		})
 	}
+
+	// UT-302 ケース 4: 種類で分けて並べない。名前の昇順だけ（FR-031。4.78.0）
+	t.Run("4 種類で分けない", func(t *testing.T) {
+		got := names(readDirShow(t, mkTree(t, "b.md", "a.png", "c.puml"), Show{Diagrams: true, Images: true}))
+		if want := []string{"a.png", "b.md", "c.puml"}; fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("並び = %v, want %v", got, want)
+		}
+	})
 }
 
 // TestReadDir_Truncation は件数の上限を検証する
@@ -264,6 +291,16 @@ func TestReadDir_Reload(t *testing.T) {
 	if got := names(readDir(t, root)); contains(got, "note.txt") {
 		t.Errorf("読み直しで絞り込みが効いていない: %v", got)
 	}
+
+	// UT-306 ケース 6: 表示する種類を変えると、2 回目に画像が現れる
+	// （キャッシュをディレクトリのパスだけで引かない。フィルターの切り替えの読み直し。FR-035, FR-037）
+	write(t, root, "a.png")
+	if got := names(readDir(t, root)); contains(got, "a.png") {
+		t.Fatalf("前提: 既定の表示する種類で a.png が出た: %v", got)
+	}
+	if got := names(readDirShow(t, root, Show{Diagrams: true, Images: true})); !contains(got, "a.png") {
+		t.Errorf("画像を表示するようにしても a.png が現れない: %v", got)
+	}
 }
 
 // write は root の下にファイルを 1 つ作る（親ディレクトリも作る）。
@@ -318,10 +355,10 @@ func TestReadDir_Path(t *testing.T) {
 func TestReadDir_Errors(t *testing.T) {
 	root := mkTree(t, "a.md")
 
-	if _, err := ReadDir(filepath.Join(root, "nosuch")); err == nil {
+	if _, err := ReadDir(filepath.Join(root, "nosuch"), defaultShow); err == nil {
 		t.Error("存在しないディレクトリでエラーが返らない")
 	}
-	if _, err := ReadDir(filepath.Join(root, "a.md")); err == nil {
+	if _, err := ReadDir(filepath.Join(root, "a.md"), defaultShow); err == nil {
 		t.Error("ファイルを指定してもエラーが返らない")
 	}
 }
@@ -379,6 +416,8 @@ func TestPathTo_OutsideRoot(t *testing.T) {
 		{"別のディレクトリ", "/r", "/other/c.md"},
 		{"root の親", "/r/sub", "/r/c.md"},
 		{"相対的に上へ出る", "/r", "/r/../c.md"},
+		// UT-305 ケース 4: 名前の頭が同じ兄弟（文字列の前方一致で判定しない。4.78.0）
+		{"名前の頭が同じ兄弟", "/r", "/r2/a.md"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := PathTo(tt.root, tt.target)

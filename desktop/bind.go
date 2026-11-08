@@ -264,7 +264,8 @@ func (a *App) ReadDir(path string) (nodes []TreeNodeDTO, err error) {
 		return []TreeNodeDTO{}, nil
 	}
 
-	read, err := filetree.ReadDir(path)
+	// TODO(v1.2.0): App.cfg のツリーのフィルターから Show を作って渡す（IMP-134, IMP-196）。
+	read, err := filetree.ReadDir(path, filetree.Show{})
 	if err != nil {
 		return nil, err
 	}

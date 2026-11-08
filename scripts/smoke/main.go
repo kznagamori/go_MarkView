@@ -22,6 +22,9 @@
 //
 // v1.1.0 で、文書の id の名前空間（AR-053。UT-813）・表の並べ替えの比較
 // （FR-130。UT-814）・目印の照合（NFR-030, BUG-014。UT-815）を足した。
+// v1.2.0 で、目印の照合にコードブロック（code）と修飾できるブロック（text）を足し（UT-815）、
+// 見える文字の照合（本番の visible.js と renderer.VisibleTexts。FR-146。UT-817）を足した。
+// **修飾の目印も付けて変換する**（TextRefs。IMP-110, BR-054）。
 // `v1.1.0-rc.2` の後に、Mermaid の図の見た目（look と影。MD-080, DSP-270。UT-816。BUG-021）を
 // 足した。**どれも assets 部（testdata/smoke.md）でだけ判定する。**
 //
@@ -92,8 +95,15 @@ var plantUMLKinds = []string{
 const (
 	okImageAlt      = "読める画像"
 	brokenImageAlt  = "この画像は読み込みに失敗します"
-	smokeImageCount = 3 // 読める 1 枚 + 失敗する 2 枚
+	smokeImageCount = 4 // 読める 2 枚 + 失敗する 2 枚（v1.2.0 で大きさの無い SVG を足した）
+
+	// noSizeImageAlt は固有の大きさを持たない SVG（e2e/images/nosize.svg）の代替テキスト（FR-027, IMP-226。
+	// 4.80.0。UT-811 のケース 10・11）。**読める画像であり、naturalWidth が 0 になりうる。**
+	noSizeImageAlt = "大きさの無い SVG"
 )
+
+// readableImageAlts は読める画像の代替テキスト。残る img はこれだけである（過検出の検査）。
+var readableImageAlts = []string{okImageAlt, noSizeImageAlt}
 
 // plantuml-limits.md のブロック名（E2E-012, BUG-010）。**testdata と一致させる。**
 //
@@ -114,47 +124,6 @@ var (
 	}
 )
 
-// report はページから返る結果（harness.js と対になる）。
-type report struct {
-	Mermaid          []diagramBlock `json:"mermaid"`
-	PlantUML         []diagramBlock `json:"plantuml"`
-	PlantUMLRejected []diagramBlock `json:"plantumlRejected"`
-	Math             mathResult     `json:"math"`
-	Images           imageReport    `json:"images"`
-	Errors           []string       `json:"errors"`
-	Console          []string       `json:"console"`
-	ElapsedMS        int            `json:"elapsedMs"`
-	UserAgent        string         `json:"userAgent"`
-	Fatal            string         `json:"fatal"`
-
-	// v1.1.0 で足した検査（BR-054, E2E-109 の 8〜10）。
-	IDs  idReport   `json:"ids"`
-	Sort sortReport `json:"sort"`
-	Refs refReport  `json:"refs"`
-}
-
-// imageReport は読み込みに失敗した画像の扱い（IMP-226, DSP-123）。
-type imageReport struct {
-	Imgs     []imageInfo  `json:"imgs"`
-	Broken   []brokenInfo `json:"broken"`
-	Legacy   int          `json:"legacy"` // img.is-broken の数。4.32.0 より前のフック
-	Imported bool         `json:"imported"`
-	Error    string       `json:"error"`
-}
-
-type imageInfo struct {
-	Alt          string `json:"alt"`
-	ClassName    string `json:"className"`
-	Complete     bool   `json:"complete"`
-	NaturalWidth int    `json:"naturalWidth"`
-}
-
-type brokenInfo struct {
-	TagName   string `json:"tagName"`
-	ClassName string `json:"className"`
-	Text      string `json:"text"`
-}
-
 // pass は 1 部ぶんの検証。**文書ごとに問いが違うため、検査も分ける。**
 //
 //	assets  同梱資産が描けるか（BR-054）
@@ -163,27 +132,7 @@ type pass struct {
 	name   string
 	doc    string
 	verify func(renderer.Result, string) error
-	check  func(renderer.Result, report) []string
-}
-
-type diagramBlock struct {
-	Index  int    `json:"index"`
-	Block  int    `json:"block"` // 図のブロックの一覧（refReport.Blocks）の何番目か。無ければ -1
-	Head   string `json:"head"`
-	SVG    int    `json:"svg"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	Error  string `json:"error"`
-
-	// Mermaid だけが返す（collect.js の collectLook。UT-816）。
-	Looks    []string `json:"looks"`    // SVG の中の data-look の値（重複を除く）
-	Filtered int      `json:"filtered"` // 計算値の filter が none でない要素の数（影）
-}
-
-type mathResult struct {
-	Total  int      `json:"total"`
-	KaTeX  int      `json:"katex"`
-	Failed []string `json:"failed"`
+	check  func(renderer.Result, goVisible, report) []string
 }
 
 // safeBuffer はブラウザの標準エラーを受ける。別のゴルーチンが書くため保護する。
@@ -286,10 +235,17 @@ func runPass(p pass, frontendDir, browser, refKey string, timeout time.Duration)
 		return 0, fmt.Errorf("検証用文書を読めない: %w", err)
 	}
 
-	rendered, err := renderer.New().Render(source, filepath.Dir(p.doc), refKey)
+	// **修飾の目印も付けて描く**（TextRefs。IMP-110, BR-054）。目印の照合（code / text）と見える文字の
+	// 照合が、修飾できるブロックの目印を要る。
+	r := renderer.New()
+	rendered, err := r.Render(source, renderer.Options{BaseDir: filepath.Dir(p.doc), RefKey: refKey, TextRefs: true})
 	if err != nil {
 		return 0, fmt.Errorf("検証用文書を変換できない: %w", err)
 	}
+
+	// **Go 側の見える文字は Go の中に置き、ページへ渡さない**（IMP-266。UT-817）。失敗は判定が報告する。
+	texts, textsErr := r.VisibleTexts(source)
+	visible := goVisible{Texts: texts, Err: textsErr}
 
 	// **文書が検証の役に立つ形かをここで確かめる。** 誤って対象を落とした
 	// 文書を渡すと、以降の検査はすべて 0 件で通ってしまう（UT-033）。
@@ -319,7 +275,7 @@ func runPass(p pass, frontendDir, browser, refKey string, timeout time.Duration)
 		return 0, err
 	}
 
-	failures := p.check(rendered, got)
+	failures := p.check(rendered, visible, got)
 	printResult(got, failures, p.name == "assets")
 
 	return len(failures), nil
