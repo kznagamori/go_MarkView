@@ -37,7 +37,7 @@ frontend/
 │   ├── search.js           文書内検索
 │   ├── zoom.js             表示倍率
 │   ├── theme.js            テーマ適用
-│   ├── panes.js            ペインの開閉とリサイズ
+│   ├── panes.js            ペインの見出し・開閉・リサイズ
 │   ├── shortcuts.js        キーボードショートカット
 │   ├── tooltip.js          ツールチップ（ツールバー・本文中のボタン・拡大画面。IMP-247）
 │   ├── dnd.js              ドラッグ＆ドロップ
@@ -191,7 +191,7 @@ export function initToolbar(deps) { /* … */ }
 > **ここを `status` に戻さない。** 資産を更新したときの検査は [BR-043](06-build-release.md) が定める。
 
 - ペインの表示・非表示は `hidden` 属性で切り替える。`style.display` を直接操作しない。
-- **`index.html` に利用者向けの文言を書かない。** ペイン見出しの `Files` / `Outline` を含め、文言は `js/strings.js` から与える（IMP-290）。上の骨格でテキストが空の要素は、すべて実行時に埋める。
+- **`index.html` に利用者向けの文言を書かない。** ペイン見出しの `Files` / `Outline` を含め、文言は `js/strings.js` から与える（IMP-290）。上の骨格でテキストが空の要素は、すべて実行時に埋める。**埋めるモジュールは、その要素の機能の IMP に書く**（ペインの見出しは IMP-240 の `initPanes`）。**担当の書かれていない空の要素は、誰も埋めない**——ペインの見出しは v1.0.0 から空のまま出ていた（[BUG-028](../bugs/2026-11-09-bug-028-pane-title-empty.md)。4.90.0）。
 - テーマは `#app` の `data-theme` 属性で切り替える（DSP-011）。
 - 本文は `.markdown-body` に挿入する。`github-markdown-css` が想定するクラス名に合わせる。
 - **`#viewer` に `tabindex="-1"` を与える。目的は 3 つある。** 負値のため `Tab` の巡回順には入らない。
@@ -913,11 +913,13 @@ FR-034 / FR-035 / FR-043 / UI-030 / UI-040 を実装する。
 
 ```js
 // js/panes.js
+export function initPanes()          // 起動時に 1 度（IMP-211）。ペインの見出しの文字を入れ、リサイザを配線する
 export function togglePane(name)     // 'outline' | 'filetree'。**表示になったかを返す**
 export function setPaneWidth(name, px)
 export function applyResponsive()    // ウィンドウ幅に応じた一時的な非表示（IMP-246）
 ```
 
+- **ペインの見出しの文字（`Files` / `Outline`。UI-030, UI-040, DSP-111）は、`initPanes` が `strings.js` の `paneFiles` / `paneOutline` から入れる**（IMP-202, IMP-290）。文字は変わらないため、起動時の 1 度でよい。**v1.0.0〜v1.1.0 は、どのモジュールも入れておらず、見出しの行が空のまま出ていた**（4.90.0 で担当を書いた。[BUG-028](../bugs/2026-11-09-bug-028-pane-title-empty.md)）。
 - 開閉は `hidden` 属性の切り替えと、対応するリサイザの表示切り替えで行う。
 - **ファイルツリーが非表示から表示になったら、ツリーを読み直す**（[FR-035](02-functional.md) の 1 番目の契機）。`filetree.js` の `loadTreeRoot` を呼ぶ。
   - **`panes.js` から `filetree.js` を呼ばない。** `togglePane` は「表示になったか」を返すだけとし、**契機の判断は `main.js` に置く**（IMP-201 の依存の明示）。ここで呼ぶと、ペインの開閉というひとつの関心にツリーの読み込みが混ざる。
