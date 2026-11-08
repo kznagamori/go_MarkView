@@ -11,6 +11,7 @@
 
 import { state, saveConfig } from "./state.js";
 import { syncActive } from "./outline.js";
+import { S } from "./strings.js";
 import { $ } from "./util.js";
 
 // 本文ペインがこれを下回るとアウトラインを隠す（UI-026, DSP-380）。
@@ -23,8 +24,13 @@ const PANE_MAX_RATIO = 0.4;
 let outlineSuppressed = false;
 let responsiveFrame = 0;
 
-// initPanes はリサイザとウィンドウ幅の追随を配線する（IMP-211）。
+// initPanes はペインの見出しの文字を入れ、リサイザとウィンドウ幅の追随を配線する（IMP-211）。
 export function initPanes() {
+  // 見出しの文字（UI-030, DSP-111）。index.html には書かず、strings.js から与える（IMP-202, IMP-290）。
+  // **v1.0.0 から、どこからも入れておらず、見出しの行が空のまま出ていた**（文言だけが strings.js にあった）。
+  $("pane-filetree").querySelector(".pane-title").textContent = S.paneFiles;
+  $("pane-outline").querySelector(".pane-title").textContent = S.paneOutline;
+
   bindResizer("outline");
   bindResizer("filetree");
 
