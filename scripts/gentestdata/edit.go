@@ -48,13 +48,26 @@ func editFiles() []editFile {
 		{path: "bytes/tasks-cr.md", content: withNewlines(frontMatter+tasksBytes+japaneseNote, "\r", false, true)},
 		{path: "bytes/table-crlf.md", content: withNewlines(tableGFM+japaneseNote, "\r\n", false, true)},
 
-		// E2E-385 の手順 1〜3 をした後の内容と、E2E-387 の元の内容（人が書いたリテラル）
-		{path: "expected/tasks-crlf-bom.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\r\n", true, false)},
-		{path: "expected/tasks-lf.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\n", false, true)},
-		{path: "expected/tasks-cr.md", content: withNewlines(frontMatter+tasksBytesExpected+japaneseNote, "\r", false, true)},
-		{path: "expected/table-crlf.md", content: withNewlines(tableCRLFExpected+japaneseNote, "\r\n", false, true)},
-		{path: "expected/undo-original.md", content: undoMD},
+		// E2E-383 / E2E-384: 脚注の中のタスクと表（BUG-027。editbugs.go）
+		{path: "footnote-task.md", content: footnoteTaskMD},
+		{path: "footnote-table.md", content: footnoteTableMD},
 	}
+
+	// E2E-262: 見出しの無い 1 行の文書を 4 つ（BUG-023。editbugs.go）
+	files = append(files, historyFiles()...)
+
+	files = append(files,
+		// E2E-385 の手順 1〜3 をした後の内容と、E2E-387 の元の内容（人が書いたリテラル）
+		editFile{path: "expected/tasks-crlf-bom.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\r\n", true, false)},
+		editFile{path: "expected/tasks-lf.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\n", false, true)},
+		editFile{path: "expected/tasks-cr.md", content: withNewlines(frontMatter+tasksBytesExpected+japaneseNote, "\r", false, true)},
+		editFile{path: "expected/table-crlf.md", content: withNewlines(tableCRLFExpected+japaneseNote, "\r\n", false, true)},
+		editFile{path: "expected/undo-original.md", content: undoMD},
+
+		// E2E-383 の手順 9・10 と E2E-384 の手順 20 をした後の内容（人が書いたリテラル。editbugs.go）
+		editFile{path: "expected/footnote-task.md", content: footnoteTaskExpected},
+		editFile{path: "expected/footnote-table.md", content: footnoteTableExpected},
+	)
 
 	// 権限ビットとシンボリックリンクは Linux で作ったときだけ置く（E2E-385 の手順 6〜8）。
 	if runtime.GOOS == "linux" {
