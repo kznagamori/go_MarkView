@@ -23,8 +23,10 @@ import (
 //
 // svg を**追加してはならない**。Alerts のアイコンは Go 側で出さず、
 // フロントエンドが後処理で付与する（IMP-112, IMP-225）。
+//
+// strike は 4.74.0 で加えた（手書きの取り消し線として読む。IMP-124）。s / del と同じく残す。
 var allowedElements = []string{
-	"a", "b", "i", "strong", "em", "u", "s", "del", "ins", "mark", "small",
+	"a", "b", "i", "strong", "em", "u", "s", "del", "strike", "ins", "mark", "small",
 	"sub", "sup", "br", "hr", "p", "div", "span", "blockquote", "pre", "code",
 	"kbd", "samp", "var",
 	"h1", "h2", "h3", "h4", "h5", "h6",
@@ -54,6 +56,12 @@ var ownClasses = []string{
 	"footnotes",
 	"footnote-ref",
 	"footnote-backref",
+
+	// 画像ファイルの表示（IMP-128。4.75.0）。
+	"image-file",
+
+	// **文字色のクラス（md-color-red など）は入れない**。サニタイズの後の走査だけが、
+	// 許可した style を書いた span に付ける（colorToClass。IMP-116）。
 }
 
 // Policy は MD-072 の許可リストを実装した bluemonday ポリシーを返す（IMP-116）。
@@ -127,8 +135,19 @@ func Policy() *bluemonday.Policy {
 	// 鍵であり、照合はフロントエンドの refs.js と Go 側の EditSession が行う
 	// （IMP-260, IMP-109）。形を縛るのは、目印以外の用途で属性を通さないためである。
 	p.AllowAttrs("data-ref").Matching(editRefPattern).OnElements("input", "table", "th", "td")
-	p.AllowAttrs("data-ref").Matching(diagramRefPattern).OnElements("div")
+	p.AllowAttrs("data-ref").Matching(blockRefPattern).OnElements("div")
+	p.AllowAttrs("data-ref").Matching(textRefPattern).
+		OnElements("p", "h1", "h2", "h3", "h4", "h5", "h6", "li")
 	p.AllowAttrs("data-link").Matching(linkRefPattern).OnElements("a")
+
+	// 編集できないコードブロックの印（IMP-115, IMP-122。4.75.0）。値は 1 だけ、div に限る。
+	p.AllowAttrs("data-locked").Matching(regexp.MustCompile(`^1$`)).OnElements("div")
+
+	// 文字色（FR-147）。**span の color だけを、値が一覧の色（TextColors の Light）のときに限って
+	// 通す**（MD-072, IMP-116。4.75.0）。color 以外の宣言を含む style は、サニタイズの前に
+	// style ごと落としてある（dropUncoloredStyles）。残った style はサニタイズの後に
+	// md-color-<名前> の class へ置き換える（colorToClass）。
+	p.AllowStyles("color").MatchingHandler(isTextColorValue).OnElements("span")
 
 	// 支援技術向けの役割。goldmark の脚注が出す doc-* だけを通す。
 	p.AllowAttrs("role").Matching(regexp.MustCompile(`^doc-[a-z]+$`)).
@@ -139,10 +158,14 @@ func Policy() *bluemonday.Policy {
 
 // 目印の値の形（IMP-116, IMP-120）。数は符号なしの 10 進数だけを受け付ける
 // （document.ParseRef も同じ形に揃える。UT-108 ケース 5）。
+//
+// 要素と種類の組み合わせを縛る（UT-209 のケース 31・32）: div はコードブロックと図
+// （code / mermaid / plantuml。v1.2.0 で code を足した）、p / h1〜h6 / li は修飾の目印（text）。
 var (
-	editRefPattern    = regexp.MustCompile(`^[0-9a-f]{16}:(?:task:[0-9]+|table:[0-9]+|cell:[0-9]+:[0-9]+:[0-9]+)$`)
-	diagramRefPattern = regexp.MustCompile(`^[0-9a-f]{16}:(?:mermaid|plantuml):[0-9]+$`)
-	linkRefPattern    = regexp.MustCompile(`^[0-9a-f]{16}:`)
+	editRefPattern  = regexp.MustCompile(`^[0-9a-f]{16}:(?:task:[0-9]+|table:[0-9]+|cell:[0-9]+:[0-9]+:[0-9]+)$`)
+	blockRefPattern = regexp.MustCompile(`^[0-9a-f]{16}:(?:code|mermaid|plantuml):[0-9]+$`)
+	textRefPattern  = regexp.MustCompile(`^[0-9a-f]{16}:text:[0-9]+$`)
+	linkRefPattern  = regexp.MustCompile(`^[0-9a-f]{16}:`)
 )
 
 // sanitizeAfter はサニタイズの後に、属性指定だけでは閉じ込められない 2 つを直す
@@ -150,6 +173,7 @@ var (
 //
 //   - 生 HTML の id 属性に DocumentIDPrefix を付ける（既に付いている値には付けない）
 //   - type="checkbox" を持たない input を取り除く
+//   - span の style を外し、色なら class に md-color-<名前> を足す（colorToClass。FR-147）
 //
 // **1 回の走査で行い、開始タグと自己終了タグの両方を見る。** bluemonday は
 // `<div id="x"/>` を自己終了タグのまま出し、ブラウザはこれを開始タグとして扱う。
@@ -194,7 +218,11 @@ func sanitizeAfter(sanitized []byte, hasRawHTML bool) []byte {
 			continue
 		}
 
-		if !prefixRawID(&tok) {
+		// 2 つの書き換えは同じタグに重なりうる（id と style を持つ span）。両方を当ててから
+		// 組み立て直す。
+		prefixed := prefixRawID(&tok)
+		colored := colorToClass(&tok)
+		if !prefixed && !colored {
 			out.Write(raw)
 			continue
 		}

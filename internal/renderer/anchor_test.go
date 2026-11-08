@@ -133,6 +133,10 @@ func TestRender_HeadingID(t *testing.T) {
 		// & を落とした跡の空白は詰めない。
 		{"文字参照を解いてから除く", "## A &amp; B", []string{`<h2 id="user-content-a--b">`}},
 		{"エスケープを解いてから除く", "## a\\*b", []string{`<h2 id="user-content-ab">`}},
+
+		// UT-202 ケース 16: インラインコードの中の文字参照は解かない（MD-021 の 1。4.84.0。利用者の判断）。
+		{"インラインコードの中の文字参照", "## `&amp;`", []string{`<h2 id="user-content-amp">`}},
+		{"インラインコードの中の文字参照 2", "## a `&lt;b&gt;` c", []string{`<h2 id="user-content-a-ltbgt-c">`}},
 	}
 
 	for _, tt := range tests {
@@ -241,6 +245,39 @@ func TestRender_Headings(t *testing.T) {
 			name: "生 HTML のタグと文字参照を含む見出し",
 			in:   "## <del>a</del> &amp; b",
 			want: []Heading{{Level: 2, Text: "a & b", ID: "user-content-a--b"}},
+		},
+		{
+			// UT-203 ケース 8 の 2 つ目: エスケープも解く（MD-021 の 1、IMP-117 の 1。4.84.0）。
+			// goldmark の文字のノードはエスケープを書かれたとおり（\*）に持つ（実測）。スラッグは記号を
+			// 落とすため UT-202 のケース 15 では見えず、見出しの文字（アウトライン）にだけ出る。
+			name: "エスケープを含む見出し",
+			in:   "## a\\*b",
+			want: []Heading{{Level: 2, Text: "a*b", ID: "user-content-ab"}},
+		},
+		{
+			// UT-202 ケース 16: インラインコードの中の文字参照は解かない（MD-021 の 1、IMP-117 の 1。4.84.0）。
+			// 本文で文字どおりに表示される文字と同じにする。解くと Text が & になり、アンカーも失う。
+			name: "インラインコードの中の文字参照",
+			in:   "## `&amp;`\n\n## a `&lt;b&gt;` c",
+			want: []Heading{
+				{Level: 2, Text: "&amp;", ID: "user-content-amp"},
+				{Level: 2, Text: "a &lt;b&gt; c", ID: "user-content-a-ltbgt-c"},
+			},
+		},
+		{
+			// UT-203 ケース 9: 数値の文字参照は描画（goldmark の Writer）と同じ規則で解く（10 進は基数 10、
+			// 16 進は 6 桁まで。4.86.0。独立したレビューの指摘——`&#065;` を 8 進と読み `5` にし、16 進の
+			// 7 桁も解いていた）。スラッグも画面の文字から作る。
+			name: "数値の文字参照を含む見出し",
+			in:   "## &#065;bc &#x0000041;",
+			want: []Heading{{Level: 2, Text: "Abc &#x0000041;", ID: "user-content-abc-x0000041"}},
+		},
+		{
+			// UT-203 ケース 9 の 2 つ目: インラインコードの中の改行は半角空白 1 つ（本文の code の中と同じ。
+			// 4.86.0。独立したレビューの指摘）。スラッグは変わらない。
+			name: "複数行のインラインコードを含む見出し",
+			in:   "`a\nb`\n===",
+			want: []Heading{{Level: 1, Text: "a b", ID: "user-content-a-b"}},
 		},
 		{
 			// UT-203 ケース 7: ID は user-content- に続く部分が UT-202 の規則と一致する

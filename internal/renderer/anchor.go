@@ -73,7 +73,16 @@ func (headingTransformer) Transform(doc *ast.Document, reader text.Reader, pc pa
 //
 // 強調・リンク・コードスパンは、いずれも内側に文字列ノードを持つため、
 // それらを拾えば記法だけが落ちる。自動リンクは子を持たないため、
-// 表示されるラベルを直接取る。
+// 表示されるラベルを直接取る。**生 HTML のタグ（RawHTML）は拾わない**ため、
+// `<del>` や文字色の `<span>` を付けても中の文字だけが残る（MD-021 の 1。修飾
+// （FR-146, FR-147）でアンカーが変わらない。UT-202 のケース 14）。
+//
+// **エスケープと文字参照は解く**（MD-021 の 1。`## A &amp; B` は Text が `A & B`、スラッグが
+// `a--b`。`## a\*b` は Text が `a*b`。UT-202 のケース 15、UT-203 のケース 8）。goldmark の文字の
+// ノードは、どちらも書かれたとおりの綴りで持ち、描画のときに解く（実測）。解かずに使うと、
+// アウトラインに `&amp;` や `\*` が出て、スラッグも `a-amp-b` になり GitHub と食い違う。
+// 解き方は見える文字（IMP-123）と同じ decodeText である。
+// **インラインコードの中は解かない**（“ `&amp;` “ は文字どおり `&amp;` と表示される）。
 func plainText(n ast.Node, source []byte) string {
 	var b strings.Builder
 
@@ -82,8 +91,21 @@ func plainText(n ast.Node, source []byte) string {
 			return ast.WalkContinue, nil
 		}
 		switch v := c.(type) {
+		case *ast.CodeSpan:
+			// 中の文字は書かれたとおりに表示される。文字参照を解かない。行の改行は半角空白 1 つにする
+			// （CommonMark のコードスパン。変換器が code の中に書く文字と同じ。見える文字の addRaw と
+			// 同じ。4.86.0。独立したレビューの指摘——改行のまま残していた）。
+			for t := v.FirstChild(); t != nil; t = t.NextSibling() {
+				switch tv := t.(type) {
+				case *ast.Text:
+					b.WriteString(strings.ReplaceAll(string(tv.Segment.Value(source)), "\n", " "))
+				case *ast.String:
+					b.Write(tv.Value)
+				}
+			}
+			return ast.WalkSkipChildren, nil
 		case *ast.Text:
-			b.Write(v.Segment.Value(source))
+			b.WriteString(decodedString(v.Segment.Value(source)))
 		case *ast.String:
 			b.Write(v.Value)
 		case *ast.AutoLink:

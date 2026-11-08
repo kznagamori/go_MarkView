@@ -119,7 +119,7 @@
 </ul>
 </details>
 <h2 id="user-content-コードブロックmd-030-md-031-md-032">コードブロック（MD-030, MD-031, MD-032）</h2>
-<div class="code-block" data-lang="go"><pre class="chroma"><code><span class="line"><span class="cl"><span class="kn">package</span> <span class="nx">main</span>
+<div class="code-block" data-lang="go" data-ref="0123456789abcdef:code:0"><pre class="chroma"><code><span class="line"><span class="cl"><span class="kn">package</span> <span class="nx">main</span>
 </span></span><span class="line"><span class="cl">
 </span></span><span class="line"><span class="cl"><span class="kn">import</span> <span class="s">&#34;fmt&#34;</span>
 </span></span><span class="line"><span class="cl">
@@ -127,22 +127,22 @@
 </span></span><span class="line"><span class="cl">	<span class="nx">fmt</span><span class="p">.</span><span class="nf">Println</span><span class="p">(</span><span class="s">&#34;hello&#34;</span><span class="p">)</span>
 </span></span><span class="line"><span class="cl"><span class="p">}</span>
 </span></span></code></pre></div>
-<div class="code-block" data-lang="python"><pre class="chroma"><code><span class="line"><span class="cl"><span class="k">def</span> <span class="nf">greet</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="code-block" data-lang="python" data-ref="0123456789abcdef:code:1"><pre class="chroma"><code><span class="line"><span class="cl"><span class="k">def</span> <span class="nf">greet</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span></span><span class="line"><span class="cl">    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&#34;hello, </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#34;</span><span class="p">)</span>
 </span></span></code></pre></div>
-<div class="code-block" data-lang="diff"><pre class="chroma"><code><span class="line"><span class="cl"><span class="gd">- 削除された行
+<div class="code-block" data-lang="diff" data-ref="0123456789abcdef:code:2"><pre class="chroma"><code><span class="line"><span class="cl"><span class="gd">- 削除された行
 </span></span></span><span class="line"><span class="cl"><span class="gd"></span><span class="gi">+ 追加された行
 </span></span></span><span class="line"><span class="cl"><span class="gi"></span>  変わらない行
 </span></span></code></pre></div>
-<div class="code-block"><pre><code>言語指定のないコードブロック
+<div class="code-block" data-ref="0123456789abcdef:code:3"><pre><code>言語指定のないコードブロック
 ハイライトは適用されません
 </code></pre></div>
-<div class="code-block" data-lang="nosuchlanguage"><pre><code>未知の言語もエラーにせず、ハイライトなしで表示します
+<div class="code-block" data-lang="nosuchlanguage" data-ref="0123456789abcdef:code:4"><pre><code>未知の言語もエラーにせず、ハイライトなしで表示します
 </code></pre></div>
 <div class="code-block"><pre><code>インデント形式のコードブロック
 4 スペースで始めます
 </code></pre></div>
-<div class="code-block"><pre><code>チルダ 3 つのフェンスも使えます
+<div class="code-block" data-ref="0123456789abcdef:code:5"><pre><code>チルダ 3 つのフェンスも使えます
 </code></pre></div>
 <p>インラインコードは <code>fmt.Println(&#34;x&#34;)</code> のように書きます（MD-033）。
 バッククォートを含む場合は <code>`</code> のように囲みを増やします。</p>
@@ -174,17 +174,17 @@
 <p>リストの項目や引用の中に書いた Alert は、GitHub と同じく通常の引用として描画します（入れ子にできません）。</p>
 <ul>
 <li>
-<div class="markdown-alert markdown-alert-note">
-<p class="markdown-alert-title">Note</p>
-<p>リストの項目の中の引用です。</p>
-</div>
+<blockquote>
+<p>[!NOTE]
+リストの項目の中の引用です。</p>
+</blockquote>
 </li>
 </ul>
 <blockquote>
-<div class="markdown-alert markdown-alert-warning">
-<p class="markdown-alert-title">Warning</p>
-<p>引用の中の引用です。</p>
-</div>
+<blockquote>
+<p>[!WARNING]
+引用の中の引用です。</p>
+</blockquote>
 </blockquote>
 <h2 id="user-content-脚注md-050">脚注（MD-050）</h2>
 <p>脚注への参照です<sup id="user-content-fnref:1"><a href="#user-content-fn:1" class="footnote-ref" role="doc-noteref">1</a></sup>。もう 1 つ<sup id="user-content-fnref:2"><a href="#user-content-fn:2" class="footnote-ref" role="doc-noteref">2</a></sup>。</p>
@@ -220,8 +220,8 @@
 <h2 id="user-content-生-htmlmd-072">生 HTML（MD-072）</h2>
 <p>キーボード操作は <kbd>Ctrl</kbd> + <kbd>C</kbd> のように書きます。</p>
 <p>化学式 H<sub>2</sub>O、指数 x<sup>2</sup>、<mark>ハイライト</mark>、<ins>挿入</ins>、<abbr title="HyperText Markup Language">HTML</abbr>。</p>
-<p>取り消し線は strike・<s>s</s>・<del>del</del> のタグでも書けます。</p>
-<p>文字色は <span>赤</span>・<span>橙</span>・<span>黄</span>・<span>緑</span>・<span>青</span>・<span>紫</span>・<span>灰</span> の 7 色です（GitHub は <code>style</code> を落とすため、色が付きません）。</p>
+<p>取り消し線は <strike>strike</strike>・<s>s</s>・<del>del</del> のタグでも書けます。</p>
+<p>文字色は <span class="md-color-red">赤</span>・<span class="md-color-orange">橙</span>・<span class="md-color-yellow">黄</span>・<span class="md-color-green">緑</span>・<span class="md-color-blue">青</span>・<span class="md-color-purple">紫</span>・<span class="md-color-gray">灰</span> の 7 色です（GitHub は <code>style</code> を落とすため、色が付きません）。</p>
 <table>
 <thead><tr><th>生 HTML の表</th><th>2 列目</th></tr></thead>
 <tbody><tr><td>a</td><td>b</td></tr></tbody>

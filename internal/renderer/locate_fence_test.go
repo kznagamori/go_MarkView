@@ -29,7 +29,7 @@ func onlyCode(t *testing.T, source string) FenceLocation {
 }
 
 // TestLocate_Fences はコードブロックと図の位置を検証する
-// （UT-222 のケース 1〜9・16・17。根拠: FR-145, AR-031 / IMP-111, IMP-121, IMP-122）。
+// （UT-222 のケース 1〜9・16・17・19。根拠: FR-145, AR-031 / IMP-111, IMP-121, IMP-122）。
 //
 // 位置は正規化後のテキストの上のバイト位置である（UT-218 と同じ）。期待値は入力のバイトを
 // 数えて人が書いた（UT-031）。
@@ -146,6 +146,38 @@ func TestLocate_Fences(t *testing.T) {
 			t.Errorf("Locked が偽: %+v", got)
 		}
 	})
+
+	// ケース 19: 引用の記号の直後のタブ（4.86.0。独立したレビューの指摘）。goldmark の Pos() は
+	// タブの残り（Segment.Padding）の桁数だけ後ろへずれるため、開きの囲いの位置に使えない。
+	// 開きがずれると、囲いの文字を取り違えて閉じも記録できなくなる。
+	for _, c := range []struct {
+		name, src string
+		want      FenceLocation
+	}{
+		{"19 引用の記号とタブ", ">\t```\n>\ta\n>\t```\n", FenceLocation{
+			Open: Span{2, 5}, Close: Span{12, 15}, Closed: true, Body: Span{6, 10},
+			Lines: []Span{{8, 9}}, Prefix: ">\t",
+		}},
+		{"19 字下げした引用の記号とタブ", "   >\t```go\n   >\ta\n   >\t```\n", FenceLocation{
+			Open: Span{5, 8}, Close: Span{23, 26}, Closed: true, Body: Span{11, 18},
+			Lines: []Span{{16, 17}}, Info: "go", Prefix: "   >\t",
+		}},
+		{"19 字下げした引用の記号とタブの空のブロック", "   >\t```\n   >\t```\n", FenceLocation{
+			Open: Span{5, 8}, Close: Span{14, 17}, Closed: true, Body: Span{9, 9},
+			Prefix: "   >\t",
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := onlyCode(t, c.src); !reflect.DeepEqual(got, c.want) {
+				t.Errorf("Locate(%q).Codes[0]\n got = %+v\nwant = %+v", c.src, got, c.want)
+			}
+			// 描画の data-locked も同じ判定を使う（IMP-115）。前置きはどの行も同じなので付かない。
+			res, err := New().Render([]byte(c.src), Options{RefKey: testRefKey})
+			if err != nil || strings.Contains(res.HTML, "data-locked") {
+				t.Errorf("Render(%q) = %q, %v; data-locked が付いた", c.src, res.HTML, err)
+			}
+		})
+	}
 }
 
 // TestLocate_FencesShareCounting は、Render の目印と Locate の番号が同じブロックを指すことを

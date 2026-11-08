@@ -10,23 +10,17 @@ package renderer
 import (
 	"bytes"
 	"fmt"
-	"net/url"
-	"path/filepath"
-	"strings"
 
 	"github.com/kznagamori/go_MarkView/internal/applog"
-	"github.com/kznagamori/go_MarkView/internal/localurl"
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
 	meta "github.com/yuin/goldmark-meta"
-	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	gmrenderer "github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
 
@@ -47,7 +41,7 @@ type Result struct {
 	NeedsKaTeX    bool
 	NeedsPlantUML bool // AR-021, MD-085。IMP-119 が立てる
 	// NoDiagrams は、図のファイルで図が 1 つも無いことを示す（IMP-126, IMP-127。FR-025, FR-026）。
-	// TODO(v1.2.0): 図のファイルの変換（RenderPlantUMLFile / RenderMermaidFile）が立てる。
+	// 図のファイルの変換（RenderPlantUMLFile / RenderMermaidFile）が立てる。`No diagrams found.` の文言はフロントエンドが出す（IMP-290）。
 	NoDiagrams bool
 }
 
@@ -56,7 +50,7 @@ type Options struct {
 	BaseDir string // 相対パス解決の基準ディレクトリ（表示中ファイルのディレクトリ。AR-042）
 	RefKey  string // 目印の鍵（IMP-120）。空文字なら目印を付けない
 	// TextRefs は修飾の目印（text:<n>）も付けるか（IMP-120。編集モードの間だけ真）。
-	// TODO(v1.2.0): まだ見ていない（修飾の目印を付けない）。
+	// 付けないときも番号は同じに数える（Locate と Visible は付けるかどうかを知らない）。
 	TextRefs bool
 }
 
@@ -74,6 +68,10 @@ func New() *Renderer {
 	return &Renderer{
 		policy: Policy(),
 		md: goldmark.New(
+			// 既定の構文解析器のリンクだけを包んだもの（linkend.go。IMP-123）。拡張と構文解析器の
+			// 設定より前に置く——後に置くと、それまでに足した設定ごと置き換わる。
+			goldmark.WithParser(newParser()),
+
 			goldmark.WithExtensions(
 				// GFM の内訳を個別に登録する。表の桁揃えを style 属性ではなく
 				// align 属性で出させるためで、これにより出力から style を一掃でき、
@@ -106,7 +104,8 @@ func New() *Renderer {
 
 				plantUMLExtension{}, // PlantUML ブロックの取り出し（IMP-119, MD-083）
 
-				refExtension{}, // 編集・並べ替え・リンクの目印（IMP-120）
+				refExtension{},   // 編集・並べ替え・リンクの目印（IMP-120）
+				fenceExtension{}, // 囲いの行の位置を構文木に残す（IMP-111, IMP-121）
 
 				// ハイライトは Mermaid・PlantUML・数式の後に置く。いずれも先に
 				// 専用ノードへ差し替わり、chroma には渡らない（IMP-114, IMP-115, IMP-119）。
@@ -122,6 +121,8 @@ func New() *Renderer {
 					util.Prioritized(imageTransformer{}, 95), // 画像 URL の書き換え（IMP-118）
 					// 生 HTML の有無。サニタイズの後処理を省いてよいかの判断（IMP-116）
 					util.Prioritized(rawHTMLTransformer{}, 90),
+					// 言語指定の後ろの属性を読ませない（IMP-114。highlight.go）
+					util.Prioritized(codeAttrTransformer{}, 85),
 				),
 			),
 
@@ -162,8 +163,9 @@ func (r *Renderer) Render(source []byte, opts Options) (result Result, err error
 	// 画像 URL の書き換えに使う（IMP-118）。AST 変換器は 1 度しか登録され
 	// ないため、変換ごとに変わる値は Context 経由で渡す。
 	pc.Set(baseDirKey, baseDir)
-	// 目印の鍵（IMP-120）。空なら目印を付けない。
+	// 目印の鍵（IMP-120）。空なら目印を付けない。修飾の目印は TextRefs が真のときだけ。
 	pc.Set(refKeyKey, refKey)
+	pc.Set(textRefsKey, opts.TextRefs)
 
 	var buf bytes.Buffer
 	if err := r.md.Convert(source, &buf, parser.WithContext(pc)); err != nil {
@@ -187,9 +189,17 @@ func (r *Renderer) Render(source []byte, opts Options) (result Result, err error
 	}
 
 	// サニタイズは変換パイプラインの最後段に固定で置く（IMP-116, AR-031）。
-	// 属性指定だけでは閉じ込められない id の接頭辞と input の除去は、その直後の
-	// 1 回の走査で行う（sanitizeAfter）。
-	sanitized := sanitizeAfter(r.policy.SanitizeBytes(buf.Bytes()), hasRawHTML)
+	// 属性指定だけでは閉じ込められない id の接頭辞と input の除去と、色の span の
+	// class への置き換えは、その直後の 1 回の走査で行う（sanitizeAfter）。
+	//
+	// 色の宣言 1 つだけでない span の style は、サニタイズの**前**に落とす
+	// （dropUncoloredStyles）。bluemonday は宣言ごとに絞って color だけを残すため。
+	// style は生 HTML からしか来ないので、生 HTML が無ければ省く。
+	converted := buf.Bytes()
+	if hasRawHTML {
+		converted = dropUncoloredStyles(converted)
+	}
+	sanitized := sanitizeAfter(r.policy.SanitizeBytes(converted), hasRawHTML)
 
 	return Result{
 		HTML:          string(sanitized),
@@ -291,80 +301,4 @@ func recoverRender(result *Result, err *error) {
 	// 途中まで組み立てた結果は返さない。呼び出し側は状態画面を出す（UI-052）。
 	*result = Result{}
 	*err = fmt.Errorf("markdown rendering failed: %v", v)
-}
-
-// baseDirKey は変換 1 回分の基準ディレクトリを parser.Context へ置く鍵（IMP-118）。
-var baseDirKey = parser.NewContextKey()
-
-// remoteSchemes は書き換えずにそのまま渡す URL の接頭辞（IMP-118, MD-071）。
-var remoteSchemes = []string{"http://", "https://", "data:"}
-
-// imageTransformer は画像の src を配信用 URL へ書き換える（IMP-118）。
-//
-// リンク（a href）は書き換えない。クリック時にフロントエンドが捕捉して Go 側へ
-// 渡すため、元の値のまま保持する必要がある（AR-060, IMP-223）。
-type imageTransformer struct{}
-
-func (imageTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
-	baseDir, _ := pc.Get(baseDirKey).(string)
-
-	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		img, ok := n.(*ast.Image)
-		if !ok || !entering {
-			return ast.WalkContinue, nil
-		}
-
-		img.Destination = []byte(rewriteImageURL(string(img.Destination), baseDir))
-		return ast.WalkContinue, nil
-	})
-}
-
-// rewriteImageURL は画像の src を WebView から取得できる形へ変換する（IMP-118）。
-//
-//	http:// https://   → そのまま（MD-071）
-//	data:              → そのまま
-//	絶対パス・相対パス → /__local/<エスケープ済み絶対パス>（AR-040）
-//
-// 相対パスは baseDir（表示中ファイルのディレクトリ）を基準に解決する。
-// ツリールートを基準にしてはならない（AR-042）。
-//
-// 上記以外のスキーム（file: や javascript: 等）はローカルパスとして扱う。
-// 結果は存在しないパスとなり配信されないため、素通しするより安全である。
-func rewriteImageURL(src, baseDir string) string {
-	if src == "" {
-		return src
-	}
-
-	for _, scheme := range remoteSchemes {
-		if len(src) >= len(scheme) && strings.EqualFold(src[:len(scheme)], scheme) {
-			return src
-		}
-	}
-
-	return localurl.Encode(ResolveRef(src, baseDir))
-}
-
-// ResolveRef は Markdown 内の参照をローカルの絶対パスへ解決する（AR-042）。
-//
-// **画像（IMP-118）とリンク遷移（IMP-312）が同じ規則を使う。** 別々に書くと、
-// [x](./a.png) が開くファイルと ![x](./a.png) が表示するファイルが食い違いうる。
-//
-// 基準は baseDir、すなわち表示中ファイルのディレクトリである。ツリールートを
-// 基準にしてはならない（AR-042）。スキームの判定は呼び出し側が済ませておく。
-func ResolveRef(ref, baseDir string) string {
-	// Markdown の宛先は URL であり、空白などは %20 で書かれうる。
-	// ファイルパスへ戻してから解決する。復号できない場合は元の文字列を使う。
-	path := ref
-	if decoded, err := url.PathUnescape(path); err == nil {
-		path = decoded
-	}
-
-	// 先頭が / のパスは OS を問わず絶対として扱う。Markdown の URL は POSIX
-	// 形式で書かれるが、Windows の filepath.IsAbs はドライブレターを要求し、
-	// /abs/a.png を相対と判定してしまう。
-	if !strings.HasPrefix(path, "/") && !filepath.IsAbs(path) {
-		path = filepath.Join(baseDir, path)
-	}
-
-	return filepath.Clean(path)
 }

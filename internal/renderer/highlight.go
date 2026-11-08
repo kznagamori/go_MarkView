@@ -5,9 +5,35 @@ import (
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
 	gmrenderer "github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
+
+// attrCodeBlock は、すべてのフェンス付きのコードブロックに置くノードの属性（codeAttrTransformer）。
+// 出力には書かない（codeBlockWrapper が書くのは data-ref と data-locked だけ）。
+const attrCodeBlock = "markview-code-block"
+
+// codeAttrTransformer は、すべてのフェンス付きのコードブロックにノードの属性を置き、goldmark-highlighting
+// に言語指定の後ろの属性（```go {nohl=true}）を読ませない（IMP-114。4.86.0。利用者の判断「常に無視
+// する」）。GitHub は言語指定の最初の語だけを使い、後ろは無視する（MD-002）。
+//
+// goldmark-highlighting は、ノードに属性があればそれを使い、無いときだけ言語指定の後ろの {…} を読む
+// （v2 の getAttributes）。v1.1.0 はノードに属性を置かなかったため {nohl=true} でハイライトが消えた。
+// v1.2.0 でコードブロックに目印（data-ref）を置いたことで、鍵があるときだけ読まなくなっていた（独立した
+// レビューの指摘）。さらに鍵が空のとき（テストだけ）は、言語指定の後ろに書いた data-ref がそのまま出力
+// されていた。鍵の有無にかかわらず、ここで必ず属性を置く。
+type codeAttrTransformer struct{}
+
+func (codeAttrTransformer) Transform(doc *ast.Document, _ text.Reader, _ parser.Context) {
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if fc, ok := n.(*ast.FencedCodeBlock); ok && entering {
+			fc.SetAttributeString(attrCodeBlock, []byte("1"))
+		}
+		return ast.WalkContinue, nil
+	})
+}
 
 // newHighlighting は chroma によるシンタックスハイライトを構成する（IMP-114）。
 //
@@ -62,6 +88,29 @@ func codeBlockWrapper(w util.BufWriter, ctx highlighting.CodeBlockContext, enter
 		_, _ = w.WriteString(` data-lang="`)
 		_, _ = w.Write(util.EscapeHTML(lang))
 		_ = w.WriteByte('"')
+	}
+	// コードブロックの目印（code:<n>）と、前置きが行ごとに違うものの data-locked（IMP-115, IMP-120）。
+	// 目印の変換（refTransformer）がノードの属性に置いたものを書く。goldmark-highlighting は、ノードに
+	// 属性があればそれを CodeBlockContext.Attributes() として渡す（v2 の getAttributes）。
+	if attrs := ctx.Attributes(); attrs != nil {
+		for _, name := range []string{attrDataRef, attrDataLocked} {
+			v, ok := attrs.Get([]byte(name))
+			if !ok {
+				continue
+			}
+			var b []byte
+			switch val := v.(type) {
+			case []byte:
+				b = val
+			case string:
+				b = []byte(val)
+			default:
+				continue
+			}
+			_, _ = w.WriteString(" " + name + `="`)
+			_, _ = w.Write(util.EscapeHTML(b))
+			_ = w.WriteByte('"')
+		}
 	}
 	_ = w.WriteByte('>')
 

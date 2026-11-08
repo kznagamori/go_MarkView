@@ -62,7 +62,7 @@ func inlinesOf(tb *TextBlock, kind string) []InlineSpan {
 }
 
 // TestVisible は見える文字の数え方と、ソースとの対応を検証する
-// （UT-220 のケース 1〜19・23〜25。根拠: FR-146, FR-147, AR-031 / IMP-120, IMP-123, IMP-121）。
+// （UT-220 のケース 1〜19・23〜30。ケース 26〜30 は testVisibleMarks。根拠: FR-146, FR-147, AR-031 / IMP-120, IMP-123, IMP-121）。
 //
 // **画面側（IMP-266）と同じ数え方であることは、ここでは見えない。** 一致は描画スモークが見る
 // （UT-817）。ここで見るのは、Go 側が IMP-123 の表どおりに数えることである。
@@ -247,8 +247,9 @@ func TestVisible(t *testing.T) {
 		}
 		check("strong", InlineSpan{Text: Span{0, 1}, Open: Span{0, 2}, Close: Span{3, 5}}, true)
 		check("strike", InlineSpan{Text: Span{1, 2}, Open: Span{5, 7}, Close: Span{8, 10}}, true)
-		check("link", InlineSpan{Text: Span{2, 3}}, false)
-		check("code", InlineSpan{Text: Span{3, 4}}, false)
+		// リンクの閉じは `]` から構文の終わりまで、インラインコードはバッククォートの並び（4.86.0）。
+		check("link", InlineSpan{Text: Span{2, 3}, Open: Span{10, 11}, Close: Span{12, 16}}, true)
+		check("code", InlineSpan{Text: Span{3, 4}, Open: Span{16, 17}, Close: Span{18, 19}}, true)
 	})
 
 	// ケース 16: 生 HTML のタグの対の種類。色は IMP-116 が通すもの（UT-209 のケース 25〜28・35・36）と
@@ -296,10 +297,14 @@ func TestVisible(t *testing.T) {
 			{"a</del>b", 0},
 			{"<del>a\n\nb</del>", 0},
 			{"<del>a\n\nb</del>", 1},
+			// 開きと閉じの名前が違うものも対にしない（「そろった」は同じ名前のタグ。IMP-123）。
+			{"<del>a</s>b", 0},
 		} {
 			tb := visible(t, tt.src, textN(tt.target))
-			if got := inlinesOf(tb, "del"); len(got) != 0 {
-				t.Errorf("%q の text:%d に del がある: %+v", tt.src, tt.target, got)
+			for _, kind := range []string{"del", "s"} {
+				if got := inlinesOf(tb, kind); len(got) != 0 {
+					t.Errorf("%q の text:%d に %s がある: %+v", tt.src, tt.target, kind, got)
+				}
 			}
 		}
 	})
@@ -362,6 +367,124 @@ func TestVisible(t *testing.T) {
 	t.Run("25 最初の子がコードブロックの項目", func(t *testing.T) {
 		if _, err := New().Visible([]byte(listFirstFence), textN(0)); err == nil {
 			t.Error("text: の無い項目で Visible がエラーを返さなかった")
+		}
+	})
+
+	testVisibleMarks(t)
+}
+
+// inlineMark はインラインの要素の種類と、ソース上の開きと閉じの記号・タグの区間。
+type inlineMark struct {
+	kind        string
+	open, close Span
+}
+
+// inlineMarks は Inlines を、並びの順に mark にする。
+func inlineMarks(tb *TextBlock) []inlineMark {
+	var got []inlineMark
+	for _, in := range tb.Inlines {
+		got = append(got, inlineMark{in.Kind, in.Open, in.Close})
+	}
+	return got
+}
+
+// testVisibleMarks は記号・タグの区間とソースの区間を検証する（UT-220 のケース 26〜30。4.86.0。
+// 独立したレビューの指摘と、その確かめの中で見つけたもの）。期待値は入力のバイトを数えて人が書いた。
+func testVisibleMarks(t *testing.T) {
+	// ケース 26: 中身の端が別の要素（強調・リンク・コード・生 HTML のタグ）でも、記号はその要素のもの。
+	// 並びは入れ子の外側から（中身が同じなら、記号・タグがソースで先に出る方が外側）。
+	for _, tt := range []struct {
+		src  string
+		want []inlineMark
+	}{
+		{"x ~~**a**~~ y", []inlineMark{{"strike", Span{2, 4}, Span{9, 11}}, {"strong", Span{4, 6}, Span{7, 9}}}},
+		{"x **~~a~~** y", []inlineMark{{"strong", Span{2, 4}, Span{9, 11}}, {"strike", Span{4, 6}, Span{7, 9}}}},
+		{"x ~~[a](u)~~ y", []inlineMark{{"strike", Span{2, 4}, Span{10, 12}}, {"link", Span{4, 5}, Span{6, 10}}}},
+		{"x **`c`d** y", []inlineMark{{"strong", Span{2, 4}, Span{8, 10}}, {"code", Span{4, 5}, Span{6, 7}}}},
+		{"x ~~<del>a</del>~~ y", []inlineMark{{"strike", Span{2, 4}, Span{16, 18}}, {"del", Span{4, 9}, Span{10, 16}}}},
+		{"x ~~a `c`~~ y", []inlineMark{{"strike", Span{2, 4}, Span{9, 11}}, {"code", Span{6, 7}, Span{8, 9}}}},
+		// インラインコードの閉じは、開きと同じ長さの並び（中の `b` の前の 1 つは閉じではない）。
+		{"x ``a`b`` y", []inlineMark{{"code", Span{2, 4}, Span{7, 9}}}},
+		{"x ***a*** y", []inlineMark{{"emphasis", Span{2, 3}, Span{8, 9}}, {"strong", Span{3, 5}, Span{6, 8}}}},
+		{"<del>**a**</del>", []inlineMark{{"del", Span{0, 5}, Span{10, 16}}, {"strong", Span{5, 7}, Span{8, 10}}}},
+	} {
+		t.Run("26 記号の区間 "+tt.src, func(t *testing.T) {
+			if got := inlineMarks(visible(t, tt.src, textN(0))); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Inlines\n got = %v\nwant = %v", got, tt.want)
+			}
+		})
+	}
+
+	// ケース 27: リンクと画像の閉じは `]` から構文の終わりまで（参照リンクの 3 つの形を含む）。
+	// 画像の 1 文字の Source は画像の構文の全体。
+	for _, tt := range []struct {
+		name, src string
+		want      inlineMark
+	}{
+		{"インライン", "[a](u)", inlineMark{"link", Span{0, 1}, Span{2, 6}}},
+		{"空の文字", "[](u)", inlineMark{"link", Span{0, 1}, Span{1, 5}}},
+		{"完全な参照", "[x][r]\n\n[r]: /u", inlineMark{"link", Span{0, 1}, Span{2, 6}}},
+		{"省略した参照", "[x][]\n\n[x]: /u", inlineMark{"link", Span{0, 1}, Span{2, 5}}},
+		{"短い参照", "[x]\n\n[x]: /u", inlineMark{"link", Span{0, 1}, Span{2, 3}}},
+		{"画像", `![i](s "t")`, inlineMark{"image", Span{0, 2}, Span{3, 11}}},
+	} {
+		t.Run("27 リンクと画像 "+tt.name, func(t *testing.T) {
+			tb := visible(t, tt.src, textN(0))
+			if got := inlineMarks(tb); len(got) != 1 || got[0] != tt.want {
+				t.Errorf("Inlines = %v, want [%v]", got, tt.want)
+			}
+			if tt.want.kind == "image" && (len(tb.Source) != 1 || tb.Source[0] != (Span{0, 11})) {
+				t.Errorf("画像の Source = %v, want [[0, 11)]", tb.Source)
+			}
+		})
+	}
+
+	// ケース 28: 閉じの記号の残りは、使われた記号の後ろにある（goldmark は残りの文字のノードの区間を
+	// 並びの頭に置いたままにする）。強調の閉じの記号と重ならない。
+	for _, tt := range []struct {
+		src, visible string
+		last         Span
+	}{
+		{"*a**", "a*", Span{3, 4}},
+		{"~a~~", "a~", Span{3, 4}},
+		{"***a****", "a*", Span{7, 8}},
+	} {
+		t.Run("28 閉じの記号の残り "+tt.src, func(t *testing.T) {
+			tb := visible(t, tt.src, textN(0))
+			if got := string(tb.Visible); got != tt.visible {
+				t.Fatalf("Visible = %q, want %q", got, tt.visible)
+			}
+			if got := tb.Source[len(tb.Source)-1]; got != tt.last {
+				t.Errorf("残りの記号の Source = %v, want %v", got, tt.last)
+			}
+		})
+	}
+	t.Run("28 閉じの記号の残りと入れ子の強調", func(t *testing.T) {
+		want := []inlineMark{{"emphasis", Span{0, 1}, Span{6, 7}}, {"strong", Span{1, 3}, Span{4, 6}}}
+		if got := inlineMarks(visible(t, "***a****", textN(0))); !reflect.DeepEqual(got, want) {
+			t.Errorf("Inlines = %v, want %v", got, want)
+		}
+	})
+
+	// ケース 29: 数値の文字参照は描画（goldmark の Writer）と同じ規則で解く——10 進は基数 10（先頭の 0
+	// で 8 進にしない）、16 進は 6 桁まで（7 桁は解かずに綴りのまま）、タブは解く、CR は LF（ブラウザが
+	// そろえる）。NUL は U+FFFD（描画が置き換える）。
+	t.Run("29 数値の文字参照とNUL", func(t *testing.T) {
+		tb := visible(t, "x &#065; &#x0000041; &#09;y &#13;z \x00w", textN(0))
+		if got, want := string(tb.Visible), "x A &#x0000041; \ty \nz �w"; got != want {
+			t.Errorf("Visible = %q, want %q", got, want)
+		}
+		if tb.Source[2] != (Span{2, 8}) {
+			t.Errorf("A の Source = %v, want [2, 8)（&#065; の 6 バイト）", tb.Source[2])
+		}
+	})
+
+	// ケース 30: 続けて書いたインラインの数式の Source は重ならない（区切りの $ は 1 つずつ）。
+	t.Run("30 続けて書いた数式", func(t *testing.T) {
+		tb := visible(t, "$x$$y$", textN(0))
+		want := []Span{{0, 3}, {3, 6}}
+		if !reflect.DeepEqual(tb.Source, want) {
+			t.Errorf("Source = %v, want %v", tb.Source, want)
 		}
 	})
 }

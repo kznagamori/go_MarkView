@@ -100,6 +100,46 @@ func TestRender_CodeBlockWrapper(t *testing.T) {
 	}
 }
 
+// TestRender_CodeBlockInfoAttributes は、言語指定の後ろの属性（```go {…}）を読まないことを、鍵が空の
+// ときと鍵があるときの両方で検証する（UT-206 のケース 6。根拠: MD-002, MD-032, NFR-030 / IMP-114,
+// IMP-115, IMP-120。4.86.0。利用者の判断「常に無視する」）。GitHub は言語指定の最初の語だけを使う。
+func TestRender_CodeBlockInfoAttributes(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          string
+		contains    []string
+		notContains []string
+	}{
+		// v1.1.0 は {nohl=true} でハイライトを消していた（goldmark-highlighting の独自の書き方）。
+		{"nohl", "```go {nohl=true}\nfunc main() {}\n```", []string{`<span class="kd">func</span>`}, nil},
+		{"hl_lines", "```go {hl_lines=[1]}\nx := 1\n```", nil, []string{"line hl"}},
+		// 言語指定の後ろに書いた目印は、鍵が空でも出さない（鍵が空でないなら refTransformer の値になる）。
+		{"目印の偽装", "```go {data-ref=\"" + testRefKey + ":code:7\" data-locked=\"1\"}\nx\n```", nil, []string{"code:7", "data-locked"}},
+	}
+
+	for _, key := range []string{"", testRefKey} {
+		for _, tt := range tests {
+			t.Run(tt.name+" 鍵="+key, func(t *testing.T) {
+				res, err := New().Render([]byte(tt.in), Options{RefKey: key})
+				if err != nil {
+					t.Fatalf("Render がエラーを返した: %v", err)
+				}
+				for _, want := range tt.contains {
+					if !strings.Contains(res.HTML, want) {
+						t.Errorf("出力に %q が含まれていない\n出力: %s", want, res.HTML)
+					}
+				}
+				// 属性を読ませないために置くノードの属性（attrCodeBlock）も出さない。
+				for _, ng := range append(tt.notContains, attrCodeBlock) {
+					if strings.Contains(res.HTML, ng) {
+						t.Errorf("出力に %q が含まれている\n出力: %s", ng, res.HTML)
+					}
+				}
+			})
+		}
+	}
+}
+
 // TestRender_Highlight はシンタックスハイライトを検証する
 // （UT-208。根拠: MD-030 / IMP-114）。
 func TestRender_Highlight(t *testing.T) {

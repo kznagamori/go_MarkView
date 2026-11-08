@@ -35,6 +35,12 @@ type plantUMLBlock struct {
 	// ref は図のブロックの目印の値（`<鍵>:plantuml:<n>`。IMP-119, IMP-120）。
 	// **拒んだブロックにも付ける。** 鍵が空なら空で、属性を出さない。
 	ref string
+
+	// locked は前置きが行ごとに違う（data-locked。FR-145。IMP-122）。目印の変換が決める。
+	locked bool
+
+	// fence は差し替える前のフェンス付きのコードブロック（囲いの位置を引く。IMP-121）。
+	fence *ast.FencedCodeBlock
 }
 
 func (n *plantUMLBlock) Kind() ast.NodeKind { return kindPlantUMLBlock }
@@ -73,7 +79,6 @@ type plantUMLTransformer struct{}
 
 func (plantUMLTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
-	key, _ := pc.Get(refKeyKey).(string)
 
 	// 走査しながら木を書き換えないよう、対象を集めてから差し替える。
 	var blocks []*ast.FencedCodeBlock
@@ -84,11 +89,10 @@ func (plantUMLTransformer) Transform(doc *ast.Document, reader text.Reader, pc p
 		return ast.WalkContinue, nil
 	})
 
-	// 番号は文書の中の PlantUML ブロックの出現順（0 起点）。**取り込み指令で拒んだ
-	// ブロックも数える。** 描画するものだけで数えると、拒んだブロックより後ろの図が
-	// すべて 1 つずれ、再描画で原寸表示や拡大画面を別の図へ引き継ぐ（FR-120,
+	// **番号はここでは振らない**（4.75.0）。目印の変換（refTransformer）が walkRefs で振る。
+	// **取り込み指令で拒んだブロックも数える。** 描画するものだけで数えると、拒んだブロックより
+	// 後ろの図がすべて 1 つずれ、再描画で原寸表示や拡大画面を別の図へ引き継ぐ（FR-120,
 	// UT-217 ケース 21）。
-	index := 0
 	for _, b := range blocks {
 		if !isPlantUMLLanguage(b.Language(source)) {
 			continue
@@ -98,9 +102,8 @@ func (plantUMLTransformer) Transform(doc *ast.Document, reader text.Reader, pc p
 		p := &plantUMLBlock{
 			source:   src,
 			rejected: hasIncludeDirective(string(src)),
-			ref:      diagramRef(key, "plantuml", index),
+			fence:    b,
 		}
-		index++
 		b.Parent().ReplaceChild(b.Parent(), b, p)
 
 		// **拒んだブロックでは立てない**（IMP-119, NFR-013）。
@@ -226,21 +229,28 @@ func renderPlantUML(w util.BufWriter, source []byte, n ast.Node, entering bool) 
 	}
 
 	block := n.(*plantUMLBlock)
+	writePlantUMLBlock(w, block.source, block.ref, block.rejected, block.locked)
 
+	return ast.WalkContinue, nil
+}
+
+// writePlantUMLBlock は PlantUML の図のブロックを書く（IMP-119）。**Markdown の中の PlantUML の
+// ブロックと PlantUML ファイル（IMP-126）が同じ関数を使う**——形が同じなら、フロントエンドの描画・
+// コピー・原寸表示・拡大画面・テーマへの追従・目印の照合がそのまま働く（FR-025）。
+func writePlantUMLBlock(w blockWriter, src []byte, ref string, rejected, locked bool) {
 	_, _ = w.WriteString(`<div class="code-block" data-lang="plantuml" `)
-	if block.rejected {
+	if rejected {
 		// フロントエンドはこれを見て理由を表示し、**描画を試みない**（DSP-272）。
 		_, _ = w.WriteString(`data-puml-error="include" `)
 	} else {
 		_, _ = w.WriteString(`data-plantuml="1" `)
 	}
-	writeDiagramRef(w, block.ref)
+	writeDiagramRef(w, ref)
+	writeLocked(w, ref, locked)
 	_, _ = w.WriteString(`data-source="`)
-	_, _ = w.Write(escapeAttribute(block.source))
+	_, _ = w.Write(escapeAttribute(src))
 	_, _ = w.WriteString("\">\n")
 	_, _ = w.WriteString(`<pre class="plantuml-source">`)
-	_, _ = w.Write(util.EscapeHTML(block.source))
+	_, _ = w.Write(util.EscapeHTML(src))
 	_, _ = w.WriteString("</pre>\n</div>\n")
-
-	return ast.WalkContinue, nil
 }

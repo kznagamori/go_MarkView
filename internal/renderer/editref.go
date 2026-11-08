@@ -1,12 +1,7 @@
 package renderer
 
 import (
-	"bytes"
-	"fmt"
-	"regexp"
 	"strconv"
-
-	"github.com/kznagamori/go_MarkView/internal/applog"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -25,9 +20,13 @@ var refKeyKey = parser.NewContextKey()
 
 // 目印の属性名（IMP-120）。
 const (
-	attrDataRef  = "data-ref"
-	attrDataLink = "data-link"
+	attrDataRef    = "data-ref"
+	attrDataLink   = "data-link"
+	attrDataLocked = "data-locked" // 編集できないコードブロック（値は 1 だけ。IMP-115, IMP-122）
 )
+
+// textRefsKey は修飾の目印（text:<n>）を付けるかを parser.Context へ置く鍵（Options.TextRefs。IMP-120）。
+var textRefsKey = parser.NewContextKey()
 
 // refVisitor は walkRefs が GFM の要素を渡す先（IMP-120, IMP-121）。
 //
@@ -43,6 +42,21 @@ type refVisitor struct {
 	cell func(n *extast.TableCell, table, row, col int)
 	// link はリンク（*ast.Link）と自動リンク（*ast.AutoLink）を受け取る。
 	link func(n ast.Node)
+
+	// code は文書の中で index 番目のフェンス付きのコードブロック（図と数式を除く）を受け取る
+	// （IMP-120。4.75.0）。字下げ形式のコードブロックは数えない。
+	code func(n *ast.FencedCodeBlock, index int)
+	// mermaid / plantuml は文書の中で index 番目の図のブロックを受け取る（描画に失敗するもの・
+	// 取り込み指令で拒んだものも数える。FR-120 の「同じ対象」）。**図の番号も walkRefs で振る**
+	// （4.75.0。図も書き換えの対象になったため。FR-145）。
+	mermaid  func(n *mermaidBlock, index int)
+	plantuml func(n *plantUMLBlock, index int)
+	// text は文書の中で index 番目の修飾できるブロックを受け取る（IMP-120。4.75.0）。渡すのは
+	// 目印を書く要素のノードである: Paragraph・Heading と、最初の子が TextBlock の ListItem
+	// （TextBlock は要素を出さないため li に書く。2 つ目以降の TextBlock は数えない）。
+	text func(n ast.Node, index int)
+	// block は構文木のすべてのブロックのノードを行きがけ順に受け取る（Locations.Blocks。IMP-121）。
+	block func(n ast.Node)
 }
 
 // walkRefs は GFM の要素を文書の出現順に辿り、番号を付けて v へ渡す（IMP-120）。
@@ -55,14 +69,51 @@ type refVisitor struct {
 // 現れず、番号にも入らない（UT-217 ケース 2）。コードブロックの中の `- [ ] x` も
 // ノードにならない。
 func walkRefs(doc ast.Node, v refVisitor) {
-	tasks, tables := 0, 0
+	tasks, tables, codes, mermaids, plantumls, texts := 0, 0, 0, 0, 0, 0
 
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 
+		if n.Type() == ast.TypeBlock && v.block != nil {
+			v.block(n)
+		}
+
 		switch node := n.(type) {
+		case *ast.FencedCodeBlock:
+			// 図（mermaidBlock / plantUMLBlock）と数式（mathBlock）は、目印の変換より前に
+			// 専用のノードへ差し替わっている。残ったものがコードブロックである。
+			if v.code != nil {
+				v.code(node, codes)
+			}
+			codes++
+
+		case *mermaidBlock:
+			if v.mermaid != nil {
+				v.mermaid(node, mermaids)
+			}
+			mermaids++
+
+		case *plantUMLBlock:
+			if v.plantuml != nil {
+				v.plantuml(node, plantumls)
+			}
+			plantumls++
+
+		case *ast.Paragraph, *ast.Heading:
+			if v.text != nil {
+				v.text(node, texts)
+			}
+			texts++
+
+		case *ast.ListItem:
+			if _, ok := node.FirstChild().(*ast.TextBlock); ok {
+				if v.text != nil {
+					v.text(node, texts)
+				}
+				texts++
+			}
 		case *extast.TaskCheckBox:
 			if v.task != nil {
 				v.task(node, tasks)
@@ -117,8 +168,15 @@ func isSourceCell(n *extast.TableCell) bool {
 type refExtension struct{}
 
 func (refExtension) Extend(md goldmark.Markdown) {
+	// **番号は、すべての AST 変換を終えた後の木（描画される木）の順で振る**（IMP-120, IMP-121。
+	// BUG-027）。goldmark は優先度の小さい順に変換器を走らせるため、goldmark の脚注の変換（999。定義を
+	// 文書の末尾へ移し、参照されていない定義を除き、参照の順に並べ替える）より大きい 1000 に置く。
+	// **v1.1.0 は 80 で振っていた**——脚注の定義の中にタスクや表があると、目印は移す前の木の番号、
+	// 書き換え位置（Locate）は移した後の木の番号になり、押したものと別のチェックボックスやセルを
+	// 書き換えた（定義が本文より前・参照されていない定義・定義と参照の順の違い、の 3 つの形）。
+	// Locate と Visible も同じ構成で構文解析するため、同じ木で数える。
 	md.Parser().AddOptions(parser.WithASTTransformers(
-		util.Prioritized(refTransformer{}, 80),
+		util.Prioritized(refTransformer{}, 1000),
 	))
 	md.Renderer().AddOptions(gmrenderer.WithNodeRenderers(
 		// goldmark 標準のタスクの描画器（優先度 500）を差し替える。登録は値の
@@ -143,8 +201,31 @@ func (refTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser
 	}
 	source := reader.Source()
 	prefix := key + ":"
+	textRefs, _ := pc.Get(textRefsKey).(bool)
 
 	walkRefs(doc, refVisitor{
+		code: func(n *ast.FencedCodeBlock, index int) {
+			n.SetAttributeString(attrDataRef, []byte(prefix+"code:"+strconv.Itoa(index)))
+			// 前置きが行ごとに違うものには data-locked="1"（FR-145。書き込みと同じ判定。IMP-122）。
+			if fenceLocation(n, source, pc, 0).Locked {
+				n.SetAttributeString(attrDataLocked, []byte("1"))
+			}
+		},
+		mermaid: func(n *mermaidBlock, index int) {
+			n.ref = diagramRef(key, "mermaid", index)
+			n.locked = n.fence != nil && fenceLocation(n.fence, source, pc, 0).Locked
+		},
+		plantuml: func(n *plantUMLBlock, index int) {
+			n.ref = diagramRef(key, "plantuml", index)
+			n.locked = n.fence != nil && fenceLocation(n.fence, source, pc, 0).Locked
+		},
+		text: func(n ast.Node, index int) {
+			// 修飾の目印は TextRefs が真のときだけ（編集モードの間だけ。IMP-120）。付けないときも
+			// 番号は同じに数える（walkRefs が数える）。
+			if textRefs {
+				n.SetAttributeString(attrDataRef, []byte(prefix+"text:"+strconv.Itoa(index)))
+			}
+		},
 		task: func(n *extast.TaskCheckBox, index int) {
 			n.SetAttributeString(attrDataRef, []byte(prefix+"task:"+strconv.Itoa(index)))
 		},
@@ -209,163 +290,4 @@ func renderTaskCheckBox(w util.BufWriter, _ []byte, node ast.Node, entering bool
 	}
 	_, _ = w.WriteString("> ")
 	return ast.WalkContinue, nil
-}
-
-// Span はソース上の半開区間 [Start, Stop)（IMP-121）。
-type Span struct{ Start, Stop int }
-
-// CellSpan は 1 つのセルの位置（IMP-121）。
-type CellSpan struct {
-	Content Span // 前後の空白を除いた内容（空のセルでは Start == Stop）
-	Between Span // 前後の区切り（|）の間。空白を含む
-}
-
-// TableLocation は 1 つの GFM の表の位置（IMP-121）。
-type TableLocation struct {
-	Cells [][]*CellSpan // [行][列]。0 行目が見出し行。nil はソース上に存在しないセル
-}
-
-// FenceLocation はフェンス付きのコードブロック・図のブロックの位置（IMP-121, IMP-122。4.75.0）。
-type FenceLocation struct {
-	Open   Span // 開きの囲いの文字の並び（「```」の部分）
-	Close  Span // 閉じの囲いの文字の並び（Closed が偽なら中身の終わりの位置で、長さ 0）
-	Closed bool // 閉じの囲いがあるか（文書や引用の終わりで閉じたものは偽）
-	// Body は中身の行の全体（開きの囲いの行の次の行の頭から、閉じの囲いの行の頭まで。
-	// 閉じが無ければ最後の中身の行の終わりまで。開きの囲いの行に改行が無ければ、文書の終わりで長さ 0）。
-	Body   Span
-	Lines  []Span // 中身の各行の区間（前置きの後ろから、改行の手前まで）
-	Info   string // 言語指定（確かめに使う）
-	Prefix string // ブロックの前置き（IMP-122）
-	Locked bool   // 前置きが行ごとに違う・タブの途中から始まる（FR-145。IMP-122）
-}
-
-// Locations は書き換え位置の一覧（IMP-121）。位置は正規化後のテキストの上の値である。
-type Locations struct {
-	Tasks  []Span          // 各タスクの括弧の中の 1 文字
-	Tables []TableLocation // GFM の表
-
-	// TODO(v1.2.0): 以下は Locate がまだ埋めない（テストの先行実装で置いた宣言）。
-	Codes     []FenceLocation // code:<n>（4.75.0）
-	Mermaids  []FenceLocation // mermaid:<n>
-	PlantUMLs []FenceLocation // plantuml:<n>
-	Texts     int             // 修飾できるブロックの数（text:<n>。位置は IMP-123 が求める）
-	Blocks    []string        // 構文木の順のブロックの種類（ノードの Kind の名前）。書き込みの確かめに使う（IMP-122, IMP-124）
-}
-
-// taskListPattern は GFM のタスクリストの正規表現（goldmark v1.8.5 の
-// extension/tasklist.go と同じ）。括弧の中の 1 文字を求めるのに使う（IMP-121）。
-var taskListPattern = regexp.MustCompile(`^\[([\sxX])\]\s*`)
-
-// Locate は変換を行わずに構文木だけを作り、書き換え位置を返す（IMP-121）。
-//
-// **Render と同じ goldmark の構成と前処理を使い、HTML は出力しない。** サニタイズも
-// 通さない。番号は描画の目印（IMP-120）と同じ walkRefs で数える。
-//
-// 位置は source（正規化後のテキスト）の上のバイト位置である。生バイト列の上の
-// 位置へ移すのは document の役目である（IMP-106）。
-func (r *Renderer) Locate(source []byte) (locs Locations, err error) {
-	// 構文木の組み立て中のパニックをエラーへ変える（IMP-022, FR-111）。
-	defer func() {
-		if v := recover(); v != nil {
-			applog.Recovered("renderer.Locate", v)
-			locs, err = Locations{}, fmt.Errorf("markdown locating failed: %v", v)
-		}
-	}()
-
-	body, shift := preprocess(source)
-
-	// Render と同じ変換器が走る。変換ごとの値は Context で渡す（鍵は空＝目印を付けない）。
-	pc := parser.NewContext()
-	pc.Set(refKeyKey, "")
-	doc := r.md.Parser().Parse(text.NewReader(body), parser.WithContext(pc))
-
-	locs = Locations{Tasks: []Span{}, Tables: []TableLocation{}}
-	walkRefs(doc, refVisitor{
-		task: func(n *extast.TaskCheckBox, _ int) {
-			locs.Tasks = append(locs.Tasks, taskSpan(n, body, shift))
-		},
-		table: func(_ *extast.Table, _ int) {
-			locs.Tables = append(locs.Tables, TableLocation{})
-		},
-		cell: func(n *extast.TableCell, table, row, _ int) {
-			t := &locs.Tables[table]
-			for len(t.Cells) <= row {
-				t.Cells = append(t.Cells, nil)
-			}
-			// 列は walkCells が 0 から順に渡すため、append で列の番号の位置に入る。
-			var span *CellSpan
-			if isSourceCell(n) {
-				span = cellSpan(n, body, shift)
-			}
-			// ソース上に存在しないセルは nil のまま（IMP-121）。
-			t.Cells[row] = append(t.Cells[row], span)
-		},
-	})
-	return locs, nil
-}
-
-// taskSpan はタスクの括弧の中の 1 文字の位置を返す（IMP-121）。
-//
-// TaskCheckBox の親（TextBlock または Paragraph）の先頭行は括弧から始まる
-// （goldmark のタスクの解析はその行の先頭で正規表現に一致したときだけノードを作る。
-// リスト記号の後ろが空白 2 つ・タブ・入れ子・引用の中でも、行の区間は `[` を指す）。
-//
-// 一致しない（構文木と食い違う）場合は、長さ 0 の区間を返す。document は括弧の
-// 前後と中の 1 バイトを確かめてから書き換えるため（IMP-106）、書き換えない。
-func taskSpan(n *extast.TaskCheckBox, body []byte, shift int) Span {
-	parent := n.Parent()
-	if parent == nil || parent.Lines().Len() == 0 {
-		return Span{}
-	}
-	seg := parent.Lines().At(0)
-	line := body[seg.Start:seg.Stop]
-	m := taskListPattern.FindSubmatchIndex(line)
-	if m == nil {
-		return Span{Start: seg.Start + shift, Stop: seg.Start + shift}
-	}
-	return Span{Start: seg.Start + m[2] + shift, Stop: seg.Start + m[3] + shift}
-}
-
-// cellSpan はソース上に存在するセルの位置を返す（IMP-121）。
-//
-// Content は goldmark が持つ区間（前後の空白を除いた内容。空のセルでは長さ 0 で、
-// 閉じる `|` の位置）。Between はそれを区切りの `|` の直後・直前まで広げたもの。
-// 広げるのは空白とタブだけで、行の外へは出ない。
-//
-//   - 行頭に `|` が無い行の最初のセルは、行の内容の先頭（行の Pos。引用の `> ` などの
-//     後ろ）で止まる（UT-218 ケース 9）
-//   - 行末に `|` が無い行の最後のセルは、行の終わりで止まる
-func cellSpan(n *extast.TableCell, body []byte, shift int) *CellSpan {
-	seg := n.Lines().At(0)
-
-	rowStart := 0
-	if row := n.Parent(); row != nil && row.Pos() >= 0 {
-		rowStart = row.Pos()
-	}
-	rowEnd := len(body)
-	if i := bytes.IndexByte(body[seg.Stop:], '\n'); i >= 0 {
-		rowEnd = seg.Stop + i
-	}
-
-	// 左へは空白だけを越える。止まった位置の直前が区切りの `|` か、行の内容の先頭である。
-	start := seg.Start
-	for start > rowStart && isBlankByte(body[start-1]) {
-		start--
-	}
-
-	// 右へも空白だけを越える。止まった位置が区切りの `|` か、行の終わりである。
-	stop := seg.Stop
-	for stop < rowEnd && isBlankByte(body[stop]) {
-		stop++
-	}
-
-	return &CellSpan{
-		Content: Span{Start: seg.Start + shift, Stop: seg.Stop + shift},
-		Between: Span{Start: start + shift, Stop: stop + shift},
-	}
-}
-
-// isBlankByte は行の中の空白（半角空白とタブ）かを返す。改行は含めない。
-func isBlankByte(b byte) bool {
-	return b == ' ' || b == '\t'
 }

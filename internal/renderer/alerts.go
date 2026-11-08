@@ -78,14 +78,18 @@ type alertTransformer struct{}
 func (alertTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
 
+	// **見るのは文書の直下の引用だけである**（IMP-112 の判定規則 1, MD-040。BUG-025）。
+	// リストの項目・引用・脚注の中の引用は、先頭行が `[!NOTE]` の形でも通常の引用として
+	// 残す（GitHub と同じ。公式文書も「Alerts cannot be nested within other elements.」）。
+	// v1.0.0 から v1.1.0 までは木全体を辿り、すべての引用を Alert にしていた。
+	//
 	// 走査しながら木を書き換えないよう、対象を集めてから差し替える。
 	var quotes []*ast.Blockquote
-	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if q, ok := n.(*ast.Blockquote); ok && entering {
+	for n := doc.FirstChild(); n != nil; n = n.NextSibling() {
+		if q, ok := n.(*ast.Blockquote); ok {
 			quotes = append(quotes, q)
 		}
-		return ast.WalkContinue, nil
-	})
+	}
 
 	for _, q := range quotes {
 		convertAlert(q, source)
