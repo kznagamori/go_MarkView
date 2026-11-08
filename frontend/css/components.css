@@ -6,7 +6,7 @@
   コードブロック・Alerts・Mermaid・数式（DSP-250〜271）は T5-5 で揃えた。
 
   状態画面・情報ダイアログ・ドロップオーバーレイ（DSP-170〜190）は T5-6 で
-  揃えた。z-index は tokens.css の 9 段階だけを使う（DSP-015）。
+  揃えた。z-index は tokens.css の 10 段階だけを使う（DSP-015。4.75.0 でフィルターの枚の 50 を足した）。
 */
 
 /* --- ツールバー（DSP-100, DSP-101） --- */
@@ -36,8 +36,10 @@
 }
 
 /* トグル ON。**:hover より後に置く。** 同じ詳細度のため、先に置くと
-   ホバーした瞬間に ON の色が消える（DSP-101, UI-021）。 */
-.tb-btn[aria-pressed="true"] {
+   ホバーした瞬間に ON の色が消える（DSP-101, UI-021）。
+   文字色のボタンが一覧を開いている間（aria-expanded="true"）も同じ見た目にする（DSP-101, DSP-141）。 */
+.tb-btn[aria-pressed="true"],
+.tb-btn[aria-expanded="true"] {
   color: var(--accent-fg);
   background: var(--accent-subtle);
 }
@@ -216,22 +218,90 @@
 
 /* --- ペイン見出し（DSP-111） --- */
 
+/* 見出しの文字（Files / Outline）。 */
 .pane-title {
-  height: 28px;
-  display: flex;
-  align-items: center;
-  padding: 0 var(--space-3);
   font-size: var(--font-size-pane-title);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--fg-muted);
+  white-space: nowrap;
 }
 
+/* 見出しの行の高さ・パディング・背景は、**アウトラインでは .pane-title、ファイルツリーでは見出しの行
+   （.pane-head）に与え、.pane-head の中の .pane-title は余白を持たない**（DSP-111。二重に取らない。4.76.0）。 */
+.pane-outline > .pane-title,
+.pane-head {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  background: var(--canvas-subtle);
+}
+
+/* ファイルツリーの見出しの行は、右端のボタンを端に寄せる（パディング 0 4px 0 12px。DSP-111）。
+   スクロールする器（.pane-body）の外にあり、ツリーを横にスクロールしても動かない（DSP-110）。 */
+.pane-head {
+  flex: none;
+  padding: 0 var(--space-1) 0 var(--space-3);
+}
+
+/* ペインの機能のボタンを右端から右から左へ並べる（UI-030, DSP-111, DSP-115）。 */
+.pane-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+/* ツリールートの名前の行（DSP-112）。1 行で、**収まらなければ末尾を省略する**（4.75.0）。
+   スクロールする器の外にあり、ツリーの横スクロールでは動かない（DSP-110）。 */
 .pane-subtitle {
+  flex: none;
   padding: 0 var(--space-3) var(--space-1);
   font-size: 12px;
   color: var(--fg-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ペインの見出しのボタン（DSP-115）。24 × 24px・アイコン 16px（検索バーのボタンと同じ。DSP-160）。
+   状態は DSP-101 と同じ（.tb-btn と同じ形で書く）。**枚を開いている間（aria-expanded="true"）は
+   トグル ON の見た目**にし、閉じている間は表示している種類で見た目を変えない（UI-033）。 */
+.pane-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--pane-btn-size);
+  height: var(--pane-btn-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-hover) ease;
+}
+
+.pane-btn:hover {
+  color: var(--fg-default);
+  background: var(--neutral-muted);
+}
+
+.pane-btn:active {
+  color: var(--fg-default);
+  background: var(--neutral-muted-strong);
+}
+
+.pane-btn:focus-visible {
+  color: var(--fg-default);
+}
+
+/* :hover より後に置く（.tb-btn[aria-pressed="true"] と同じ理由） */
+.pane-btn[aria-expanded="true"] {
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
 }
 
 /* --- ファイルツリー（DSP-112, DSP-330） --- */

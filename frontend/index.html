@@ -114,6 +114,36 @@
         <path d="M4.5 6.75h6a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1 0-1.5Z" />
         <path d="M0 7.5a7.5 7.5 0 1 1 13.307 4.747l2.473 2.473a.749.749 0 1 1-1.06 1.06l-2.473-2.473A7.5 7.5 0 0 1 0 7.5Zm7.5-6a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z" />
       </symbol>
+      <!--
+        v1.2.0 で足した 8 つ（IMP-203）。@primer/octicons 19.33.0 の原本（arrow-left / arrow-right /
+        link-external / strikethrough / paintbrush / filter / workflow / file-media）を frontend/icons/ に置き、
+        その path をそのまま写した。エディタで開くボタンは icon-pencil から icon-external に変えた
+        （icon-pencil はコードブロックと図の編集ボタンへ譲る。UI-020 の NOTE）
+      -->
+      <symbol id="icon-back" viewBox="0 0 16 16">
+        <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z" />
+      </symbol>
+      <symbol id="icon-forward" viewBox="0 0 16 16">
+        <path d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z" />
+      </symbol>
+      <symbol id="icon-external" viewBox="0 0 16 16">
+        <path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z" />
+      </symbol>
+      <symbol id="icon-strike" viewBox="0 0 16 16">
+        <path d="M11.055 8.5c.524.536.815 1.257.811 2.007a3.133 3.133 0 0 1-1.12 2.408C9.948 13.597 8.748 14 7.096 14c-1.706 0-3.104-.607-3.902-1.377a.751.751 0 0 1 1.042-1.079c.48.463 1.487.956 2.86.956 1.422 0 2.232-.346 2.676-.726.435-.372.594-.839.594-1.267 0-.472-.208-.857-.647-1.197-.448-.346-1.116-.623-1.951-.81H1.75a.75.75 0 0 1 0-1.5h12.5a.75.75 0 0 1 0 1.5ZM7.581 3.25c-2.036 0-2.778 1.082-2.778 1.786 0 .055.002.107.006.157a.75.75 0 0 1-1.496.114 3.506 3.506 0 0 1-.01-.271c0-1.832 1.75-3.286 4.278-3.286 1.418 0 2.721.58 3.514 1.093a.75.75 0 1 1-.814 1.26c-.64-.414-1.662-.853-2.7-.853Z" />
+      </symbol>
+      <symbol id="icon-color" viewBox="0 0 16 16">
+        <path d="M11.134 1.535c.7-.509 1.416-.942 2.076-1.155.649-.21 1.463-.267 2.069.34.603.601.568 1.411.368 2.07-.202.668-.624 1.39-1.125 2.096-1.011 1.424-2.496 2.987-3.775 4.249-1.098 1.084-2.132 1.839-3.04 2.3a3.744 3.744 0 0 1-1.055 3.217c-.431.431-1.065.691-1.657.861-.614.177-1.294.287-1.914.357A21.151 21.151 0 0 1 .797 16H.743l.007-.75H.749L.742 16a.75.75 0 0 1-.743-.742l.743-.008-.742.007v-.054a21.25 21.25 0 0 1 .13-2.284c.067-.647.187-1.287.358-1.914.17-.591.43-1.226.86-1.657a3.746 3.746 0 0 1 3.227-1.054c.466-.893 1.225-1.907 2.314-2.982 1.271-1.255 2.833-2.75 4.245-3.777ZM1.62 13.089c-.051.464-.086.929-.104 1.395.466-.018.932-.053 1.396-.104a10.511 10.511 0 0 0 1.668-.309c.526-.151.856-.325 1.011-.48a2.25 2.25 0 1 0-3.182-3.182c-.155.155-.329.485-.48 1.01a10.515 10.515 0 0 0-.309 1.67Zm10.396-10.34c-1.224.89-2.605 2.189-3.822 3.384l1.718 1.718c1.21-1.205 2.51-2.597 3.387-3.833.47-.662.78-1.227.912-1.662.134-.444.032-.551.009-.575h-.001V1.78c-.014-.014-.113-.113-.548.027-.432.14-.995.462-1.655.942Zm-4.832 7.266-.001.001a9.859 9.859 0 0 0 1.63-1.142L7.155 7.216a9.7 9.7 0 0 0-1.161 1.607c.482.302.889.71 1.19 1.192Z" />
+      </symbol>
+      <symbol id="icon-filter" viewBox="0 0 16 16">
+        <path d="M.75 3h14.5a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1 0-1.5ZM3 7.75A.75.75 0 0 1 3.75 7h8.5a.75.75 0 0 1 0 1.5h-8.5A.75.75 0 0 1 3 7.75Zm3 4a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" />
+      </symbol>
+      <symbol id="icon-diagram" viewBox="0 0 16 16">
+        <path d="M0 1.75C0 .784.784 0 1.75 0h3.5C6.216 0 7 .784 7 1.75v3.5A1.75 1.75 0 0 1 5.25 7H4v4a1 1 0 0 0 1 1h4v-1.25C9 9.784 9.784 9 10.75 9h3.5c.966 0 1.75.784 1.75 1.75v3.5A1.75 1.75 0 0 1 14.25 16h-3.5A1.75 1.75 0 0 1 9 14.25v-.75H5A2.5 2.5 0 0 1 2.5 11V7h-.75A1.75 1.75 0 0 1 0 5.25Zm1.75-.25a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h3.5a.25.25 0 0 0 .25-.25v-3.5a.25.25 0 0 0-.25-.25Zm9 9a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h3.5a.25.25 0 0 0 .25-.25v-3.5a.25.25 0 0 0-.25-.25Z" />
+      </symbol>
+      <symbol id="icon-image" viewBox="0 0 16 16">
+        <path d="M16 13.25A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25V2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75ZM1.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h.94l.03-.03 6.077-6.078a1.75 1.75 0 0 1 2.412-.06L14.5 10.31V2.75a.25.25 0 0 0-.25-.25Zm12.5 11a.25.25 0 0 0 .25-.25v-.917l-4.298-3.889a.25.25 0 0 0-.344.009L4.81 13.5ZM7 6a2 2 0 1 1-3.999.001A2 2 0 0 1 7 6ZM5.5 6a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0Z" />
+      </symbol>
     </svg>
 
     <!--
@@ -121,38 +151,71 @@
       利用者に見える文言はここに書かず、js/strings.js から与える（IMP-290）。
     -->
     <div id="app" data-theme="light">
+      <!--
+        ボタンは群（移動・ファイル・表示・編集・修飾）の順に並べ、群の間に区切り（.tb-sep）を置く
+        （UI-020, DSP-100, DSP-103）。**ボタンの id は変えない**——panes.js は btn-${name} で id を組み立て、
+        overlay.js / theme.js も id を直接参照する。並びはこのファイルの順序だけで変わる（IMP-202）。
+        role="toolbar" は付けない（矢印キーでボタン間を移る作法が求められ、Tab で移る操作と変わる）。
+        **押せるかどうかが起動時に決まらないボタンは disabled で読み込む**（確定するまで押せない側に倒す。
+        UI-021）。
+      -->
       <header id="toolbar" class="toolbar">
+        <!-- 移動（UI-020 の左 1・2, FR-051）。押せるかは history:changed の値で決める（IMP-323） -->
+        <button id="btn-back" class="tb-btn" type="button" disabled>
+          <svg class="icon" aria-hidden="true"><use href="#icon-back" /></svg>
+        </button>
+        <button id="btn-forward" class="tb-btn" type="button" disabled>
+          <svg class="icon" aria-hidden="true"><use href="#icon-forward" /></svg>
+        </button>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <!-- ファイル（UI-020 の左 3・4）。再読み込みは文書未表示（welcome）では押せない（UI-021） -->
         <button id="btn-open" class="tb-btn" type="button">
           <svg class="icon" aria-hidden="true"><use href="#icon-open" /></svg>
         </button>
-        <button id="btn-reload" class="tb-btn" type="button">
+        <button id="btn-reload" class="tb-btn" type="button" disabled>
           <svg class="icon" aria-hidden="true"><use href="#icon-reload" /></svg>
         </button>
-        <button id="btn-theme" class="tb-btn" type="button">
-          <svg class="icon" aria-hidden="true"><use href="#icon-moon" /></svg>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <!-- 表示（UI-020 の左 5〜7）。ファイルツリーのボタンをアウトラインの左に置く（ペインの並びとそろえる） -->
+        <button id="btn-filetree" class="tb-btn tb-toggle" type="button" aria-pressed="false">
+          <svg class="icon" aria-hidden="true"><use href="#icon-filetree" /></svg>
         </button>
         <button id="btn-outline" class="tb-btn tb-toggle" type="button" aria-pressed="true">
           <svg class="icon" aria-hidden="true"><use href="#icon-outline" /></svg>
         </button>
-        <button id="btn-filetree" class="tb-btn tb-toggle" type="button" aria-pressed="false">
-          <svg class="icon" aria-hidden="true"><use href="#icon-filetree" /></svg>
+        <button id="btn-theme" class="tb-btn" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#icon-moon" /></svg>
         </button>
+        <span class="tb-sep" aria-hidden="true"></span>
         <!--
-          エディタで開く（UI-020 の左 6, FR-090）。
+          エディタで開く（UI-020 の左 8, FR-090）。アイコンは外への矢印（icon-external。4.75.0）。
           初期値は disabled とする。文書を表示するか状態画面を出した時点で
           toolbar.js が活性を決める（UI-021）。**確定するまで押せない側に倒す。**
         -->
         <button id="btn-edit" class="tb-btn" type="button" disabled>
-          <svg class="icon" aria-hidden="true"><use href="#icon-pencil" /></svg>
+          <svg class="icon" aria-hidden="true"><use href="#icon-external" /></svg>
         </button>
         <!--
-          編集モード（UI-020 の左 7, FR-140）。**disabled で読み込む**——起動時は unavailable であり
+          編集モード（UI-020 の左 9, FR-140）。**disabled で読み込む**——起動時は unavailable であり
           （DSP-320）、押せるかどうかは届いた DocumentDTO.editable から決める（UI-021, IMP-260）。
           id の edit は「エディタで開く」を指すため、こちらは editmode とする（IMP-202）。
         -->
         <button id="btn-editmode" class="tb-btn tb-toggle" type="button" aria-pressed="false" disabled>
           <svg class="icon" aria-hidden="true"><use href="#icon-editmode" /></svg>
         </button>
+        <!--
+          修飾（UI-020 の左 10・11, FR-146, FR-147）。手前の区切りと一緒に、編集モードの間だけ出す
+          （hidden。IMP-202, DSP-103）。押せるかは IMP-265 の canFormat() で決める
+        -->
+        <span id="tb-format" class="tb-group" hidden>
+          <span class="tb-sep" aria-hidden="true"></span>
+          <button id="btn-strike" class="tb-btn" type="button" disabled>
+            <svg class="icon" aria-hidden="true"><use href="#icon-strike" /></svg>
+          </button>
+          <button id="btn-color" class="tb-btn" type="button" aria-haspopup="menu" aria-expanded="false" disabled>
+            <svg class="icon" aria-hidden="true"><use href="#icon-color" /></svg>
+          </button>
+        </span>
         <span class="tb-spacer"></span>
         <button id="btn-about" class="tb-btn" type="button">
           <svg class="icon" aria-hidden="true"><use href="#icon-about" /></svg>
@@ -160,10 +223,25 @@
       </header>
 
       <main id="content" class="content">
+        <!--
+          ファイルツリーのペインは、見出しの行（.pane-head）・ツリールートの名前の行・スクロールする器
+          （.pane-body）の 3 つを縦に並べる（IMP-202, DSP-110, UI-030。4.75.0）。見出しの行と名前の行を
+          器の外に置き、ツリーを横にスクロールしても右端のボタンが流れないようにする。ペインの機能の
+          ボタンは .pane-actions の中に右から左へ並べる（v1.2.0 はフィルターボタンだけ。UI-033）。
+        -->
         <nav id="pane-filetree" class="pane pane-filetree" hidden>
-          <div class="pane-title"></div>
+          <div class="pane-head">
+            <div class="pane-title"></div>
+            <div class="pane-actions">
+              <button id="btn-treefilter" class="pane-btn" type="button" aria-haspopup="dialog" aria-expanded="false">
+                <svg class="icon" aria-hidden="true"><use href="#icon-filter" /></svg>
+              </button>
+            </div>
+          </div>
           <div class="pane-subtitle" id="tree-root-name"></div>
-          <ul id="tree" class="tree" role="tree"></ul>
+          <div class="pane-body">
+            <ul id="tree" class="tree" role="tree"></ul>
+          </div>
         </nav>
         <div id="resizer-filetree" class="resizer" hidden></div>
 
@@ -203,6 +281,14 @@
       -->
       <div id="expand-view" class="expand-view" role="dialog" aria-modal="true" hidden></div>
       <div id="contextmenu" class="contextmenu" role="menu" hidden></div>
+      <!--
+        右クリックメニューのサブメニュー（IMP-249, DSP-141）とファイルツリーのフィルターの枚（IMP-271,
+        DSP-115）も、ペインと本文の外に置く（IMP-202。4.75.0）。枚はペインより広く、ペインの中に置くと
+        端で切れ、ツリーと一緒にスクロールして流れる。位置はボタンや項目の位置から求める。
+        ツールバーの文字色の一覧は #contextmenu を使い回す（IMP-202, UI-085）。
+      -->
+      <div id="contextsubmenu" class="contextmenu contextmenu-sub" role="menu" hidden></div>
+      <div id="treefilter" class="treefilter" role="dialog" hidden></div>
       <div id="dropzone" class="dropzone" hidden></div>
       <div id="tooltip" class="tooltip" hidden></div>
     </div>

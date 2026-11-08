@@ -104,9 +104,23 @@ body {
   cursor: pointer;
 }
 
-/* ファイル・再読み込み・テーマの群と、トグル 2 つの群を離す（DSP-032） */
-#btn-outline {
-  margin-left: var(--tb-group-gap);
+/* 群（移動・ファイル・表示・編集・修飾）の間の区切り線（UI-020, DSP-103, DSP-032）。
+   ボタン間の gap（4px）と左右の margin（4px）で、ボタン → 区切り → ボタンが 8 + 1 + 8 になる。
+   押せず、Tab の移動先にもならない（aria-hidden。IMP-202）。影や凹凸を付けない。
+   **v1.1.0 の #btn-outline の margin-left は消した**（4.75.0。群の間隔は区切りが受け持つ） */
+.tb-sep {
+  flex: none;
+  width: 1px;
+  height: var(--tb-sep-height);
+  margin: 0 var(--space-1);
+  background: var(--border-default);
+}
+
+/* 修飾の群（#tb-format）は手前の区切りと 2 つのボタンを包む。**群の中の間隔を他の群と同じにする**ため、
+   包みそのものは箱を作らず、中身をツールバーの flex の子にする（DSP-103）。出し入れは hidden で行い、
+   [hidden] の display: none !important が勝つ（IMP-202） */
+.tb-group {
+  display: contents;
 }
 
 /* 「?」ボタンを右端へ寄せる（UI-020, DSP-032） */
@@ -132,8 +146,20 @@ body {
   /* ペインと本文の境界線はリサイザが引く（DSP-114）。二重に引かない */
 }
 
+/* ファイルツリーは、見出しの行・ツリールートの名前の行・スクロールする器（.pane-body）を縦に並べ、
+   **.pane-body だけがスクロールする**（DSP-110, UI-030。4.75.0）。ペインそのものはスクロールしない——
+   v1.1.0 はペインがスクロールする器で、見出しの行は sticky で縦にしか留まらず、横にスクロールすると
+   右端のボタンが流れた */
 .pane-filetree {
   width: var(--pane-filetree-width);
+  overflow: hidden;
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  /* 縦は溢れたときだけ、横はファイル名を省略しないため常に許可する（DSP-110） */
+  overflow: auto;
 }
 
 .pane-outline {
@@ -142,8 +168,9 @@ body {
   overflow-x: hidden;
 }
 
-/* 見出しはスクロールで流れない（DSP-111）。詳細な体裁は components.css */
-.pane-title {
+/* アウトラインの見出しはスクロールで流れない（DSP-111）。アウトラインはペインそのものがスクロールする
+   器のまま（DSP-110）。ファイルツリーの見出しの行は器の外にあるため要らない。詳細な体裁は components.css */
+.pane-outline > .pane-title {
   position: sticky;
   top: 0;
   background: var(--canvas-subtle);

@@ -359,6 +359,41 @@
   text-decoration: inherit;
 }
 
+/* --- 文字色（FR-147, DSP-121, DSP-010。4.75.0） ---
+
+   span.md-color-<名前> は Go がサニタイズの後に付ける（IMP-116。**class の許可リストには入れていない**——
+   生 HTML で書いた class は落ちる）。色は Light と Dark で違う値のトークンで描く（DSP-010）。
+   **取り消し線の線の色（text-decoration-color）を指定しない。** 線は線を引く要素（del / s / strike）の
+   文字色で描く——色の span が del の外側にあれば線も文字色になり、内側にあれば線は del の色のまま、
+   文字だけが色になる（DSP-121。4.81.0）。del / s / strike の取り消し線はブラウザ既定のまま（DSP-121）。 */
+.markdown-body .md-color-red {
+  color: var(--md-color-red);
+}
+
+.markdown-body .md-color-orange {
+  color: var(--md-color-orange);
+}
+
+.markdown-body .md-color-yellow {
+  color: var(--md-color-yellow);
+}
+
+.markdown-body .md-color-green {
+  color: var(--md-color-green);
+}
+
+.markdown-body .md-color-blue {
+  color: var(--md-color-blue);
+}
+
+.markdown-body .md-color-purple {
+  color: var(--md-color-purple);
+}
+
+.markdown-body .md-color-gray {
+  color: var(--md-color-gray);
+}
+
 /* --- 表（DSP-122, MD-024） --- */
 
 .markdown-body table {

@@ -13,12 +13,17 @@ import { state } from "./state.js";
 
 // REF_SHAPES は data-ref の鍵より後ろの形（IMP-120 の表）。番号は 0 起点の 10 進数だけを受け付ける
 // （Go 側の ParseRef と同じ。`+3` や空を通さない）。
+//
+// code（フェンス付きのコードブロック。FR-145）と text（修飾できるブロック。FR-146, FR-147）は
+// v1.2.0 で足した。text は編集モードの間の描画（Options.TextRefs）にだけ付く（IMP-120）。
 const REF_SHAPES = {
   task: /^task:[0-9]+$/,
   table: /^table:[0-9]+$/,
   cell: /^cell:[0-9]+:[0-9]+:[0-9]+$/,
   mermaid: /^mermaid:[0-9]+$/,
   plantuml: /^plantuml:[0-9]+$/,
+  code: /^code:[0-9]+$/,
+  text: /^text:[0-9]+$/,
 };
 
 // currentKey は表示中の文書の鍵を返す。文書が無い・鍵が空なら null。
@@ -42,7 +47,7 @@ function keyedValue(element, name) {
 }
 
 // isOwnRef は data-ref の鍵が state.doc.refKey と合い、種類が kind か
-// （task / table / cell / mermaid / plantuml）を返す。
+// （task / table / cell / mermaid / plantuml / code / text）を返す。
 //
 // **鍵と種類の両方が合い、番号の形が IMP-120 の表のとおりのときだけ真とする。** 種類を見ないと、
 // セルの目印を持つ要素がチェックボックスとして扱われる（Go 側の Check も種類を拒む。UT-115）。
@@ -55,7 +60,8 @@ export function isOwnRef(element, kind) {
 }
 
 // ownRef は isOwnRef が真なら data-ref の値そのもの（`<鍵>:<種類>:<番号…>`）を、偽なら null を返す
-// （IMP-260, IMP-316）。チェックボックスとセルの書き込みの指示に載せて Go へ渡す。
+// （IMP-260, IMP-316）。チェックボックス・セル・コードブロックと図・修飾するブロックの書き込みの
+// 指示に載せて Go へ渡す。
 //
 // **値を分解しない。** 解くのは Go 側（document.ParseRef）であり、鍵の照合を省く経路を作らない（IMP-316）。
 // **呼び出し側で getAttribute('data-ref') を読まない**——data-ref を読む箇所をこのモジュールだけに保つ。

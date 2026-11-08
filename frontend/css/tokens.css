@@ -49,6 +49,21 @@
   --search-hit: #fff8c5;
   --search-hit-current: #ffd33d;
 
+  /* 文字色（FR-147, DSP-010。4.75.0）。**Light の値はファイルに書く値そのもの**であり、Go 側の
+     renderer.TextColors（IMP-123）と同じ値を書く。**他のトークン（--danger-fg など）を参照して定義しない**
+     ——GitHub の配色に追随して他のトークンを変えたとき、ファイルに書いた値と Light で描く色が食い違う */
+  --md-color-red: #d1242f;
+  --md-color-orange: #bc4c00;
+  --md-color-yellow: #9a6700;
+  --md-color-green: #1a7f37;
+  --md-color-blue: #0969da;
+  --md-color-purple: #8250df;
+  --md-color-gray: #59636e;
+
+  /* 画像ファイルの市松模様（DSP-129。4.75.0）。透過した部分が分かることだけを目的にする */
+  --checker-a: #ffffff;
+  --checker-b: #eaeef2;
+
   /* --- 書体（DSP-020） --- */
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica,
     Arial, "Yu Gothic UI", Meiryo, "Noto Sans CJK JP", sans-serif;
@@ -86,11 +101,16 @@
   --dialog-width: 720px;
   --dialog-height: 560px;
 
-  /* --- ツールバー内の寸法（DSP-032） --- */
+  /* --- ツールバー内の寸法（DSP-032） ---
+     群の間は区切り線（DSP-103）が受け持つ。v1.1.0 の --tb-group-gap（#btn-outline の margin-left）は
+     4.75.0 で消した——実際の間隔は gap と足して 16 になっていた（DSP-032 の NOTE） */
   --tb-btn-size: 28px;
   --tb-gap: 4px;
   --tb-padding-x: 8px;
-  --tb-group-gap: 12px;
+  --tb-sep-height: 20px;
+
+  /* --- ペインの見出しのボタン（DSP-115）。検索バーのボタンと同じ寸法（DSP-160） --- */
+  --pane-btn-size: 24px;
 
   /* --- 間隔の基準（DSP-031）。中間値を使わない --- */
   --space-1: 4px;
@@ -108,18 +128,21 @@
   /* --- アイコン（DSP-014） --- */
   --icon-size: 16px;
 
-  /* --- 重なり順（DSP-015）。この 9 段階以外を使わない。
+  /* --- 重なり順（DSP-015）。この 10 段階以外を使わない。
      拡大画面はダイアログと同じ --z-dialog を使う。右クリックメニューはダイアログより上（ライセンス欄でも
-     開く）、ドロップオーバーレイより下（開いたままドラッグしてもドロップできることを示す） --- */
+     開く）、ドロップオーバーレイより下（開いたままドラッグしてもドロップできることを示す）。
+     **フィルターの枚（50）は状態画面より上、ダイアログより下**（はみ出した部分が状態画面の下に隠れない。
+     4.75.0 で 50 に入れ、ダイアログから上を 1 段ずつ詰め直した。中間値を足さない） --- */
   --z-content: 0;
   --z-copy: 10;
   --z-search: 20;
   --z-status-message: 30;
   --z-state-screen: 40;
-  --z-dialog: 50;
-  --z-contextmenu: 60;
-  --z-dropzone: 70;
-  --z-tooltip: 80;
+  --z-treefilter: 50;
+  --z-dialog: 60;
+  --z-contextmenu: 70;
+  --z-dropzone: 80;
+  --z-tooltip: 90;
 
   /* --- モーション（DSP-050）。テーマ切り替えとペイン開閉には掛けない --- */
   --motion-hover: 80ms;
@@ -162,4 +185,17 @@
 
   --search-hit: #3b2300;
   --search-hit-current: #9e6a03;
+
+  /* 文字色の Dark で描く値（FR-147。ファイルには書かない。1 つの色で白地と Dark の地の両方の
+     コントラスト比 4.5 を満たす色は無い） */
+  --md-color-red: #f85149;
+  --md-color-orange: #db6d28;
+  --md-color-yellow: #d29922;
+  --md-color-green: #3fb950;
+  --md-color-blue: #4493f8;
+  --md-color-purple: #ab7df8;
+  --md-color-gray: #9198a1;
+
+  --checker-a: #0d1117;
+  --checker-b: #212830;
 }

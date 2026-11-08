@@ -12,8 +12,7 @@ import { leaveDocument } from "./docswitch.js";
 import { loadTreeRoot, revealCurrent } from "./filetree.js";
 import { showStateScreen } from "./overlay.js";
 import { state } from "./state.js";
-import { updateStatus, showMessage } from "./status.js";
-import { errorText } from "./strings.js";
+import { updateStatus, notifyError } from "./status.js";
 import { $ } from "./util.js";
 import { renderDocument, scrollToAnchor } from "./viewer.js";
 
@@ -49,7 +48,7 @@ export function showError(error) {
     return;
   }
 
-  showMessage(errorText(error), "error");
+  notifyError(error);
 }
 
 // enterStateScreen は状態画面へ移る（IMP-250, DSP-302, FR-016）。
@@ -96,9 +95,10 @@ export async function reloadCurrent() {
 
 // goBack / goForward は表示履歴をたどる（FR-051, UI-090）。
 //
-// ツールバーにボタンはなく（UI-020）、Alt+← / Alt+→ が唯一の経路である。
-// 端に居るときは document も error も null が返り、表示は変わらない
-// （IMP-308）。
+// **ツールバーの戻る・進むのボタン・Alt+← / Alt+→・マウスのサイドボタンの 3 つが、この同じ入口を通る**
+// （IMP-244。4.75.0。v1.1.0 はボタンが無く、キーだけだった）。端に居るときは document も error も null が
+// 返り、表示は変わらない（IMP-308）。開けなかった項目は Go 側が履歴から取り除き、Error が返る（BUG-023。
+// IMP-191）。ボタンの淡色は戻り値ではなく history:changed で決まる（IMP-323）。
 export async function goBack() {
   await recordScroll();
   handleResult(await api.historyBack());
@@ -177,6 +177,8 @@ function screenTarget(kind, error) {
     path: error.path || "",
     displayPath: error.displayPath || "",
     outsideTree: error.outsideTree === true,
+    // 対象の種類（mdfile.KindOf の文字列。IMP-307。4.75.0）。状態画面の間のボタンの淡色に使う（UI-021）
+    targetKind: error.targetKind || "",
   };
 }
 

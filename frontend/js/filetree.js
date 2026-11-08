@@ -11,9 +11,8 @@
 // **項目の要素の組み立てと、項目の中を読む関数は treenodes.js にある**（IMP-011）。
 
 import * as api from "./api.js";
-import { errorText } from "./strings.js";
 import { state } from "./state.js";
-import { showMessage } from "./status.js";
+import { notifyError } from "./status.js";
 // 項目の組み立てと項目の中を読む関数（IMP-011 で分けた）
 import { childByName, childGroup, depthOf, fill, setDirIcons } from "./treenodes.js";
 import { $, clear, baseName } from "./util.js";
@@ -58,7 +57,7 @@ export async function loadTreeRoot(root) {
   // 空文字を渡すとツリールートを読む（IMP-310）。ここでパスを組み立てない。
   const { nodes, error } = await api.readDir("");
   if (error) {
-    showMessage(errorText(error), "error");
+    notifyError(error);
     return;
   }
 
@@ -253,7 +252,7 @@ async function toggle(item) {
 async function expand(item) {
   const { nodes, error } = await api.readDir(item.dataset.path);
   if (error) {
-    showMessage(errorText(error), "error");
+    notifyError(error);
     return false;
   }
 

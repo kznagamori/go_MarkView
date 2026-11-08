@@ -5,8 +5,8 @@
 
 import * as api from "./api.js";
 import { ownSource } from "./refs.js";
-import { S, errorText } from "./strings.js";
-import { showMessage } from "./status.js";
+import { S } from "./strings.js";
+import { notifyError } from "./status.js";
 import { icon } from "./util.js";
 
 // 成功表示を戻すまでの時間（DSP-252）。
@@ -42,7 +42,7 @@ async function copy(block, button) {
 
   // 失敗してもアイコンは変えず、ステータス領域に出す（DSP-252, FR-110）。
   if (error) {
-    showMessage(errorText(error), "error");
+    notifyError(error);
     return;
   }
 

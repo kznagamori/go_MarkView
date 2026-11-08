@@ -178,11 +178,21 @@ export function baseName(path) {
   return parts.length > 0 ? parts[parts.length - 1] : "";
 }
 
-// formatSize はバイト数を MB 表記にする（DSP-181）。
+// formatSize はファイルの大きさを表記にする（DSP-150, DSP-181）。
 //
-// **単位記号であり文言ではない**ため strings.js には置かない。Go 側の
-// formatSize（errors.go）と同じ桁数に揃えてある。
+//	1024 バイト未満        <n> B
+//	1 MB 未満              整数の <n> KB（1 KB = 1024 バイト。四捨五入）
+//	それ以上               小数第 1 位の <x.y> MB（確認画面と同じ。Go 側の formatSize（errors.go）と同じ桁数）
+//
+// **四捨五入して 1024 KB に届くもの（1,048,064 バイト以上）は 1.0 MB と書く**（DSP-150。4.75.0）。
+// 確認画面と上限超過（DSP-181）に出る大きさは 10 MB 以上であり、MB の書き方は v1.1.0 から変わらない。
+// **単位記号であり文言ではない**ため strings.js には置かない。
 export function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+
+  const kb = Math.round(bytes / 1024);
+  if (kb < 1024) return `${kb} KB`;
+
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 

@@ -10,7 +10,8 @@ import * as api from "./api.js";
 
 export const state = {
   doc: null, // DocumentDTO（13 章）。未表示なら null
-  // 状態画面が対象にしているファイル { path, displayPath, outsideTree }（ErrorDTO。IMP-307）。
+  // 状態画面が対象にしているファイル { path, displayPath, outsideTree, targetKind }（ErrorDTO。IMP-307）。
+  // targetKind は状態画面の間のボタンの淡色に使う（UI-021）。
   // 文書の表示中と welcome では null（IMP-250, DSP-302）。Go 側の target の写しであり保存しない（NFR-042）
   target: null,
   treeRoot: "", // 絶対パス
@@ -27,6 +28,14 @@ export const state = {
   editable: false, // 編集モードを開始できるか。DocumentDTO.editable
   editMode: false, // 編集モードか。DocumentDTO.editMode / EditModeDTO.on
   editSeq: 0, // 写した編集モードの状態の版。古い値で上書きしないため（IMP-260）
+  // 履歴の写し（HistoryDTO。IMP-323。4.75.0）。戻る・進むのボタンの淡色に使う。**seq が手元より小さい値は
+  // 写さない**（到着順が入れ替わった古い値）。configPatch には含めない（NFR-042）
+  history: { canBack: false, canForward: false, seq: 0 },
+  // ツリーのフィルター（FR-037, UI-033。ConfigDTO。4.75.0）。**保存する設定であり、configPatch に含める**。
+  // **起動時に init.config の値を写す**（IMP-211）——写さないと、最初の saveConfig が既定値を送って
+  // 保存値を上書きする
+  treeShowDiagrams: true,
+  treeShowImages: false,
 };
 
 // configPatch は UpdateConfig へ渡す ConfigDTO を組み立てる（IMP-303）。
@@ -47,6 +56,8 @@ export function configPatch() {
     fileTreeVisible: state.fileTreeVisible,
     outlineWidth: state.outlineWidth,
     fileTreeWidth: state.fileTreeWidth,
+    treeShowDiagrams: state.treeShowDiagrams,
+    treeShowImages: state.treeShowImages,
   };
 }
 

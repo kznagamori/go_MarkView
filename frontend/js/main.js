@@ -8,8 +8,8 @@
 
 import * as api from "./api.js";
 import { state } from "./state.js";
-import { S, errorText } from "./strings.js";
-import { initToolbar, canEdit } from "./toolbar.js";
+import { S } from "./strings.js";
+import { initToolbar, canEdit, applyHistory } from "./toolbar.js";
 import { initTooltip } from "./tooltip.js";
 import { applyTheme, toggleTheme } from "./theme.js";
 import { initZoom, setZoom, stepZoom } from "./zoom.js";
@@ -62,7 +62,7 @@ import {
   toggleEditMode,
   undoEdit,
 } from "./editmode.js";
-import { showMessage } from "./status.js";
+import { notifyError, showMessage } from "./status.js";
 
 // SHORTCUTS の id と処理の対応（UI-090, IMP-244）。
 //
@@ -154,8 +154,14 @@ async function boot() {
   // state.zoom の初期値が 100 であり、--zoom も未設定時は 100 として効く
   // （DSP-021）ため、起動時に適用する処理は要らない。
   applyPanes(init.config);
+  // ツリーのフィルター（FR-037。IMP-211。4.76.0）。**写さないと、最初の saveConfig が既定値を送って保存値を
+  // 上書きする**（Go 側の ReadDir は保存値で絞っており、枚のチェックボックスとツリーの中身も食い違う）
+  state.treeShowDiagrams = init.config.treeShowDiagrams;
+  state.treeShowImages = init.config.treeShowImages;
 
   initToolbar({
+    onBack: () => goBack(),
+    onForward: () => goForward(),
     onOpen: openViaDialog,
     onReload: reloadCurrent,
     onTheme: toggleTheme,
@@ -179,16 +185,19 @@ async function boot() {
   initExpand({ focusViewer });
   initTableSort({ closeSearch });
   // 編集モード（IMP-260〜IMP-263）。書き込みの失敗はステータス領域に出す（DSP-321）
-  initEditMode({ api, notify: (error) => showMessage(errorText(error), "error"), focusViewer });
+  initEditMode({ api, notify: notifyError, focusViewer });
   // 右クリックメニュー（IMP-249）。Copy は WebView 自身のコピー（execCommand）であり、Go を通すのは
   // Copy link address・execCommand が効かなかったときの代わりの経路・Paste の読み取りだけ（AR-062）。
   // セルの編集欄から開いてメニューの外を押したら、フォーカスが外れたものとして取り消す（IMP-262）。
   initContextMenu({
     copyText: api.copyToClipboard,
     readClipboard: api.readClipboard,
-    notify: (error) => showMessage(errorText(error), "error"),
+    notify: notifyError,
     cancelCellEdit,
   });
+  // 戻る・進むの淡色（IMP-323）。起動時の値は InitialStateDTO.History で受け取る——購読より前に起きた
+  // 積む処理を取りこぼさない。history:changed と同じ applyHistory を通す
+  applyHistory(init.history);
   initShortcuts(SHORTCUT_HANDLERS);
 
   subscribe();
@@ -202,7 +211,7 @@ async function boot() {
     // 起動時のパスが読めなかった場合、操作案内はそのままに理由を添える
     // （FR-012, IMP-193）。
     if (init.error && !isStateScreenError(init.error)) {
-      showMessage(errorText(init.error), "error");
+      notifyError(init.error);
     }
   }
 
@@ -218,7 +227,7 @@ function subscribe() {
   // 次に読み込めるまで開始させない（IMP-260, IMP-320, FR-140 の表）。
   api.on(api.EVENT.documentRemoved, (error) => {
     leaveEditMode();
-    showMessage(errorText(error), "error");
+    notifyError(error);
   });
 
   api.on(api.EVENT.treeRootChanged, async (root) => {
@@ -227,6 +236,8 @@ function subscribe() {
   });
 
   api.on(api.EVENT.error, showError);
+  // 戻れるか・進めるか（IMP-323）。seq の古い値は applyHistory が捨てる
+  api.on(api.EVENT.historyChanged, applyHistory);
 }
 
 // toggleFileTree はツリーペインを開閉し、**表示になったらツリーを読み直す**

@@ -3,7 +3,7 @@
 // 通知先はステータス領域・本文中・状態画面の 3 か所に限る。
 // モーダルダイアログを使わない（FR-110, UI-052）。
 
-import { S } from "./strings.js";
+import { S, errorText, errorLevel } from "./strings.js";
 import { state } from "./state.js";
 import { $, clear } from "./util.js";
 
@@ -71,6 +71,16 @@ export function updateStatus() {
     item.textContent = text;
     meta.appendChild(item);
   }
+}
+
+// notifyError は ErrorDTO（IMP-307）をステータス領域の一時メッセージに出す（IMP-315, DSP-151）。
+//
+// **ErrorDTO を出すときは必ずここを通す。** 文言（errorText）と色（errorLevel。拒んだ知らせは警告）を
+// 種別から決める。呼び出し側で "error" を渡すと、警告の種別（edit-busy など。IMP-315）が経路によって
+// 違う色で出る。状態画面の種別は navigate.js の showError が振り分ける（IMP-250）。
+export function notifyError(error) {
+  if (!error) return;
+  showMessage(errorText(error), errorLevel(error));
 }
 
 // showMessage は一時メッセージを出す（DSP-151, FR-110）。

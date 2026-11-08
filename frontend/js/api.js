@@ -18,6 +18,7 @@ export const EVENT = {
   documentChanged: "document:changed", // 更新の検知（FR-014）
   documentRemoved: "document:removed", // 削除の検知（FR-014）
   treeRootChanged: "tree:root-changed", // ツリールートの移動（FR-030）
+  historyChanged: "history:changed", // 戻れるか・進めるか（HistoryDTO。FR-051, IMP-323。4.75.0）
   error: "error", // 非同期処理のエラー（FR-110）
 };
 
@@ -107,8 +108,21 @@ export function browseEditor() {
 // openInEditor は選ばれたエディタで対象のファイルを開く（FR-090, IMP-310）。
 //
 // id はプリセットの ID、または "custom"。EditorResultDTO を返す（IMP-309）。
+// **開くのは、選択ウィンドウを開いた時点で Go 側が控えたファイル（editorTarget）である**（IMP-310）。
 export function openInEditor(id) {
   return App.OpenInEditor(id);
+}
+
+// listEditorsForTree はツリーで選んだファイルについて選択ウィンドウの一覧を取る（FR-036, FR-091）。
+// Go 側が検査（IMP-135）を通ったファイルを控える。文字のファイルでなければ一覧は空。
+export function listEditorsForTree(path) {
+  return App.ListEditorsForTree(path);
+}
+
+// closeEditor は選択ウィンドウを開いたまま閉じたことを知らせる（Cancel / Esc / 外のクリック。FR-091）。
+// Go 側は控えと確定前の候補を捨てる。通知しない。
+export function closeEditor() {
+  return App.CloseEditor();
 }
 
 // --- ツリー -----------------------------------------------------------------
@@ -124,6 +138,41 @@ export async function readDir(path) {
   } catch (e) {
     return { nodes: [], error: toErrorDTO(e, "") };
   }
+}
+
+// ツリーの操作（FR-036, UI-032。4.75.0）。いずれも TreeActionDTO を返す（IMP-317）。
+// **パスは Go 側が検査（IMP-135）を通してから使う**（IMP-196）。ツリールートを変えた結果は戻り値で届き、
+// tree:root-changed は送られない（IMP-317）。
+
+// setTreeRoot はディレクトリをツリールートにする。
+export function setTreeRoot(path) {
+  return App.SetTreeRoot(path);
+}
+
+// setTreeRootUp はツリールートの親をツリールートにする（パスを渡さない）。
+export function setTreeRootUp() {
+  return App.SetTreeRootUp();
+}
+
+// canSetTreeRootUp はツリールートが根でないか（親へ上がれるか）を返す（UI-032）。
+// フロントエンドはパスから根かどうかを判断しない（IMP-300 の 2）。
+export function canSetTreeRootUp() {
+  return App.CanSetTreeRootUp();
+}
+
+// openInFileManager はディレクトリをファイルマネージャで開く（NFR-035）。
+export function openInFileManager(path) {
+  return App.OpenInFileManager(path);
+}
+
+// openContainingFolder はファイルのあるディレクトリをファイルマネージャで開く（NFR-035）。
+export function openContainingFolder(path) {
+  return App.OpenContainingFolder(path);
+}
+
+// copyTreePath はパスをクリップボードへ書く。成功は知らせない。
+export function copyTreePath(path) {
+  return App.CopyTreePath(path);
 }
 
 // --- 記録と設定 -------------------------------------------------------------
@@ -206,6 +255,29 @@ export function undoEdit() {
 // redoEdit は取り消した書き換えをやり直す（FR-144）。
 export function redoEdit() {
   return App.RedoEdit();
+}
+
+// getCodeSource はコードブロックと図の編集欄に入れるソースを取る（FR-145。CodeSourceDTO。4.75.0）。
+export function getCodeSource(ref) {
+  return App.GetCodeSource(ref);
+}
+
+// setCode はコードブロックと図を書き換える（FR-145）。
+export function setCode(ref, text) {
+  return App.SetCode(ref, text);
+}
+
+// applyFormat は選んだ文字に取り消し線・文字色を付ける・外す（FR-146, FR-147。4.75.0）。
+// start / end は見える文字（visible.js）の中の符号位置、visible はそのブロックの見える文字の全体、
+// style は FormatStyleDTO（{ strike: true } か { color: name }。IMP-316）。
+export function applyFormat(ref, start, end, visible, style) {
+  return App.ApplyFormat(ref, start, end, visible, style);
+}
+
+// setEditBoxOpen は編集欄が開いたか・閉じたかを知らせる（FR-140。4.75.0）。**ドロップを拒むためにだけ
+// ある**（IMP-313）。**前の呼び出しの応答を待ってから次を送る**（到着順が入れ替わりうる。IMP-310）。
+export function setEditBoxOpen(open) {
+  return App.SetEditBoxOpen(open);
 }
 
 // --- イベント ---------------------------------------------------------------

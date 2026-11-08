@@ -19,7 +19,7 @@ import {
   focusInitial,
   syncOpenButton,
 } from "./editors.js";
-import { syncEditButton } from "./toolbar.js";
+import { syncTargetButtons } from "./toolbar.js";
 import { $, clear, icon, formatSize, baseName } from "./util.js";
 
 // 情報ダイアログのリンクを踏んだときの処理（UI-102）。
@@ -111,9 +111,9 @@ export function showStateScreen(kind, params) {
 
   screen.hidden = false;
 
-  // 「エディタで開く」の活性は画面の状態から決まる（UI-021, FR-090）。
-  // **welcome だけが押せない。** 判定は toolbar.js が持つ。
-  syncEditButton();
+  // 「再読み込み」と「エディタで開く」の活性は画面の状態から決まる（UI-021, FR-015, FR-090）。
+  // **welcome では押せない**（エディタで開くは画像ファイルでも）。判定は toolbar.js が持つ。
+  syncTargetButtons();
 }
 
 // hideStateScreen は状態画面を隠す（IMP-250）。
@@ -122,8 +122,8 @@ export function hideStateScreen() {
   screen.hidden = true;
   clear(screen);
 
-  // 本文を表示している = 対象がある（UI-021, FR-090）。
-  syncEditButton();
+  // 本文を表示している = 対象がある（UI-021, FR-090）。画像ファイルならエディタで開けない。
+  syncTargetButtons();
 }
 
 function buildDetail(screen, kind, info) {

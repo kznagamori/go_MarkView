@@ -97,7 +97,41 @@ export function initShortcuts(deps) {
   handlers = deps || {};
 
   window.addEventListener("keydown", onKeyDown);
+
+  // マウスのサイドボタン（FR-051 の SHOULD, UI-090, IMP-244。4.75.0）。キャプチャで受ける。
+  window.addEventListener("mouseup", onSideButton, true);
+  window.addEventListener("mousedown", blockSideButton, true);
+  window.addEventListener("auxclick", blockSideButton, true);
 }
+
+// SIDE_BUTTONS は MouseEvent.button の値と割り当て（3 が戻る、4 が進む。IMP-244）。
+const SIDE_BUTTONS = { 3: "back", 4: "forward" };
+
+// onSideButton はサイドボタンを Alt+← / Alt+→ と同じ入口（back / forward の処理）へ回す（IMP-244）。
+//
+// **先に既定の動作を止める**——WebView 自身のページの履歴を戻らせない（AR-060）。**Alt+← / Alt+→ と同じ場面
+// （右クリックメニュー・文字色の一覧・拡大画面・ダイアログの表示中）では何もしない**（既定の動作は止める）。
+// ダイアログの表示中は main.js の guardAll が処理を止める。**L1 でサイドボタンが DOM に届くかは実機で
+// 確かめる**（届かなくても機能が欠けるだけで、安全上の問題にはならない。90.6.5）。
+function onSideButton(event) {
+  const id = SIDE_BUTTONS[event.button];
+  if (!id) return;
+
+  event.preventDefault();
+  if (isContextMenuOpen() || isExpandOpen()) return;
+
+  const handler = handlers[id];
+  if (handler) handler();
+}
+
+// blockSideButton は mousedown と auxclick のサイドボタンの既定の動作を止める（AR-060, IMP-244）。
+function blockSideButton(event) {
+  if (SIDE_BUTTONS[event.button]) event.preventDefault();
+}
+
+// HISTORY_KEYS は、右クリックメニューを開いている間も既定の動作だけは止める割り当て（IMP-244。4.76.0）。
+// 働かせはしない。WebView 自身のページの履歴を戻らせない（AR-060。サイドボタンと同じ）。
+const HISTORY_KEYS = new Set(["back", "forward"]);
 
 // keyLabel はツールチップに載せる代表キーを返す。未定義なら空文字。
 export function keyLabel(id) {
@@ -115,7 +149,11 @@ function onKeyDown(event) {
   // **右クリックメニューを開いている間は、Esc 以外の割り当てを働かせず、既定の動作も止めない**（IMP-244）。
   // メニューの中の ↑ / ↓ / Enter / Space / Tab は #contextmenu の keydown が受ける（IMP-249）。止めないと、
   // 検索バーの入力欄でメニューを開いて Paste で Enter を押したとき、Enter が検索の移動へ回る。
-  if (isContextMenuOpen() && id !== "close") return;
+  // **ただし Alt+← / Alt+→ は、働かせずに既定の動作だけを止める**（AR-060。サイドボタンと同じ。4.76.0）。
+  if (isContextMenuOpen() && id !== "close") {
+    if (HISTORY_KEYS.has(id)) event.preventDefault();
+    return;
+  }
 
   // **拡大画面を開いている間は、Esc を下の振り分け（close）で先に扱い、UI-104 の表の残りのキーを
   // expand.js へ渡し、それ以外の割り当てを止める**（Ctrl+Q を除く。IMP-244）。止めるときは既定の動作も
