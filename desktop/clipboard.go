@@ -20,6 +20,12 @@ import (
 func (a *App) CopyToClipboard(text string) (err error) {
 	defer recoverBind(&err)
 
+	return a.writeClipboard(text)
+}
+
+// writeClipboard はテキストをクリップボードへ書く（AR-062）。CopyToClipboard と、ツリーの
+// Copy path（CopyTreePath。IMP-196）が同じ経路を使う。失敗は errClipboard を包んで返す。
+func (a *App) writeClipboard(text string) error {
 	ctx := a.context()
 	if ctx == nil {
 		return errClipboard

@@ -5,8 +5,6 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/kznagamori/go_MarkView/internal/filetree"
-	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/ostheme"
 	"github.com/kznagamori/go_MarkView/internal/session"
 )
@@ -36,8 +34,9 @@ func (a *App) GetInitialState() InitialStateDTO {
 	a.mu.Unlock()
 
 	state := InitialStateDTO{
-		Config:    newConfigDTO(cfg, a.resolvedTheme()),
-		StateKind: stateWelcome,
+		Config:     newConfigDTO(cfg, a.resolvedTheme()),
+		Extensions: newExtensionsDTO(),
+		StateKind:  stateWelcome,
 	}
 
 	switch {
@@ -62,6 +61,10 @@ func (a *App) GetInitialState() InitialStateDTO {
 	// 親ディレクトリへ移っている（FR-030）。
 	state.TreeRoot = a.GetTreeRoot()
 
+	// 戻れるか・進めるかも open のあとに読む（IMP-303, IMP-323）。起動時の積む処理はイベントの購読より
+	// 前に起きるため、history:changed では取りこぼす。版は増やさない（送ったものと同じ値）。
+	state.History = a.currentHistory()
+
 	// **画面の対象（target。IMP-190）は open が設定している。** 起動時も規則は
 	// IMP-192 とまったく同じであり（IMP-193）、ここで別に設定しない。
 	//
@@ -78,7 +81,10 @@ func (a *App) GetInitialState() InitialStateDTO {
 
 // OpenFileDialog は OS 標準のファイル選択ダイアログを開く（IMP-310, FR-010）。
 //
-// キャンセルされた場合は nil を返し、表示中の内容を変更しない。
+// キャンセルされた場合は nil を返し、表示中の内容を変更しない。**開けないファイルを選んだ
+// とき（All files で選んだ場合）は not-supported とし、ツリールートも表示も変えない**
+// （FR-010, IMP-192）。document.Load が ErrNotSupported を返し、開く処理は「表示を変えない
+// 失敗」として扱う——ツリールートを動かすのは開けたときと状態画面を出したときだけである。
 func (a *App) OpenFileDialog() (res OpenResultDTO) {
 	var path string
 	defer a.recoverOpen(&path, &res)
@@ -92,12 +98,7 @@ func (a *App) OpenFileDialog() (res OpenResultDTO) {
 		// 初期ディレクトリは現在のツリールート。未確定なら空文字を渡し、
 		// OS の既定（カレントディレクトリ）に任せる（FR-010）。
 		DefaultDirectory: a.GetTreeRoot(),
-		Filters: []runtime.FileFilter{
-			// フィルタ名は英語とする（UI-024）。パターンは mdfile の一覧から
-			// 組み立て、拡張子の定義を 2 か所に置かない（IMP-105）。
-			{DisplayName: "Markdown files", Pattern: markdownFilterPattern()},
-			{DisplayName: "All files", Pattern: "*.*"},
-		},
+		Filters:          openDialogFilters(),
 	})
 	// **ダイアログを出せなかった場合も「何も選ばれなかった」として扱う。**
 	// 表示中の文書を状態画面で置き換える理由がない（FR-110）。
@@ -106,16 +107,6 @@ func (a *App) OpenFileDialog() (res OpenResultDTO) {
 	}
 
 	return a.openResult(path, openRequest{path: path, src: openFromDialog})
-}
-
-// OpenFromTree はファイルツリーで選ばれたファイルを開く（IMP-310, FR-033）。
-//
-// **ツリールートは変更しない。** 配布されたドキュメント群を閲覧している間に、
-// ツリーが利用者の操作で移動してしまうことを防ぐ（FR-030）。
-func (a *App) OpenFromTree(path string) (res OpenResultDTO) {
-	defer a.recoverOpen(&path, &res)
-
-	return a.openResult(path, openRequest{path: path, src: openFromTree})
 }
 
 // OpenConfirmed は確認画面の「Open anyway」を実行する（IMP-310, FR-016）。
@@ -209,29 +200,6 @@ func (a *App) screenTarget() string {
 	return a.target
 }
 
-// ReadDir はディレクトリの直下を読む（IMP-310, FR-032, FR-035）。
-//
-// 再帰しない。展開のたびに呼ばれる（FR-032 の遅延展開）。空文字を渡された
-// 場合はツリールートを読む。
-func (a *App) ReadDir(path string) (nodes []TreeNodeDTO, err error) {
-	defer recoverBind(&err)
-
-	if path == "" {
-		path = a.GetTreeRoot()
-	}
-	if path == "" {
-		return []TreeNodeDTO{}, nil
-	}
-
-	// TODO(v1.2.0): App.cfg のツリーのフィルターから Show を作って渡す（IMP-134, IMP-196）。
-	read, err := filetree.ReadDir(path, filetree.Show{})
-	if err != nil {
-		return nil, err
-	}
-
-	return newTreeNodeDTOs(read), nil
-}
-
 // GetTreeRoot はツリールートの絶対パスを返す（IMP-310, FR-030）。
 // 未確定なら空文字を返す。
 func (a *App) GetTreeRoot() string {
@@ -275,6 +243,12 @@ func (a *App) UpdateConfig(patch ConfigDTO) {
 	a.cfg.FileTreeVisible = patch.FileTreeVisible
 	a.cfg.OutlineWidth = patch.OutlineWidth
 	a.cfg.FileTreeWidth = patch.FileTreeWidth
+
+	// ツリーのフィルターは**すぐに App.cfg に写す**（保存は UI-114 の契機）。以後の ReadDir とツリーの
+	// 操作の検査がこの値で絞る（FR-037, IMP-134, IMP-196, IMP-303）。フロントエンドは送信が終わるのを
+	// 待ってから ReadDir を呼ぶ（IMP-271）。
+	a.cfg.TreeShowDiagrams = patch.TreeShowDiagrams
+	a.cfg.TreeShowImages = patch.TreeShowImages
 
 	// 受け取った値も範囲外なら既定値へ戻す（IMP-153）。フロントエンドを
 	// 信頼できる入力元として扱わない。
@@ -334,14 +308,37 @@ func (a *App) resolvedTheme() string {
 	return "light"
 }
 
-// markdownFilterPattern はダイアログのフィルタ文字列を組み立てる（FR-010）。
+// openDialogFilters はファイル選択ダイアログのフィルタを組み立てる（FR-010, IMP-310）。
 //
-//	*.md;*.markdown;*.mdown;*.mkd
+//	Supported files  開けるファイルの 3 種類すべて（既定。先頭に置く）
+//	Markdown files   *.md;*.markdown;*.mdown;*.mkd
+//	Diagrams         PlantUML と Mermaid の拡張子
+//	Images           画像の拡張子
+//	All files        *.*
 //
-// 拡張子の定義は mdfile が唯一の正である（IMP-105）。ここに並べ直さない。
-func markdownFilterPattern() string {
-	patterns := make([]string, 0, len(mdfile.Extensions))
-	for _, ext := range mdfile.Extensions {
+// フィルタ名は英語とする（UI-024）。**拡張子の定義は mdfile が唯一の正である**（IMP-105）。
+// ここに並べ直さず、ツリーのフィルターの文言（ExtensionsDTO。IMP-303）と同じ組み立てを使う。
+func openDialogFilters() []runtime.FileFilter {
+	ext := newExtensionsDTO()
+
+	supported := make([]string, 0, len(ext.Markdown)+len(ext.Diagrams)+len(ext.Images))
+	supported = append(supported, ext.Markdown...)
+	supported = append(supported, ext.Diagrams...)
+	supported = append(supported, ext.Images...)
+
+	return []runtime.FileFilter{
+		{DisplayName: "Supported files", Pattern: filterPattern(supported)},
+		{DisplayName: "Markdown files", Pattern: filterPattern(ext.Markdown)},
+		{DisplayName: "Diagrams", Pattern: filterPattern(ext.Diagrams)},
+		{DisplayName: "Images", Pattern: filterPattern(ext.Images)},
+		{DisplayName: "All files", Pattern: "*.*"},
+	}
+}
+
+// filterPattern は拡張子の並びをダイアログのパターン（*.md;*.markdown）にする（FR-010）。
+func filterPattern(exts []string) string {
+	patterns := make([]string, 0, len(exts))
+	for _, ext := range exts {
 		patterns = append(patterns, "*"+ext)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 
 	"github.com/kznagamori/go_MarkView/internal/document"
+	"github.com/kznagamori/go_MarkView/internal/filetree"
 	"github.com/kznagamori/go_MarkView/internal/opener"
 )
 
@@ -85,6 +86,7 @@ func newErrorDTO(path string, err error) *ErrorDTO {
 	var screen *screenError
 	if errors.As(err, &screen) {
 		dto.DisplayPath, dto.OutsideTree = screen.displayPath, screen.outsideTree
+		dto.TargetKind = screen.targetKind
 	}
 
 	return dto
@@ -121,7 +123,8 @@ func classifyError(path string, err error) (kind, message string) {
 		return errKindPermission, fmt.Sprintf("Cannot access: %s", path)
 
 	case errors.Is(err, document.ErrNotSupported):
-		return errKindNotMarkdown, fmt.Sprintf("Not a Markdown file: %s", path)
+		// 開けるファイルは Markdown・図・画像の 3 種類（4.75.0）。v1.1.0 は「Markdown でない」の種別だった。
+		return errKindNotSupported, fmt.Sprintf("Not a supported file: %s", path)
 
 	case errors.Is(err, errLinkNotFound):
 		return errKindLinkNotFound, fmt.Sprintf("Link target not found: %s", path)
@@ -196,9 +199,15 @@ func newOpenFailedDTO(href string, err error) *ErrorDTO {
 
 // newEditErrorDTO は編集モードの書き込みの失敗を伝える（IMP-315, IMP-195, FR-143）。
 //
-// 書き込む前にファイルが変更されていた（document.ErrChanged）は edit-conflict、それ以外
-// （document.ErrPermission・表の形の確かめで拒んだ document.ErrNotEditable・書き込みの失敗・
-// 回復したパニック）は edit-failed とし、どちらも**ステータスに出す**。
+//	document.ErrChanged      → edit-conflict（書き込む前にファイルが変更されていた）
+//	document.ErrRejected     → edit-rejected（書き込む内容の確かめで拒んだ。セル・コードブロック・図）
+//	document.ErrLocked       → code-locked（前置きが行ごとに違うコードブロック。FR-145）
+//	document.ErrCannotFormat → format-rejected（修飾を分けられない・確かめで拒んだ。FR-146）
+//	それ以外                 → edit-failed（document.ErrPermission・不正なバイト列や位置の食い違いの
+//	                           document.ErrNotEditable・書き込みの失敗・回復したパニック）
+//
+// どれも**ステータスに出す**（拒んだ知らせは警告。IMP-315, DSP-151）。v1.1.0 はセルの確かめで
+// 拒んだときも edit-failed だった。
 //
 // **指示が古かった（document.ErrStale）はここへ渡さない。** 失敗ではなく通知もしない
 // （EditResultDTO.Stale。IMP-315）。呼び出し側（editmode.go）が先に分ける。
@@ -206,13 +215,22 @@ func newEditErrorDTO(path string, err error) *ErrorDTO {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, document.ErrChanged) {
-		return &ErrorDTO{
-			Kind:    errKindEditConflict,
-			Message: "The file changed on disk and was not saved.",
-			Path:    path,
-		}
+
+	var kind, message string
+	switch {
+	case errors.Is(err, document.ErrChanged):
+		kind, message = errKindEditConflict, "The file changed on disk and was not saved."
+	case errors.Is(err, document.ErrRejected):
+		kind, message = errKindEditRejected, "This change would alter the document structure and was not saved."
+	case errors.Is(err, document.ErrLocked):
+		kind, message = errKindCodeLocked, "This code block cannot be edited in MarkView."
+	case errors.Is(err, document.ErrCannotFormat):
+		kind, message = errKindFormatRejected, "This formatting cannot be applied here."
 	}
+	if kind != "" {
+		return &ErrorDTO{Kind: kind, Message: message, Path: path}
+	}
+
 	return &ErrorDTO{
 		Kind:    errKindEditFailed,
 		Message: fmt.Sprintf("Failed to save: %s", path),
@@ -229,6 +247,38 @@ func removedErrorDTO(path string) *ErrorDTO {
 		Kind:    errKindRemoved,
 		Message: fmt.Sprintf("File was deleted: %s", path),
 		Path:    path,
+	}
+}
+
+// newTreeCheckErrorDTO はツリーの操作の検査（filetree.Check。IMP-135）の失敗を ErrorDTO へ写す
+// （IMP-196, IMP-315）。path は検査したパス（フロントエンドから受け取った値）。
+//
+//	filetree.ErrNotInTree → nil（何もしない。通知しない。ツリーから操作する限り起きない）
+//	filetree.ErrMissing   → not-found（ツリーは自動では更新されず、消したファイルが並んでいることがある。FR-036）
+//	それ以外（権限が無い等） → permission（v1.1.0 の OpenFromTree と同じ文言。4.76.0）
+//
+// **分類できない失敗を render-error に落とさない**（newErrorDTO を使い回さない）。ツリーの操作は
+// ステータスに出す操作であり、状態画面を出すと本文が消える（IMP-315 の最後の段落）。
+func newTreeCheckErrorDTO(path string, err error) *ErrorDTO {
+	switch {
+	case err == nil, errors.Is(err, filetree.ErrNotInTree):
+		return nil
+	case errors.Is(err, filetree.ErrMissing):
+		return &ErrorDTO{Kind: errKindNotFound, Message: fmt.Sprintf("File not found: %s", path), Path: path}
+	default:
+		return &ErrorDTO{Kind: errKindPermission, Message: fmt.Sprintf("Cannot access: %s", path), Path: path}
+	}
+}
+
+// editBusyDTO は、編集欄が開いている間に届いたドロップを拒んだことを伝える（IMP-313, IMP-315, FR-140）。
+//
+// **Go が edit-busy を作るのはここだけである。** ほかの操作（文書の切り替え・再読み込み・他の
+// 書き込み）はフロントエンドが Go を呼ばずに拒む（IMP-264）。Linux ではドロップが JavaScript を
+// 通らずに Go へ届くため、フロントエンドだけでは止められない（IMP-313 の IMPORTANT）。
+func editBusyDTO() *ErrorDTO {
+	return &ErrorDTO{
+		Kind:    errKindEditBusy,
+		Message: "Save or cancel the open edit first.",
 	}
 }
 

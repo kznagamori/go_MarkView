@@ -62,9 +62,10 @@ func (a *App) followLink(href string) LinkResultDTO {
 		return linkFailure(href, errLinkNotFound)
 	}
 
-	// 4. Markdown なら表示中のウィンドウで開く。それ以外（画像を含む）は
-	//    OS の既定アプリケーションへ委譲する（FR-053）。
-	if !mdfile.IsMarkdown(abs) {
+	// 4. 開けるファイル（Markdown・図・画像。mdfile.IsOpenable）なら表示中のウィンドウで開く
+	//    （FR-050, FR-053。4.73.0 から画像も MarkView で開く）。それ以外（PlantUML の取り込み用の
+	//    断片 .iuml を含む）は OS の既定アプリケーションへ委譲する（IMP-312）。
+	if !mdfile.IsOpenable(abs) {
 		if err := opener.OpenFile(abs); err != nil {
 			return linkOpenFailure(href, err)
 		}

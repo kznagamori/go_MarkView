@@ -5,13 +5,16 @@ import (
 	"path/filepath"
 
 	"github.com/kznagamori/go_MarkView/internal/applog"
+	"github.com/kznagamori/go_MarkView/internal/session"
 )
 
 // 本ファイルは、バインドメソッドの入口で回復したパニックの扱いを持つ（IMP-022, IMP-310, FR-111）。
 //
-// **種別は IMP-310 に従う。** 文書を開くものは render-error の状態画面、エディタの 3 つは
-// editor-failed（editor.go）、書き込みの 4 つは edit-failed（recoverEdit）、SetEditMode と
-// GetCellSource は通知しない（recoverEditMode / recoverCellSource）。**すべてを状態画面にしない。**
+// **種別は IMP-310 に従う。** 文書を開くもの（OpenFromTree を含む）は render-error の状態画面、エディタの
+// 4 つ（ListEditorsForTree を含む）は editor-failed（editor.go）、書き込みの 6 つは edit-failed
+// （recoverEdit）、SetEditMode・GetCellSource・GetCodeSource は通知しない（recoverEditMode /
+// recoverCellSource / recoverCodeSource）、ツリーの操作は何もしなかったものとする（tree.go の
+// recoverTreeAction）。**すべてを状態画面にしない。**
 
 // recoverBind はパニックをエラーへ変える（IMP-022）。
 //
@@ -72,7 +75,8 @@ func (a *App) recoverLink(href string, res *LinkResultDTO) {
 // **表示履歴とツリールートは回復では動かさない**（IMP-310。パニックは想定外の失敗であり、どこまで
 // 進んだかを推し量らない）。commit へは、どちらも動かさない経路（openFromReload。IMP-192 の表）を
 // 明示して渡す——経路を省くとゼロ値の openFromDialog になり、状態画面を積む規則（BUG-024）で履歴に
-// 積んでツリールートを移してしまう。
+// 積んでツリールートを移してしまう。**回復の後に history:changed を送る**（履歴の写しを Go 側に
+// そろえる。戻る・進むの途中で落ちた場合も、フロントエンドのボタンが Go 側と食い違わない。IMP-323）。
 //
 // **錠は、パニックの時点で解けている。** ioMu と mu を取る箇所は、パニックが途中で起きても
 // defer で解くように書く（open・commit・watch.go、bind.go と history.go の読み出し）。
@@ -94,11 +98,12 @@ func (a *App) openPanicked(errPath, target string, r any) *ErrorDTO {
 		name = filepath.Base(target)
 	}
 	a.setWindowTitle(name)
+	a.changeHistory(func(*session.History) {})
 
 	return newErrorDTO(errPath, c.err)
 }
 
-// recoverEdit は、書き込みの 4 つ（SetTask / SetCell / UndoEdit / RedoEdit）で回復したパニックを
+// recoverEdit は、書き込みの 6 つ（SetTask / SetCell / SetCode / ApplyFormat / UndoEdit / RedoEdit）で回復したパニックを
 // edit-failed として返す（IMP-022, IMP-310）。
 //
 // 結果はステータス領域に出る。render-error の「Failed to render this document.」は状況と合わない。
@@ -145,6 +150,15 @@ func recoverCellSource(res *CellSourceDTO) {
 	if r := recover(); r != nil {
 		applog.Recovered("app.cellsource", r)
 		*res = CellSourceDTO{Stale: true}
+	}
+}
+
+// recoverCodeSource は、GetCodeSource で回復したパニックを通知せず、Stale として返す
+// （IMP-022, IMP-310）。recoverCellSource と同じ扱い。
+func recoverCodeSource(res *CodeSourceDTO) {
+	if r := recover(); r != nil {
+		applog.Recovered("app.codesource", r)
+		*res = CodeSourceDTO{Stale: true}
 	}
 }
 

@@ -8,11 +8,13 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/kznagamori/go_MarkView/internal/applog"
+	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/opener"
 )
 
-// 本ファイルは「エディタで開く」の 3 つのバインドメソッドを持つ
-// （IMP-310, IMP-331, FR-090, FR-091）。
+// 本ファイルは「エディタで開く」のバインドメソッド（ListEditors / BrowseEditor / OpenInEditor /
+// CloseEditor）を持つ（IMP-310, IMP-331, FR-090, FR-091）。ツリーから開く ListEditorsForTree は
+// tree.go（IMP-196）にあり、一覧の組み立て（listEditorsFor）をここと共有する。
 //
 // bind.go から分けているのは、bind.go が既に 400 行を超えており、責務で
 // 分けるべき単位だからである（IMP-011）。link.go と同じ扱いとする。
@@ -23,8 +25,11 @@ import (
 
 // ListEditors は選択ウィンドウの一覧を返す（IMP-310, IMP-331, FR-091）。
 //
-// **画面の対象があるかを見ない**（IMP-331）。一覧を作るだけであり、対象の
-// 有無はボタンの活性で表す（UI-021）。
+// **そのときの画面の対象（target）を editorTarget に控える**（FR-091。4.75.0。利用者の判断）。
+// ウィンドウを開いている間にドロップで文書が切り替わっても（UI-090）、ウィンドウに出ている名前の
+// ファイルを開くためである。**対象が文字のファイルでなければ（画像ファイル・文書未表示）控えは空とし、
+// 一覧を空で返す**（フロントエンドはウィンドウを出さない。IMP-252）。対象が無いことを失敗にしない
+// ——対象の有無はボタンの活性で表す（UI-021, IMP-331）。
 //
 // **起動時に先読みしない。** プリセットの検出はファイルシステムを触るため、
 // 押されるまで行わない（NFR-013）。実行中にエディタがインストール・アン
@@ -32,20 +37,54 @@ import (
 func (a *App) ListEditors() (res EditorListDTO) {
 	defer recoverEditorList(&res)
 
-	// 検出はロックの外で行う（IMP-024）。ファイルシステムを触るため、
-	// その間ほかのバインドメソッドを止める理由がない。
-	editors := opener.Editors()
-
 	a.mu.Lock()
-	// **確定前の候補を捨てる。** 押すたびに選択ウィンドウを出す設計であり
-	// （UI-103）、初期選択は設定に保存されたエディタだけから決まる。前回
-	// Browse したまま閉じた候補が残っていると、利用者には「閉じた場合は
-	// 何も保存しない」（FR-091）が破れたように見える。
+	target := a.target
+	a.mu.Unlock()
+
+	// 状態画面の間も target を使う（current ではない。IMP-190）。状態画面の対象が画像なら空にする。
+	if !mdfile.IsText(target) {
+		target = ""
+	}
+
+	return a.listEditorsFor(target)
+}
+
+// listEditorsFor は target を editorTarget に控え、確定前の候補を捨てて一覧を返す（IMP-310, IMP-196）。
+// ListEditors と ListEditorsForTree が使う。**target が空なら控えも空にし、一覧を空で返す。**
+//
+// **確定前の候補を捨てる。** 押すたびに選択ウィンドウを出す設計であり（UI-103）、初期選択は設定に
+// 保存されたエディタだけから決まる。前回 Browse したまま閉じた候補が残っていると、利用者には
+// 「閉じた場合は何も保存しない」（FR-091）が破れたように見える。
+func (a *App) listEditorsFor(target string) EditorListDTO {
+	a.mu.Lock()
 	a.pendingEditor = ""
+	a.editorTarget = target
 	saved := a.cfg.Editor
 	a.mu.Unlock()
 
-	return newEditorList(editors, saved, "")
+	if target == "" {
+		return EditorListDTO{Editors: []EditorDTO{}}
+	}
+
+	// 検出はロックの外で行う（IMP-024）。ファイルシステムを触るため、
+	// その間ほかのバインドメソッドを止める理由がない。
+	list := newEditorList(opener.Editors(), saved, "")
+	list.FileName = filepath.Base(target)
+	return list
+}
+
+// CloseEditor は、エディタ選択ウィンドウを開かずに閉じたことを受け取る（IMP-310, FR-036, FR-091）。
+//
+// Cancel / Esc / 外のクリックで閉じたときに呼ばれる。**控え（editorTarget）と確定前の候補
+// （pendingEditor）を捨てる。** 通知しない（IMP-310）。
+func (a *App) CloseEditor() {
+	defer recoverQuiet()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.editorTarget = ""
+	a.pendingEditor = ""
 }
 
 // BrowseEditor は実行ファイルを選ぶダイアログを開く（IMP-310, IMP-331）。
@@ -87,19 +126,21 @@ func (a *App) BrowseEditor() (res EditorListDTO) {
 // id はプリセットの ID、または editorCustom。**パスを引数に取らない**
 // （IMP-300 の 3）。
 //
-// **開くのは App.target（画面がいま対象にしているファイル）である**
-// （IMP-190）。表示中の文書（current）ではない。状態画面を出している間
-// current は前に開いていた文書のまま残っており、それを渡すと利用者が見て
-// いるのと違うファイルが静かに開く（NFR-035 の 2）。
+// **開くのは、ウィンドウを開いた時点で控えた editorTarget である**（IMP-190, FR-091。4.75.0）。
+// 表示中の文書（current）ではない——状態画面を出している間 current は前に開いていた文書のまま
+// 残っており、それを渡すと利用者が見ているのと違うファイルが静かに開く（NFR-035 の 2）。v1.1.0 は
+// 押した時点の target を開いており、ウィンドウを開いている間のドロップで文書が切り替わると、
+// ウィンドウに出ている名前と違うファイルが開いた。**起動の成否に関わらず、終わったら控えを捨てる。**
 func (a *App) OpenInEditor(id string) (res EditorResultDTO) {
 	defer recoverEditorResult(&res)
 
 	a.mu.Lock()
-	target, pending, saved := a.target, a.pendingEditor, a.cfg.Editor
+	target, pending, saved := a.editorTarget, a.pendingEditor, a.cfg.Editor
 	a.mu.Unlock()
+	defer a.dropEditorTarget(target)
 
-	// 文書未表示ではボタンが淡色であり（UI-021）通常は起こらないが、
-	// 防御的に扱う（IMP-310）。
+	// ボタンが淡色であり（UI-021）、対象が文字のファイルでなければウィンドウも出ない（IMP-252）ため
+	// 通常は起こらないが、防御的に扱う（IMP-310）。
 	if target == "" {
 		return newEditorResult("", errNoTarget)
 	}
@@ -117,28 +158,56 @@ func (a *App) OpenInEditor(id string) (res EditorResultDTO) {
 	// **起動できたときに初めて保存する**（UI-116, IMP-310）。選んだだけ・
 	// Browse しただけでは保存しない。起動に失敗したエディタを覚えると、
 	// 次回もそれが初期選択になる。
+	a.saveEditor(path)
+
+	return newEditorResult(name, nil)
+}
+
+// saveEditor は起動できたエディタを設定へ入れ、保存を予約する（UI-116, IMP-310）。
+//
+// **錠は defer で解く。** OpenInEditor は defer で控えを捨てる（dropEditorTarget が mu を取る）ため、
+// ここで落ちて mu が残ると、その defer が止まる。
+func (a *App) saveEditor(path string) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.cfg.Editor = path
 	// 絶対パス以外を保持しない（IMP-153）。ここへ来る値は絶対パスだが、
 	// 設定へ入れる経路はすべて同じ規則を通す。
 	a.cfg.Normalize()
 	a.scheduleSave()
-	a.mu.Unlock()
+}
 
-	return newEditorResult(name, nil)
+// dropEditorTarget は、OpenInEditor が使った控えを捨てる（IMP-190）。
+//
+// **控えが、開くのに使った値（used）のままのときだけ捨てる。** 起動の間に一覧（ListEditors）が控えを
+// 作り直していれば、それを残す。
+func (a *App) dropEditorTarget(used string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.editorTarget == used {
+		a.editorTarget = ""
+	}
 }
 
 // editorList は現在の状態から一覧を組み立てる（IMP-309, UI-103）。
 //
-// BrowseEditor が使う。**確定前の候補を捨てない**点が ListEditors と異なる。
+// BrowseEditor が使う。**確定前の候補を捨てない**点が ListEditors と異なる。**控えた対象のベース名
+// （FileName）も載せる**——フロントエンドは戻り値で一覧全体を描き直すため、空にすると名前が消える
+// （IMP-309, IMP-252。4.76.0）。
 func (a *App) editorList() EditorListDTO {
 	editors := opener.Editors()
 
 	a.mu.Lock()
-	saved, pending := a.cfg.Editor, a.pendingEditor
+	saved, pending, target := a.cfg.Editor, a.pendingEditor, a.editorTarget
 	a.mu.Unlock()
 
-	return newEditorList(editors, saved, pending)
+	list := newEditorList(editors, saved, pending)
+	if target != "" {
+		list.FileName = filepath.Base(target)
+	}
+	return list
 }
 
 // resolveEditor は ID を実行ファイルの絶対パスと表示名へ解決する

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/kznagamori/go_MarkView/internal/document"
+	"github.com/kznagamori/go_MarkView/internal/mdfile"
 )
 
 // 本ファイルは編集モードのバインドメソッドを持つ（IMP-195, IMP-316, FR-140〜FR-144）。
@@ -26,6 +27,15 @@ import (
 //
 // **開始できなかった場合も失敗として通知しない**（ボタンは淡色のはずである。UI-021）。結果の
 // 状態と版を返し、フロントエンドはそれを写す（IMP-260）。
+//
+// **編集モードを始めたら（編集モードでない状態から始めたとき）、表示中の文書が Markdown なら、同じ
+// ioMu の内側で修飾の目印付きで描き直し、document:changed を送る**（IMP-195, IMP-120。4.75.0。利用者の
+// 判断）。openLocked（trigger は reload）を呼び、**鍵は引き継がない**（描き直しは自分の書き込みでは
+// ない。FR-143）。描き直しが届くまでの間に押したチェックボックスは Stale で戻る（通知しない）。
+// **図のファイルでは描き直さない**——修飾の目印を付けない（FR-146 の対象外）ため、図を描き直すだけに
+// なる。読み直しに失敗したら、書き込みと同じく error イベントを送る（reloadAfterEdit）。
+// **編集モードを終えても描き直さない**（利用者の判断。残った修飾の目印は次の再描画で消え、編集モード
+// でない指示は Go 側が拒む。IMP-109 の 1）。
 func (a *App) SetEditMode(on bool) (res EditModeDTO) {
 	defer a.recoverEditMode(&res)
 
@@ -36,12 +46,35 @@ func (a *App) SetEditMode(on bool) (res EditModeDTO) {
 
 	if on {
 		current, showing := a.shownDocument()
-		a.edit.Start(current, showing)
+		// Start は既に編集モードの間も真を返す（ボタンの二重押しで履歴を消さない。IMP-109）。
+		// 描き直すのは、いま始めたときだけにする。
+		wasOn := a.edit.On()
+		if a.edit.Start(current, showing) && !wasOn && current.Kind == mdfile.KindMarkdown {
+			// TextRefs は開く処理が決める（編集モードの間・表示中・同じファイル。IMP-192）。
+			a.reloadAfterEdit(current, openRequest{path: current.Path, src: openFromReload, trigger: triggerReload})
+		}
 	} else {
 		a.edit.Stop()
 	}
 
 	return EditModeDTO{On: a.edit.On(), Seq: a.edit.Seq()}
+}
+
+// SetEditBoxOpen は、フロントエンドで編集欄（セル・コードブロック）が開いたか閉じたかを受け取る
+// （IMP-310, IMP-195, FR-140。4.75.0）。
+//
+// **ドロップを拒むためにだけある。** 値は App.editBoxOpen に写し、ドロップの受け口（IMP-313）だけが
+// 読む。Linux ではドロップが JavaScript を通らずに Go へ届くため、フロントエンドだけでは止められない。
+// **書き込みの判断には使わない**（Go 側の判断は IMP-109）。フロントエンドから渡すのは真偽値だけで、
+// パスも目印も受け取らない。通知しない（IMP-310）。フロントエンドは前の呼び出しの応答を待ってから
+// 次を送る（到着順が入れ替わりうるため。IMP-264）。
+func (a *App) SetEditBoxOpen(open bool) {
+	defer recoverQuiet()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.editBoxOpen = open
 }
 
 // SetTask はチェックボックスを書き換える（IMP-310, FR-141, FR-143）。
@@ -56,6 +89,37 @@ func (a *App) SetCell(ref string, text string) (res EditResultDTO) {
 	defer a.recoverEdit(&res)
 
 	return a.writeEdit(document.Op{Kind: document.OpCell, Ref: ref, Text: text})
+}
+
+// SetCode はコードブロック・図の中身を書き換える（IMP-310, FR-145, FR-143）。
+//
+// text は編集欄の値（前置きを除き、改行は LF。IMP-122）。前置きと改行コードの書き戻し・囲いの延長・
+// 確かめは document.PlanCode が行う。
+func (a *App) SetCode(ref string, text string) (res EditResultDTO) {
+	defer a.recoverEdit(&res)
+
+	return a.writeEdit(document.Op{Kind: document.OpCode, Ref: ref, Text: text})
+}
+
+// ApplyFormat は選んだ文字に取り消し線・文字色を付ける・外す（IMP-310, FR-146, FR-147, FR-143）。
+//
+// start / end はブロックの見える文字の中の **Unicode の符号位置での位置**（半開区間）、visible はその
+// ブロックの見える文字の全体（IMP-123, IMP-266, IMP-316）。Go 側が組み立てたものと 1 文字でも違えば
+// Stale（FR-146）。style の値の検査は document.PlanFormat が行い、フロントエンドを信頼しない。
+// **成功して手書きの取り消し線を全体で外したときは Notice に format-widened を載せる**（writeEdit）。
+func (a *App) ApplyFormat(ref string, start, end int, visible string, style FormatStyleDTO) (res EditResultDTO) {
+	defer a.recoverEdit(&res)
+
+	return a.writeEdit(document.Op{
+		Kind: document.OpFormat,
+		Ref:  ref,
+		Format: document.FormatOp{
+			Start:   start,
+			End:     end,
+			Visible: visible,
+			Style:   document.FormatStyle{Strike: style.Strike, Color: style.Color},
+		},
+	})
 }
 
 // UndoEdit は直前の書き換えを取り消す（IMP-310, FR-144）。
@@ -83,34 +147,71 @@ func (a *App) RedoEdit() (res EditResultDTO) {
 func (a *App) GetCellSource(ref string) (res CellSourceDTO) {
 	defer recoverCellSource(&res)
 
+	text, errDTO, stale := a.editSource(document.Op{Kind: document.OpCell, Ref: ref},
+		func(_ *document.Document, raw []byte) (string, error) {
+			return a.edit.CellSource(a.renderer, raw, ref)
+		})
+
+	return CellSourceDTO{Text: text, Stale: stale, Error: errDTO}
+}
+
+// GetCodeSource はコードブロック・図の編集欄に入れるソースを返す（IMP-310, IMP-195, FR-145）。
+//
+// GetCellSource と同じ手順を踏む（食い違えば edit-conflict として読み直す。読めない・古い指示は
+// Stale）。**前置きが行ごとに違うブロック（document.ErrLocked）は code-locked を返す**——編集欄を
+// 開かず、警告を出す（FR-145）。種類は表示中の文書のもの（Markdown の中のブロックか図のファイルか）。
+func (a *App) GetCodeSource(ref string) (res CodeSourceDTO) {
+	defer recoverCodeSource(&res)
+
+	text, errDTO, stale := a.editSource(document.Op{Kind: document.OpCode, Ref: ref},
+		func(current *document.Document, raw []byte) (string, error) {
+			return a.edit.CodeSource(a.renderer, raw, current.Kind, ref)
+		})
+
+	return CodeSourceDTO{Text: text, Stale: stale, Error: errDTO}
+}
+
+// editSource は編集欄に入れるソースを取り出す（GetCellSource / GetCodeSource。IMP-195）。
+// **呼び出し元は ioMu を持たないこと**（ここで取る）。
+//
+// 書き込みの 1〜3 と同じ手順を踏み、get でソースを取り出す。戻り値は (ソース, 知らせる ErrorDTO, Stale)。
+//
+//	1, 2. 指示を作った描画がいまの描画でない（Check）              → Stale
+//	3.    実体の解決・読み込みの失敗                                → Stale（edit-failed の文言は合わない）
+//	4.    把握している内容と一致しない（ErrChanged）                → edit-conflict（読み直す。resolveConflict）
+//	      前置きが行ごとに違うコードブロック（ErrLocked）           → code-locked
+//	      それ以外の失敗（古い指示・編集できないもの）              → Stale
+func (a *App) editSource(op document.Op, get func(*document.Document, []byte) (string, error)) (string, *ErrorDTO, bool) {
 	a.ioMu.Lock()
 	defer a.ioMu.Unlock()
 
 	// 1, 2. 指示を作った描画がいまの描画か（IMP-109 の Check）。
 	current, showing := a.shownDocument()
-	if a.edit.Check(current, showing, document.Op{Kind: document.OpCell, Ref: ref}) != nil {
-		return CellSourceDTO{Stale: true}
+	if a.edit.Check(current, showing, op) != nil {
+		return "", nil, true
 	}
 
 	// 3. 実体を読む。
 	_, raw, err := readForEdit(current.Path)
 	if err != nil && !errors.Is(err, document.ErrChanged) {
-		return CellSourceDTO{Stale: true}
+		return "", nil, true
 	}
 
-	// 4. 把握している内容と一致するかを確かめてから、セルのソースを取り出す。
+	// 4. 把握している内容と一致するかを確かめてから、ソースを取り出す。
 	text := ""
 	if err == nil {
-		text, err = a.edit.CellSource(a.renderer, raw, ref)
+		text, err = get(current, raw)
 	}
 	switch {
 	case errors.Is(err, document.ErrChanged):
-		return CellSourceDTO{Error: a.resolveConflict(current)}
+		return "", a.resolveConflict(current), false
+	case errors.Is(err, document.ErrLocked):
+		return "", newEditErrorDTO(current.Path, err), false
 	case err != nil:
-		return CellSourceDTO{Stale: true}
+		return "", nil, true
 	}
 
-	return CellSourceDTO{Text: text}
+	return text, nil, false
 }
 
 // writeEdit は書き込みの処理（IMP-195 の表の 1〜8）を行う。**呼び出し元は ioMu を持たないこと。**
@@ -136,11 +237,11 @@ func (a *App) writeEdit(op document.Op) EditResultDTO {
 
 	// 4, 5. 把握している内容と一致するかを確かめ、書き換えを作る（IMP-109 の Plan）。
 	// 構文解析は mu の外で行う（ioMu の内側ではある）。
+	// 種類は表示中の文書のもの（コードブロックと図の書き換えが Markdown と図のファイルで分かれる）。
 	var patch document.Patch
-	changed := false
+	changed, widened := false, false
 	if err == nil {
-		// TODO(v1.2.0): 表示中の文書の種類を渡し、widened（IMP-124）で format-widened の警告を出す。
-		patch, changed, _, err = a.edit.Plan(a.renderer, raw, current.Kind, op)
+		patch, changed, widened, err = a.edit.Plan(a.renderer, raw, current.Kind, op)
 	}
 	switch {
 	case errors.Is(err, document.ErrChanged):
@@ -148,8 +249,9 @@ func (a *App) writeEdit(op document.Op) EditResultDTO {
 	case errors.Is(err, document.ErrStale):
 		return EditResultDTO{Stale: true}
 	case err != nil:
-		// 表の形の確かめで拒んだ（ErrNotEditable）。**黙って戻すと確定した入力が通知も無く
-		// 消える**（FR-142, FR-110）。
+		// 確かめで拒んだ（ErrRejected / ErrLocked / ErrCannotFormat）・不正なバイト列や位置の
+		// 食い違い（ErrNotEditable）。**黙って戻すと確定した入力が通知も無く消える**
+		// （FR-142, FR-110）。種別は newEditErrorDTO が分ける（IMP-315）。
 		return EditResultDTO{Error: newEditErrorDTO(current.Path, err)}
 	case !changed:
 		// 内容が変わらない・取り消すものが無い。何も書かない（FR-142, FR-144）。
@@ -170,8 +272,12 @@ func (a *App) writeEdit(op document.Op) EditResultDTO {
 		return EditResultDTO{Error: newEditErrorDTO(current.Path, err)}
 	}
 
-	// 7. 履歴を確定する。
+	// 7. 履歴を確定する。手書きの取り消し線を全体で外したら、成功のうえで知らせる（FR-146。警告）。
 	a.edit.Commit(op, patch, after)
+	res := EditResultDTO{Changed: true}
+	if widened {
+		res.Notice = errKindFormatWidened
+	}
 
 	// 8. **監視のイベントを待たずに読み直して送る**（FR-014, AR-061）。内容が書き込んだものと
 	// 一致すれば鍵を引き継ぐ（IMP-102）——引き継がないと、画面の目印が古くなって続けてクリック
@@ -185,7 +291,7 @@ func (a *App) writeEdit(op document.Op) EditResultDTO {
 		expectDigest: sha256.Sum256(after),
 	})
 
-	return EditResultDTO{Changed: true}
+	return res
 }
 
 // resolveConflict は、書き込む前にファイルが変更されていたときの処理（IMP-195 の 4）を行い、

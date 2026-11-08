@@ -18,6 +18,14 @@ import (
 // 結果は document:opened で送る。フロントエンドの呼び出しではなく OS の
 // 操作で表示対象が変わるためである（IMP-320）。
 func (a *App) onFileDrop(paths []string) {
+	// **編集欄が開いている間は、開かずに拒み、ツリールートも変えない**（FR-140, IMP-313。4.75.0）。
+	// Linux ではドロップが JavaScript を通らずにここへ届くため、フロントエンドだけでは止められない
+	// （IMP-313 の IMPORTANT）。値はフロントエンドが SetEditBoxOpen で知らせたもの。
+	if a.editBoxIsOpen() {
+		a.emit(eventError, editBusyDTO())
+		return
+	}
+
 	root := dropRoot(paths)
 	if root != "" {
 		a.mu.Lock()
@@ -39,7 +47,7 @@ func (a *App) onFileDrop(paths []string) {
 			return
 		}
 
-		// Markdown でもディレクトリでもない。ツリーも本文も変えず、
+		// 開けるファイルでもディレクトリでもない。ツリーも本文も変えず、
 		// 対応していない旨をステータスへ出す（FR-011 の表の 4 行目）。
 		a.emit(eventError, newErrorDTO(firstPath(paths), document.ErrNotSupported))
 		return
@@ -54,6 +62,14 @@ func (a *App) onFileDrop(paths []string) {
 	a.emit(eventDocumentOpened, dto)
 }
 
+// editBoxIsOpen は、フロントエンドで編集欄が開いているかを返す（App.editBoxOpen。IMP-190, IMP-313）。
+func (a *App) editBoxIsOpen() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.editBoxOpen
+}
+
 // firstPath は一覧の先頭を返す。空なら空文字。
 func firstPath(paths []string) string {
 	if len(paths) == 0 {
@@ -64,12 +80,13 @@ func firstPath(paths []string) string {
 
 // dropTarget はドロップされたパスから開く対象を選ぶ（IMP-313, FR-011）。
 //
-// **判定は Go 側で行う**（IMP-300）。複数渡された場合は先頭の Markdown を
-// 採り、他は無視する。ディレクトリなら直下の README を探す。対象がなければ
-// 空文字を返す。
+// **判定は Go 側で行う**（IMP-300）。対象は開けるファイル（Markdown・図・画像。
+// mdfile.IsOpenable。4.75.0）であり、複数渡された場合は先頭の開けるファイルを採り、
+// 他は無視する。ディレクトリなら直下の README を探す（**README は Markdown のまま**。
+// FR-013 と同じ探し方。IMP-193）。対象がなければ空文字を返す。
 func dropTarget(paths []string) string {
 	for _, p := range paths {
-		if mdfile.IsMarkdown(p) {
+		if mdfile.IsOpenable(p) {
 			return p
 		}
 	}

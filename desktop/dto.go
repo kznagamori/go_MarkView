@@ -3,9 +3,7 @@ package desktop
 import (
 	"path/filepath"
 
-	"github.com/kznagamori/go_MarkView/internal/config"
 	"github.com/kznagamori/go_MarkView/internal/document"
-	"github.com/kznagamori/go_MarkView/internal/filetree"
 	"github.com/kznagamori/go_MarkView/internal/renderer"
 )
 
@@ -17,7 +15,8 @@ import (
 //
 // app.go から分けているのは、型定義と合わせると 400 行を超えるためである（IMP-011）。
 // 同じ理由で、外部エディタは dto_editor.go、編集モードは dto_editmode.go（IMP-316）、
-// 情報ダイアログは dto_about.go に分けている。
+// 情報ダイアログは dto_about.go、ファイルツリーと履歴は dto_tree.go（IMP-304, IMP-317, IMP-323）、
+// 起動直後の状態と設定は dto_state.go（IMP-303）に分けている。
 
 // documentEncoding は読み込んだ文書の文字コード（IMP-302）。
 //
@@ -33,10 +32,12 @@ const documentEncoding = "UTF-8"
 // フロントエンドは triggerEdit のときだけ、並べ替えを並べ直さずに行の並びを保つ（FR-130,
 // IMP-229）。それ以外の用途に使わない。
 const (
-	triggerOpen   = "open"   // ダイアログ・ドロップ・引数・ツリー・リンク・履歴・確認画面の Open anyway
-	triggerReload = "reload" // 手動の再読み込み（FR-015）と、書き込み前の不一致による読み直し（IMP-195 の 4）
-	triggerWatch  = "watch"  // ファイル更新の自動検知（FR-014）
-	triggerEdit   = "edit"   // 編集モードの書き込み・取り消し・やり直しの直後の読み直し（IMP-195 の 8）
+	triggerOpen = "open" // ダイアログ・ドロップ・引数・ツリー・リンク・履歴・確認画面の Open anyway
+	// triggerReload は手動の再読み込み（FR-015）と、書き込み前の不一致による読み直し（IMP-195 の 4）と、
+	// 編集モードを始めたときの修飾の目印付きの描き直し（IMP-195。自分の書き込みではない）。
+	triggerReload = "reload"
+	triggerWatch  = "watch" // ファイル更新の自動検知（FR-014）
+	triggerEdit   = "edit"  // 編集モードの書き込み・取り消し・やり直しの直後の読み直し（IMP-195 の 8）
 )
 
 // ScrollDTO.Mode の値（IMP-302）。
@@ -73,10 +74,14 @@ const (
 //
 // フロントエンドはこの値で strings.js の文言を選ぶ。**値とキーは 1 対 1 で
 // 対応させる**（IMP-290）。
+//
+// **Go 側が作る種別だけをここに置く。** edit-held / edit-removed / removed-editing /
+// encoding-editing は編集欄の状態からフロントエンドだけが決める（IMP-315。編集欄は
+// フロントエンドにしか無い）ため、Go に値を持たない。
 const (
 	errKindNotFound     = "not-found"
 	errKindPermission   = "permission"
-	errKindNotMarkdown  = "not-markdown"
+	errKindNotSupported = "not-supported" // 開けない種類のファイル（4.75.0。v1.1.0 は「Markdown でない」の種別だった）
 	errKindNeedsConfirm = "needs-confirm"
 	errKindTooLarge     = "too-large"
 	errKindRenderError  = "render-error"
@@ -88,9 +93,16 @@ const (
 	errKindEncoding     = "encoding"
 
 	// v1.1.0。どれもステータスに出す種別であり、状態画面にしない（IMP-315）。
-	errKindOpenFailed   = "open-failed"   // リンク先を OS へ委譲できない（FR-053。BUG-013）
+	errKindOpenFailed   = "open-failed"   // リンク先・ファイルマネージャを OS へ委譲できない（FR-053, FR-036。BUG-013）
 	errKindEditConflict = "edit-conflict" // 書き込む前にファイルが変更されていた（FR-143）
-	errKindEditFailed   = "edit-failed"   // 書き込めない・表の形の確かめで拒んだ（FR-142, FR-143）
+	errKindEditFailed   = "edit-failed"   // 書き込めない・不正なバイト列・位置の食い違い（FR-143）
+
+	// v1.2.0（4.75.0）。どれもステータスに警告として出す（IMP-315, DSP-151）。
+	errKindEditRejected   = "edit-rejected"   // 書き込む内容の確かめで拒んだ（document.ErrRejected。FR-143）
+	errKindCodeLocked     = "code-locked"     // 前置きが行ごとに違うコードブロック（document.ErrLocked。FR-145）
+	errKindFormatRejected = "format-rejected" // 修飾を分けられない・確かめで拒んだ（document.ErrCannotFormat。FR-146）
+	errKindFormatWidened  = "format-widened"  // 手書きの取り消し線を全体で外した（EditResultDTO.Notice。FR-146）
+	errKindEditBusy       = "edit-busy"       // 編集欄が開いている間のドロップを拒んだ（IMP-313。FR-140）
 )
 
 // ScrollDTO は描画後のスクロール指示（IMP-302）。
@@ -147,6 +159,20 @@ type DocumentDTO struct {
 	// EditSeq は編集モードの状態の版（EditSession.Seq）。フロントエンドは、それまでに受け取った
 	// 版より小さければ Editable / EditMode を写さない（到着順が決まっていないため。IMP-260）。
 	EditSeq uint64 `json:"editSeq"`
+
+	// v1.2.0（FR-025〜FR-027, FR-145〜FR-147。4.75.0）。
+
+	// Kind は文書の種類（"markdown" | "plantuml" | "mermaid" | "image"。IMP-105）。**フロントエンドは
+	// 文書の種類による違いをこれだけで決める**——class="image-file" の有無で判断しない（生 HTML でも
+	// 同じ class を書ける。IMP-128）。
+	Kind string `json:"kind"`
+	// FileSize はファイルの大きさ（バイト）。画像ファイルのステータス表示に使う（UI-060, DSP-150）。
+	FileSize int64 `json:"fileSize"`
+	// NoDiagrams は、図のファイルで図が 1 つも無いか（No diagrams found. を出す。IMP-126, IMP-127）。
+	NoDiagrams bool `json:"noDiagrams"`
+	// TextRefs は修飾の目印（text:<n>）を付けた描画か（IMP-120）。**真のときだけ修飾の操作を使える**
+	// （IMP-265）。編集モードを始めた直後は、目印付きの描き直し（IMP-195）が届くまで偽である。
+	TextRefs bool `json:"textRefs"`
 }
 
 // documentView は DocumentDTO のうち、文書そのものではなく「どう表示するか」を決める値
@@ -161,55 +187,6 @@ type documentView struct {
 	editable     bool   // EditSession.CanStart
 	editMode     bool   // EditSession.On
 	editSeq      uint64 // EditSession.Seq
-}
-
-// ConfigDTO はフロントエンドへ渡す設定（IMP-303）。
-//
-// **表示倍率を含めない。** 倍率は保存しない（UI-111, UI-115）ため、往路では
-// 渡すものがなく、復路でも Go 側に受け取る先がない（IMP-150）。倍率は
-// フロントエンドの state だけが持つ（IMP-210, IMP-242）。
-//
-// **ウィンドウの大きさも含めない。** 保存の直前に Wails のランタイムから
-// 直接読み出す（IMP-194）。最大化状態はそもそも保存しない（UI-111）。
-type ConfigDTO struct {
-	Theme           string `json:"theme"` // "light" | "dark"（解決済み。FR-071）
-	OutlineVisible  bool   `json:"outlineVisible"`
-	FileTreeVisible bool   `json:"fileTreeVisible"`
-	OutlineWidth    int    `json:"outlineWidth"`
-	FileTreeWidth   int    `json:"fileTreeWidth"`
-}
-
-// InitialStateDTO は起動直後にフロントエンドが必要とするすべてを返す
-// （IMP-303, FR-012, FR-013, UI-110）。
-type InitialStateDTO struct {
-	Config   ConfigDTO    `json:"config"`
-	TreeRoot string       `json:"treeRoot"` // 絶対パス。未確定なら空文字
-	Document *DocumentDTO `json:"document"` // 表示対象がなければ null
-
-	// StateKind は本文ペインに出す状態画面の種別（IMP-250）。
-	//
-	// welcome 以外になるのは、起動時の引数に大きすぎるファイルや壊れた
-	// ファイルが指定された場合である（FR-012）。起動経路のためだけの専用画面を
-	// 作らず、通常の状態画面と同じ処理で描画させる。
-	StateKind string    `json:"stateKind"`
-	Error     *ErrorDTO `json:"error"` // 状態画面に数値などを要する場合
-}
-
-// TreeNodeDTO はファイルツリーの 1 要素（IMP-304）。
-//
-// 子ノードは含めない。展開のたびに ReadDir を呼ぶ（FR-032 の遅延展開）。
-type TreeNodeDTO struct {
-	Name  string `json:"name"`
-	Path  string `json:"path"` // 絶対パス（IMP-025）
-	IsDir bool   `json:"isDir"`
-
-	// HasChild は展開可能かを示す（FR-032 の先読み結果）。
-	HasChild bool `json:"hasChild"`
-
-	// Omitted は **その要素が属する一覧から件数上限で除かれた数**
-	// （IMP-130, FR-032）。切り詰めが起きた場合、返すすべての要素に同じ値が入る。
-	// フロントエンドは先頭の要素を見て、末尾に `… and N more` を出す（DSP-112）。
-	Omitted int `json:"omitted"`
 }
 
 // OpenResultDTO は文書を開く操作の結果（IMP-308）。
@@ -268,6 +245,12 @@ type ErrorDTO struct {
 	// パスが残っていた**（BUG-012）。ステータスに出す種別では空のまま（表示を変えない失敗）。
 	DisplayPath string `json:"displayPath"`
 	OutsideTree bool   `json:"outsideTree"`
+
+	// TargetKind は、状態画面の対象の種類（mdfile.KindOf の文字列。IMP-105, IMP-307。4.75.0）。
+	// DisplayPath と同じく**状態画面を出す種別でだけ**設定する。状態画面では DocumentDTO.Kind が
+	// 届かず、フロントエンドは拡張子から種類を判断しない（IMP-300 の 2）。大きすぎる画像の状態画面で
+	// 「エディタで開く」を淡色にするためにある（UI-021, IMP-202）。
+	TargetKind string `json:"targetKind"`
 }
 
 // newDocumentDTO は Document を DTO へ写す（IMP-302）。
@@ -299,6 +282,11 @@ func newDocumentDTO(doc *document.Document, v documentView) *DocumentDTO {
 		Editable:     v.editable,
 		EditMode:     v.editMode,
 		EditSeq:      v.editSeq,
+
+		Kind:       string(doc.Kind),
+		FileSize:   doc.Size,
+		NoDiagrams: doc.NoDiagrams,
+		TextRefs:   doc.TextRefs,
 	}
 }
 
@@ -327,39 +315,4 @@ func warningKinds(warnings []document.Warning) []string {
 	}
 
 	return kinds
-}
-
-// newTreeNodeDTOs は filetree の結果を DTO の並びへ写す（IMP-304）。
-//
-// HasChild はディレクトリかどうかと一致する。ReadDir が Markdown を含まない
-// ディレクトリを既に除いており（FR-031, IMP-133）、残ったディレクトリは
-// すべて展開する価値があるためである。
-func newTreeNodeDTOs(nodes []filetree.Node) []TreeNodeDTO {
-	dtos := make([]TreeNodeDTO, 0, len(nodes))
-
-	for _, n := range nodes {
-		dtos = append(dtos, TreeNodeDTO{
-			Name:     n.Name,
-			Path:     n.Path,
-			IsDir:    n.IsDir,
-			HasChild: n.IsDir,
-			Omitted:  n.Omitted,
-		})
-	}
-
-	return dtos
-}
-
-// newConfigDTO は設定をフロントエンドへ渡す形へ写す（IMP-303）。
-//
-// theme は OS 設定への追従（FR-071）まで解決した値を渡す。フロントエンドで
-// prefers-color-scheme を判定して上書きさせないためである。
-func newConfigDTO(cfg config.Config, theme string) ConfigDTO {
-	return ConfigDTO{
-		Theme:           theme,
-		OutlineVisible:  cfg.OutlineVisible,
-		FileTreeVisible: cfg.FileTreeVisible,
-		OutlineWidth:    cfg.OutlineWidth,
-		FileTreeWidth:   cfg.FileTreeWidth,
-	}
 }

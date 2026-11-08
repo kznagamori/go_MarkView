@@ -20,9 +20,15 @@ import (
 const editorCustom = "custom"
 
 // EditorListDTO はエディタ選択ウィンドウの中身（IMP-309, UI-103）。
+//
+// **FileName は表示だけのためにある**（UI-103 の「項目を追加してはならない」に当たらない）。
+// ウィンドウを開いた時点で控えた対象（editorTarget）のベース名であり、パスを載せない。
+// **Editors が空なら、フロントエンドはウィンドウを出さない**（対象が文字のファイルでない・
+// ツリーの検査を通らなかった。IMP-310, IMP-196）。
 type EditorListDTO struct {
-	Editors []EditorDTO `json:"editors"`
-	Error   *ErrorDTO   `json:"error"`
+	Editors  []EditorDTO `json:"editors"`
+	FileName string      `json:"fileName"` // 開くファイルのベース名（UI-103。4.75.0）
+	Error    *ErrorDTO   `json:"error"`
 }
 
 // EditorDTO は一覧の 1 行（IMP-309）。
