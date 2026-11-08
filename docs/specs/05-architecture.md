@@ -52,7 +52,7 @@ WebView は、アプリケーションとは別に**自身のデータ領域**�
 | OS | 位置 | 指定手段 |
 | --- | --- | --- |
 | Windows | `%TEMP%\MarkView\webview2`（この下に WebView2 が `EBWebView` を作る） | あり（IMP-193） |
-| Linux | WebKitGTK の既定に従う。**`$XDG_DATA_HOME/MarkView`**（既定 `~/.local/share/MarkView`。中に `storage` / `mediakeys`）と **`$XDG_CACHE_HOME/MarkView`**（既定 `~/.cache/MarkView`。中に `WebKitCache` / `CacheStorage`）。**`v1.1.0-rc.2` の L1 の実測は 36 KiB と 64 KiB**（2026-09-27。rc.1 と rc.2 の手動テストの後。E2E-313 の手順 8） | **無い**（下記） |
+| Linux | WebKitGTK の既定に従う。**`$XDG_DATA_HOME/MarkView`**（既定 `~/.local/share/MarkView`。中に `storage` / `mediakeys`）と **`$XDG_CACHE_HOME/MarkView`**（既定 `~/.cache/MarkView`。中に `WebKitCache` / `CacheStorage`）。**`v1.1.0-rc.4` の L1 の実測は 48 KiB と 64 KiB**（2026-10-04。rc.1〜rc.4 の手動テストの後。E2E-313 の手順 8。4.83.0）。`storage` の中は `salt`（8 バイト）と `<オリジンのハッシュ>/<同>/origin`（42 バイト）の 2 つだけで、**文書のパスや履歴は無い**（利用者が一覧した。MarkView の JS と同梱資産は保存の API を使っていない）。rc.2 の時点の実測は 36 KiB と 64 KiB だった | **無い**（下記） |
 
 - 数十 MB 規模になりうる。消えても支障がなく、次回起動時に作り直される。テンポラリに置く前提と矛盾しない。
 - 複数のインスタンスがこの領域を共有する。同時に起動しても破綻しないこと（UI-115）。
