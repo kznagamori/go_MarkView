@@ -70,7 +70,7 @@ func (a *App) recoverLink(href string, res *LinkResultDTO) {
 // ——前の文書のまま残すと、F5 と「エディタで開く」が画面に無い前の文書を指す（IMP-190）。
 //
 // **錠は、パニックの時点で解けている。** ioMu と mu を取る箇所は、パニックが途中で起きても
-// defer で解くように書く（open・commit・watch.go、bind.go の読み出し）。
+// defer で解くように書く（open・commit・watch.go、bind.go と history.go の読み出し）。
 func (a *App) openPanicked(errPath, target string, r any) *ErrorDTO {
 	err := fmt.Errorf("%w: %v", errPanic, r)
 	if target != "" {

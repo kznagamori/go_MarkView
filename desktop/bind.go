@@ -163,57 +163,6 @@ func (a *App) FollowLink(href string) (res LinkResultDTO) {
 	return a.followLink(href)
 }
 
-// HistoryBack は 1 つ前の文書へ戻る（IMP-310, FR-051）。
-//
-// 戻れない場合は nil を返す。フロントエンドはボタンを無効化しているが、
-// ショートカットからも呼ばれるため Go 側でも端を守る。
-func (a *App) HistoryBack() (res OpenResultDTO) {
-	var path string
-	defer a.recoverOpen(&path, &res)
-
-	entry, ok := a.historyStep((*session.History).Back)
-	if !ok {
-		return OpenResultDTO{}
-	}
-	path = entry.Path
-
-	return a.openHistory(entry)
-}
-
-// HistoryForward は戻る前の文書へ進む（IMP-310, FR-051）。
-func (a *App) HistoryForward() (res OpenResultDTO) {
-	var path string
-	defer a.recoverOpen(&path, &res)
-
-	entry, ok := a.historyStep((*session.History).Forward)
-	if !ok {
-		return OpenResultDTO{}
-	}
-	path = entry.Path
-
-	return a.openHistory(entry)
-}
-
-// historyStep は mu の内側で履歴を 1 つ動かす（FR-051）。
-//
-// **錠は defer で解く。** 途中でパニックが起きても、回復（openPanicked）が錠を取れるようにする。
-func (a *App) historyStep(step func(*session.History) (session.Entry, bool)) (session.Entry, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	return step(a.history)
-}
-
-// openHistory は履歴のエントリを開く（FR-051, IMP-192）。
-func (a *App) openHistory(entry session.Entry) OpenResultDTO {
-	return a.openResult(entry.Path, openRequest{
-		path:      entry.Path,
-		src:       openFromHistory,
-		anchor:    entry.Anchor,
-		scrollTop: entry.ScrollTop,
-	})
-}
-
 // Reload は画面の対象（target）を読み直す（IMP-310, FR-015）。
 //
 // **表示中の文書（current）を開き直さない。** 状態画面の間はその対象をもう一度開く

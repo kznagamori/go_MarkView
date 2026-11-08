@@ -99,8 +99,8 @@ type openCommit struct {
 // open は ioMu を取って openLocked を呼ぶ（IMP-192）。
 //
 // バインドメソッド・ドロップ・監視のイベントはこちらを呼ぶ。**ioMu を持っている呼び出し元
-// （IMP-195 の書き込みの前後の読み直し）は openLocked を呼ぶ**——sync.Mutex は再入できず、
-// open を呼ぶと止まる（IMP-190）。
+// （IMP-195 の書き込みの前後の読み直し、IMP-191 の戻る・進む）は openLocked を呼ぶ**——
+// sync.Mutex は再入できず、open を呼ぶと止まる（IMP-190）。
 func (a *App) open(req openRequest) (*DocumentDTO, error) {
 	a.ioMu.Lock()
 	defer a.ioMu.Unlock()
@@ -118,6 +118,18 @@ func (a *App) open(req openRequest) (*DocumentDTO, error) {
 // **(nil, nil) を返すのは、監視のイベントで読み直した内容が表示中のものと同じだったときだけ**
 // である（IMP-321）。呼び出し元は何も送らない。
 func (a *App) openLocked(req openRequest) (*DocumentDTO, error) {
+	dto, _, err := a.openOutcome(req)
+	return dto, err
+}
+
+// openOutcome は openLocked の本体であり、結果の 3 分類（openOutcome）も返す（IMP-192）。
+// **呼び出し元は ioMu を持っていること。**
+//
+// 戻る・進む（IMP-191 の手順）は、この分類で Step と Drop を選ぶ——**開けなかった（outcomeKept）
+// ときだけ取り除き、状態画面（outcomeState）は「開けた」に入れる**（BUG-023 と BUG-024 を区別する）。
+// 分類はエラーの形から推し量らず、開く処理が決めた値をそのまま渡す（classifyOpen の 1 か所）。
+// 監視のイベントで同じ内容だったとき（(nil, nil)）は、何も変えていないので outcomeKept とする。
+func (a *App) openOutcome(req openRequest) (*DocumentDTO, openOutcome, error) {
 	req.trigger = triggerOf(req)
 	before := a.openedBefore()
 
@@ -141,7 +153,7 @@ func (a *App) openLocked(req openRequest) (*DocumentDTO, error) {
 	// **current を差し替えない**——差し替えると鍵だけが新しくなり、画面の目印と食い違って
 	// 以後の指示がすべて Stale になる（IMP-192）。
 	if err == nil && unchangedOnWatch(req, before, doc, a.edit.Deleted()) {
-		return nil, nil
+		return nil, outcomeKept, nil
 	}
 
 	outcome, target := classifyOpen(req, doc, err)
@@ -180,7 +192,7 @@ func (a *App) openLocked(req openRequest) (*DocumentDTO, error) {
 		a.emit(eventTreeRootChanged, c.newRoot)
 	}
 
-	return c.dto, c.err
+	return c.dto, outcome, c.err
 }
 
 // openedBefore は、開く処理を始める時点の表示の状態を控える（IMP-192）。

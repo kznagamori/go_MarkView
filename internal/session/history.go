@@ -46,30 +46,6 @@ func (h *History) Push(e Entry) {
 	h.index = len(h.entries) - 1
 }
 
-// Back は 1 つ前の文書へ戻る（FR-051）。
-//
-// 戻れない場合は ok が false になる。空の履歴で呼んでも落ちない。
-func (h *History) Back() (Entry, bool) {
-	if h.index <= 0 {
-		return Entry{}, false
-	}
-
-	h.index--
-	return h.entries[h.index], true
-}
-
-// Forward は戻る前の文書へ進む（FR-051）。
-//
-// 進めない場合は ok が false になる。
-func (h *History) Forward() (Entry, bool) {
-	if h.index < 0 || h.index >= len(h.entries)-1 {
-		return Entry{}, false
-	}
-
-	h.index++
-	return h.entries[h.index], true
-}
-
 // Peek は位置を動かさずに、delta（-1: 戻る / +1: 進む）先の項目を返す（IMP-191。4.75.0。BUG-023）。
 // 無ければ（履歴の端・空の履歴）ok は偽。
 //
