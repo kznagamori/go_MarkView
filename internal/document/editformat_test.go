@@ -63,6 +63,9 @@ func TestPlanFormat(t *testing.T) {
 		{"12 すべて取り消し線なので外す", "<del>あ</del><del>い</del><del>う</del>", textRef(0), 0, 3, "あいう", strike(), "あいう", false},
 		{"13 書く形を1つに固定する", "あいう", textRef(0), 0, 3, "あいう", color("red"), red + "あいう</span>", false},
 		{"14 手で書いた揺れを決めた形で書き直す", `<span style="color:#D1242F">赤い</span>`, textRef(0), 0, 2, "赤い", color("blue"), blue + "赤い</span>", false},
+		{"14 ほかの属性は残す", `<span title="t" style="color:#D1242F">赤い</span>`, textRef(0), 0, 2, "赤い", color("blue"), `<span title="t" style="color: #0969da">赤い</span>`, false},
+		{"14 名前や値にstyleを含むほかの属性", `<span data-style="x" title="a style=b" style="color:#D1242F">赤い</span>`, textRef(0), 0, 2, "赤い", color("blue"),
+			`<span data-style="x" title="a style=b" style="color: #0969da">赤い</span>`, false},
 		{"15 分けられないときは入れ子で替える", red + "あ**いうえ**お</span>", textRef(0), 2, 3, "あいうえお", color("blue"), red + "あ**い" + blue + "う</span>え**お</span>", false},
 		{"16 両端の空白を除く", "今日は 会議 です", textRef(0), 3, 7, "今日は 会議 です", strike(), "今日は <del>会議</del> です", false},
 		{"17 絵文字は部品", ":sparkles:と", textRef(0), 0, 1, "✨と", strike(), "<del>:sparkles:</del>と", false},
@@ -75,6 +78,12 @@ func TestPlanFormat(t *testing.T) {
 		{"23 戻りリンクの2文字は選択から外す", "本文[^1]\n\n[^1]: 注\n", textRef(1), 0, 3, "注 ↩", strike(), "本文[^1]\n\n[^1]: <del>注</del>\n", false},
 		{"24 delの外側に色のspan", "<del>項目</del>", textRef(0), 0, 2, "項目", color("purple"), `<span style="color: #8250df"><del>項目</del></span>`, false},
 		{"25 色のspanの内側にdel", red + "赤い</span>", textRef(0), 0, 2, "赤い", strike(), red + "<del>赤い</del></span>", false},
+		{"26 角括弧の自動リンクは記号の外側", "<https://example.com> と文字", textRef(0), 0, 19, "https://example.com と文字", strike(), "<del><https://example.com></del> と文字", false},
+		{"26 終わりの角括弧の自動リンク", "文字と <https://example.com>", textRef(0), 3, 22, "文字と https://example.com", strike(), "文字と <del><https://example.com></del>", false},
+		{"27 中身の全体の色を外す", red + "赤い文字</span>", textRef(0), 0, 4, "赤い文字", color("default"), "赤い文字", false},
+		// ケース 28: 改行で終わる区間の閉じは、次の行の前置きの後ろに置く（行の頭に置くと前置きを失う）。
+		{"28 引用の中の複数行", "> a\n> **b**\n", textRef(0), 0, 3, "a\nb", strike(), "> <del>a\n> </del><del>**b**</del>\n", false},
+		{"28 リストの中の複数行", "- a\n  **b**\n", textRef(0), 0, 3, "a\nb", strike(), "- <del>a\n  </del><del>**b**</del>\n", false},
 	}
 
 	for _, tt := range tests {
@@ -174,6 +183,9 @@ func TestPlanFormat_Refuses(t *testing.T) {
 		{"12 不正なUTF-8の1バイト", "今日は\xFF会議", textRef(0), op(0, 1, "今", strike()), ErrNotEditable},
 		{"12 不正なUTF-8の3バイト", "今日は\xFF\xFE\xFD会議", textRef(0), op(0, 1, "今", strike()), ErrNotEditable},
 		{"13 入れ子で替えると太字が効かない", red + "あ**いう**え</span>", textRef(0), op(2, 3, "あいうえ", color("blue")), ErrCannotFormat},
+		// ケース 14: 太字の記号の組み合わせが変わる（2 つの太字が 1 つの外側の太字になる）。見える文字は同じで、
+		// インラインの要素の並びの確かめだけが捕まえる（11・13 は太字の記号が文字として現れ、見える文字の照合でも捕まる）。
+		{"14 太字の記号の組み合わせが変わる", "**重要**と**重要**", textRef(0), op(1, 2, "重要と重要", strike()), ErrCannotFormat},
 	}
 	for _, tt := range errTests {
 		t.Run(tt.name, func(t *testing.T) {

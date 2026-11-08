@@ -312,7 +312,7 @@ func TestLoad_SizeErrors(t *testing.T) {
 // （UT-106。根拠: FR-110 / IMP-021, IMP-102）。
 //
 // エラーメッセージの文字列は比較しない。種別のみを errors.Is で見る（UT-042）。
-// **v1.2.0 で ErrNotMarkdown を ErrNotSupported に改名した**（4.75.0）。開けるファイルが
+// **v1.2.0 で、v1.1.0 の「Markdown でない」の番兵を ErrNotSupported に改名した**（4.75.0）。開けるファイルが
 // Markdown・図のファイル・画像ファイルの 3 種類になった（1.7）。
 func TestLoad_Errors(t *testing.T) {
 	dir := t.TempDir()
