@@ -136,13 +136,23 @@ func (a *App) OpenConfirmed(path string) (res OpenResultDTO) {
 	var target string
 	defer a.recoverOpen(&target, &res)
 
+	// **確認待ちを読むところから ioMu の内側で行う**（Reload と同じ）。錠の外で読むと、開くまでの間に
+	// 戻る・進むなどの開く処理が済んで確認待ちが消えても、消えた確認待ちのパスを開いてしまう（IMP-314
+	// の「直前に確認画面を出したパスに対してのみ有効」に反する。画面は確認の対象を表示するのに、履歴の
+	// 位置は戻った先を指す）。defer は後に置いたものから動くため、パニックのときは錠を解いてから
+	// recoverOpen が動く。
+	a.ioMu.Lock()
+	defer a.ioMu.Unlock()
+
 	pending := a.pendingConfirmPath()
 	if pending == "" || !session.SamePath(pending, path) {
 		return OpenResultDTO{}
 	}
 	target = pending
 
-	return a.openResult(pending, openRequest{path: pending, src: openFromConfirm, confirmed: true})
+	dto, err := a.openLocked(openRequest{path: pending, src: openFromConfirm, confirmed: true})
+
+	return newOpenResult(pending, dto, err)
 }
 
 // pendingConfirmPath は確認待ちのパスを返す（IMP-314）。
