@@ -152,8 +152,8 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	if err != nil {
 		return nil, classifyError(abs, err)
 	}
-	if info.IsDir() {
-		// 開ける拡張子の名前のディレクトリ（x.md / x.png など）。種類を問わず開けない（UT-106 のケース 5・6）。
+	if notFile(info) {
+		// 開ける拡張子の名前のディレクトリ（x.md / x.png など）や FIFO。種類を問わず開けない（UT-106 のケース 5〜7）。
 		return nil, fmt.Errorf("%s: %w", abs, ErrNotSupported)
 	}
 
@@ -226,6 +226,15 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	}
 
 	return doc, nil
+}
+
+// notFile は、開ける拡張子の名前でも文書として読めないもの（ディレクトリ・名前付きパイプ・デバイス・
+// ソケット）かを返す（IMP-102。4.87.0。利用者の判断）。FIFO を読むと書き手が現れるまで戻らず、デバイスは
+// 中身を読んでしまう（Linux）。**`Mode().IsRegular()` では判定しない**——Go 1.23 から、Windows の再解析
+// ポイント（シンボリックリンクと重複除去以外。OneDrive のクラウドのファイルなど）は `ModeIrregular` になり、
+// v1.1.0 で開けた文書が開けなくなる。
+func notFile(info fs.FileInfo) bool {
+	return info.IsDir() || info.Mode()&(fs.ModeNamedPipe|fs.ModeDevice|fs.ModeCharDevice|fs.ModeSocket) != 0
 }
 
 // render は種類ごとの変換を呼ぶ（IMP-102 の「種類ごとの変換」の表）。画像は loadImage が扱う。
