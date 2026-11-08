@@ -36,7 +36,6 @@ type Node struct {
 	Path  string `json:"path"` // 絶対パス（IMP-025）
 	IsDir bool   `json:"isDir"`
 	// Kind はファイルの種類（IMP-135 の Classify）。ディレクトリは空（4.75.0。UI-030 のアイコン）。
-	// TODO(v1.2.0): ReadDir がまだ埋めない。
 	Kind mdfile.Kind `json:"kind"`
 
 	Children []Node `json:"children"` // 未読込のディレクトリでは nil
@@ -56,11 +55,14 @@ type Node struct {
 
 // ReadDir は dir の直下のみを読み込む。再帰しない（FR-032, IMP-131）。
 //
-// 絞り込みと並び順は IMP-132 に従う。Markdown を含まないディレクトリは
+// 絞り込みと並び順は IMP-132 に従う。表示する種類のファイルを含まないディレクトリは
 // 除く（FR-031）が、判定は 1 階層下までとする（IMP-133）。
 //
-// show はツリーに表示する種類（FR-037。IMP-134）。件数の上限は絞り込み後の件数に対して適用する。
-// TODO(v1.2.0): show をまだ見ない（4.75.0 で足した引数の宣言だけ。Markdown だけを並べる）。
+// show はツリーに表示する種類（FR-037。IMP-134）。**件数の上限は絞り込み後の件数に対して適用する**
+// （隠している画像の数で上限に掛からない。UT-303 のケース 5）。要素の種類（ディレクトリか、どの種類の
+// ファイルか）は Classify と同じ規則で決め、**決められない項目（宛先の無いシンボリックリンクなど）は
+// 出さず、ほかの項目は返す**（4.78.0。UT-301 のケース 12）。ツリーの操作の検査（Check）と同じ判定を
+// 使い、ツリーに出ているものは開ける・展開できるようにする（FR-036）。
 func ReadDir(dir string, show Show) ([]Node, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -74,18 +76,22 @@ func ReadDir(dir string, show Show) ([]Node, error) {
 
 	nodes := make([]Node, 0, len(entries))
 	for _, e := range entries {
-		name, isDir := e.Name(), e.IsDir()
-		if !include(name, isDir) {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue // 種類を調べるまでもなく出さない（include と同じ規則）
+		}
+		isDir, kind, err := classifyEntry(abs, e)
+		if err != nil || !shown(name, isDir, kind, show) {
 			continue
 		}
 
 		path := filepath.Join(abs, name)
-		if isDir && !hasMarkdownWithin(path) {
+		if isDir && !hasShownWithin(path, show) {
 			continue
 		}
 
 		// 子は読み込まない。Children は nil、Loaded は false のままとする。
-		nodes = append(nodes, Node{Name: name, Path: path, IsDir: isDir})
+		nodes = append(nodes, Node{Name: name, Path: path, IsDir: isDir, Kind: kind})
 	}
 
 	slices.SortFunc(nodes, compareNodes)
@@ -133,7 +139,10 @@ func PathTo(root, target string) ([]string, error) {
 	return dirs, nil
 }
 
-// include はエントリを表示対象とするか判定する（FR-031, IMP-132）。
+// include は名前の規則でエントリを表示対象とするか判定する（FR-031, IMP-132。種類は見ない）。
+//
+// **同じ規則をツリーの操作の検査（Check の 3）でも使う。** 2 か所に書くと、ツリーに出ているのに
+// 開けないもの、出ていないのに開けるものが生まれる。
 func include(name string, isDir bool) bool {
 	// 名前が . で始まるものは除外する。
 	if strings.HasPrefix(name, ".") {
@@ -142,9 +151,16 @@ func include(name string, isDir bool) bool {
 	if isDir {
 		return !excludedDirs[name]
 	}
+	return true
+}
 
-	// ファイルは Markdown のみ（IMP-105）。
-	return mdfile.IsMarkdown(name)
+// shown は、名前の規則（include）と種類の規則で、要素をツリーに出すかを返す（IMP-132）。
+// ファイルは種類を show が含むものだけ（FR-037。v1.1.0 は Markdown だけだった）。
+func shown(name string, isDir bool, kind mdfile.Kind, show Show) bool {
+	if !include(name, isDir) {
+		return false
+	}
+	return isDir || show.Includes(kind)
 }
 
 // compareNodes は並び順を決める（IMP-132）。
@@ -166,21 +182,23 @@ func compareNodes(a, b Node) int {
 	return strings.Compare(a.Name, b.Name)
 }
 
-// hasMarkdownWithin は dir 以下に Markdown がある可能性を返す（IMP-133）。
+// hasShownWithin は dir 以下に show の種類のファイルがある可能性を返す（IMP-133。4.75.0。v1.1.0 の
+// hasMarkdownWithin）。**先読みの判定は、ファイルを並べる判定と同じ Show で行う**（FR-037）——画像を
+// 表示していないときに、画像しか無いディレクトリを出さない（UT-307 のケース 5〜7）。
 //
 // 調べるのは dir の直下と、その 1 階層下まで。**全階層は走査しない**
 // （FR-032）。起動時に階層全体を読むと、巨大なディレクトリで起動が遅くなる。
 //
 // 見つからなくても、さらに深い階層が残っている場合は true を返す。判定できない
 // ディレクトリを隠すより、展開して空だと分かるほうがよい（IMP-133）。
-func hasMarkdownWithin(dir string) bool {
-	subdirs, found := scanForMarkdown(dir)
+func hasShownWithin(dir string, show Show) bool {
+	subdirs, found := scanForShown(dir, show)
 	if found {
 		return true
 	}
 
 	for _, sub := range subdirs {
-		deeper, found := scanForMarkdown(sub)
+		deeper, found := scanForShown(sub, show)
 		if found {
 			return true
 		}
@@ -193,20 +211,24 @@ func hasMarkdownWithin(dir string) bool {
 	return false
 }
 
-// scanForMarkdown は dir の直下を 1 度だけ読み、表示対象のサブディレクトリと、
-// Markdown ファイルが直下にあったかを返す。
+// scanForShown は dir の直下を 1 度だけ読み、表示対象のサブディレクトリと、
+// 表示する種類のファイルが直下にあったかを返す。種類は ReadDir と同じ規則で決める。
 //
 // 読めないディレクトリは「何もない」とみなす。権限のないディレクトリを
 // ツリーに出しても、展開できずに終わるためである。
-func scanForMarkdown(dir string) (subdirs []string, foundMarkdown bool) {
+func scanForShown(dir string, show Show) (subdirs []string, found bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, false
 	}
 
 	for _, e := range entries {
-		name, isDir := e.Name(), e.IsDir()
-		if !include(name, isDir) {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		isDir, kind, err := classifyEntry(dir, e)
+		if err != nil || !shown(name, isDir, kind, show) {
 			continue
 		}
 		if !isDir {
