@@ -1992,11 +1992,11 @@ func webviewVersion() string   // WebKitGTK の版を取る
 
 | 責務 | 置き場所 |
 | --- | --- |
-| Wails のバインドメソッド | `desktop/` の `bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go` / **`tree.go`**（IMP-011） |
-| イベント送出、ウィンドウ操作、ライフサイクル | `desktop/app.go`（ライフサイクルの関数の取り出しは `desktop.go`。**`history:changed` の送出は `history.go`**。IMP-323） |
+| Wails のバインドメソッド | `desktop/` の `bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go` / **`tree.go`** / **`history.go`**（IMP-011） |
+| イベント送出、ウィンドウ操作、ライフサイクル | `desktop/app.go`（ライフサイクルの関数は `lifecycle.go`、その取り出しは `desktop.go`。**戻る・進む（IMP-191 の手順）と `history:changed` の送出は `history.go`**。IMP-323） |
 | ファイルツリーの操作（錠・検査の呼び出し・起動・ツリールートの変更。IMP-196） | `desktop/tree.go`（検査の判断は `internal/filetree`。IMP-135） |
 | アプリケーション状態の保持と排他制御 | `desktop/app.go` |
-| 文書を開く共通処理（IMP-192） | `desktop/open.go` / `open_route.go` |
+| 文書を開く共通処理（IMP-192） | `desktop/open.go` / `open_route.go` / `open_commit.go`（開いた結果の状態への反映） |
 | 監視のイベントの受け取り（IMP-192）、ドロップ（IMP-313）、パニックの回復（IMP-022） | `desktop/watch.go` / `drop.go` / `recover.go` |
 | 表示履歴の操作（IMP-191） | `internal/session` |
 | 起動時の対象解決（IMP-193） | `internal/session` |
@@ -2511,7 +2511,7 @@ FR-030 / FR-032 / FR-033 / FR-036 / FR-037 / NFR-035 を実装する（4.75.0）
   - **`tree:root-changed` は送らない。** 呼び出したフロントエンドが戻り値で更新する（AR-061）。
   - ツリールートは保存しない（NFR-042）。
 - **`ListEditorsForTree` は、`ListEditors`（IMP-310）と同じ一覧に、開くファイルの名前（`EditorListDTO.FileName`。IMP-309）を載せて返す。** `OpenInEditor` は `editorTarget` を開く（IMP-171）。**エディタで開くのは文字のファイルだけ**であり（`WantText`。FR-036）、画像はここで拒まれる。
-- 各メソッドの入口で `recover` する（IMP-022）。`OpenFromTree` で回復したパニックは IMP-310 の文書を開くメソッドと同じに扱い、`ListEditorsForTree` はエディタのメソッドと同じく `editor-failed` とし、その他は通知しない（何もしなかったものとする）。
+- 各メソッドの入口で `recover` する（IMP-022）。`OpenFromTree` で回復したパニックは IMP-310 の文書を開くメソッドと同じに扱い、`ListEditorsForTree` はエディタのメソッドと同じく `editor-failed` とし、その他は通知しない（何もしなかったものとする）。**ただし `ReadDir` は Go の `error` を返す（IMP-308）ため、回復したパニックも `error` として返す**——フロントエンドはステータスに出して展開しない（空の一覧で展開すると、中身の無いディレクトリに見える。4.89.0。利用者の判断。v1.1.0 からの振る舞い）。
 
 ## 11.12 要求一覧
 

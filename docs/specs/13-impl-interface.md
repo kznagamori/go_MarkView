@@ -357,7 +357,7 @@ type EditorResultDTO struct {
 - **`SetEditBoxOpen` は、ドロップを拒むためにだけある**（FR-140。4.75.0）。値は `App.editBoxOpen`（IMP-190）に写し、ドロップの受け口（IMP-313）だけが読む。**フロントエンドは前の呼び出しの応答を待ってから次を送る**（到着順が入れ替わりうるため。`UpdateConfig` と同じ事情。IMP-264。4.76.0）。書き込みの判断には使わない（Go 側の判断は IMP-109）。**フロントエンドから渡すのは真偽値だけであり、パスも目印も渡さない。**
 - **`CanSetTreeRootUp` は、ツリールートが根（ファイルシステムの根・ドライブの根）でないかを返す**（UI-032）。フロントエンドはパスから根かどうかを判断しない（IMP-300 の 2）。
 - **`HistoryBack` / `HistoryForward` は、`ioMu` の中で IMP-191 の「戻る・進むの手順」を行う**（4.75.0）。開けなかったら、その項目を履歴から取り除き、`Error` を返す（BUG-023）。
-- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタのメソッド（`ListEditors` / `ListEditorsForTree` / `BrowseEditor` / `OpenInEditor`）は `editor-failed`、編集モードの書き込みの 6 つ（`SetTask` / `SetCell` / `SetCode` / `ApplyFormat` / `UndoEdit` / `RedoEdit`）は `edit-failed` とする。** ツリーの操作（`OpenFromTree` と `ListEditorsForTree` を除く）は通知しない（IMP-196）。`CloseEditor` と `SetEditBoxOpen` も通知しない。 これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
+- 各メソッドの入口で `recover` する（IMP-022, FR-111）。回復したパニックは `Error.Kind` が `render-error` の失敗として返す。**ただしエディタのメソッド（`ListEditors` / `ListEditorsForTree` / `BrowseEditor` / `OpenInEditor`）は `editor-failed`、編集モードの書き込みの 6 つ（`SetTask` / `SetCell` / `SetCode` / `ApplyFormat` / `UndoEdit` / `RedoEdit`）は `edit-failed` とする。** ツリーの操作（`OpenFromTree` と `ListEditorsForTree` と `ReadDir` を除く）は通知しない（IMP-196）。**`ReadDir` は Go の `error` として返す**（IMP-308。展開せずにステータスに出る。4.89.0）。`CloseEditor` と `SetEditBoxOpen` も通知しない。 これらの結果はステータス領域に出るものであり（IMP-315）、`render-error` の文言「Failed to render this document.」は状況と合わない。利用者は「エディタを開こうとしたのに文書の変換に失敗した」と受け取ることになる。
 - **文書を開くメソッド（`OpenFileDialog` / `OpenFromTree` / `OpenConfirmed` / `FollowLink` / `HistoryBack` / `HistoryForward` / `Reload`）で回復したパニックは、Go 側の状態も状態画面へ移す。** IMP-192 の「状態画面を出した」と同じ反映を行う——`showing` を偽にし、監視を外し、`edit.Left()` を呼び、確認待ちを消す。`ioMu` を取って行う。**表示履歴とツリールートは回復では動かさない**（パニックは想定外の失敗であり、どこまで進んだかを推し量らない。回復の時点までに動いたものはそのままにする）。**回復の後に `history:changed` を送る**（履歴の写しを Go 側にそろえる。IMP-323。4.76.0）。**画面の対象（`target`）は、そのメソッドが開こうとしていたパスが分かっていればそれ（ツリーの選択・確認待ちのパス・履歴のエントリ・再読み込みの対象・ダイアログで選ばれたパス）、分からなければ空とする**（`FollowLink` と、戻る・進むで項目を得る前）。空のときは `ErrorDTO.DisplayPath` も空になり、ウィンドウタイトルはアプリケーション名だけになる。**フロントエンドは `render-error` の状態画面を出す**（IMP-250）ため、Go 側を「前の文書を表示中」のまま残すと、監視のイベントや `F5` で状態画面が前の文書の表示に置き換わる（BUG-012 と同じ形の食い違い）。**前の文書を `target` に残さない**——`F5` と「エディタで開く」が画面に無い文書を指す（IMP-190）。**回復が錠を取れるように、`ioMu` と `mu` は途中でパニックが起きても `defer` で解く形で取る。**
 - **`SetEditMode` と `GetCellSource` と `GetCodeSource` は、回復したパニックを通知しない。** `edit-failed` の文言は「Failed to save: <path>」であり、保存していない操作には合わない。`SetEditMode` はその時点の `edit.On()` を返し（ボタンの表示が Go 側と揃う）、`GetCellSource` と `GetCodeSource` は `Stale` を真で返す（編集欄が開かないだけで済む）。
 - `Quit` は `Ctrl+Q`（UI-090）の受け口である。`Alt+F4` と閉じるボタンは OS とウィンドウマネージャが処理するためこの経路を通らない。**終了処理そのものは Wails に任せ、ここで設定を保存しない。** `OnBeforeClose` / `OnShutdown`（IMP-194）を通ることで、閉じるボタンで終了した場合とまったく同じ後始末になる。
@@ -411,7 +411,7 @@ runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
 
 - 複数パスから対象を選ぶ判定（FR-011）は Go 側で行う。**対象は開けるファイル（`mdfile.IsOpenable`。Markdown・図・画像）である**（4.75.0）。
 - **フロントエンドで編集欄が開いている間（`App.editBoxOpen`。`SetEditBoxOpen`）は、開かずに拒み、`error` イベントで `ErrorDTO{Kind: "edit-busy"}` を送る**（FR-140。4.75.0）。ツリールートも変えない。**Linux ではドロップが JavaScript を通らずにここへ届く**（下の IMPORTANT）ため、フロントエンドだけでは止められない。
-- ディレクトリがドロップされた場合、ツリールートを変更し、直下の README を探して開く。
+- ディレクトリがドロップされた場合、ツリールートを変更し、直下の README を探して開く。**README が無ければ、何も開かず通知もしない**（FR-011。4.89.0。v1.0.0 から「開けないファイル」をステータスに出していた。起動時の引数でディレクトリを渡したときと同じにした。E2E-214）。
 
 > [!IMPORTANT]
 > **`runtime.OnFileDrop`（Go）は購読であって、発火ではない。** 中身は `EventsOn(ctx, "wails:file-drop", ...)` だけである。**これを書いただけではパスは届かない。**
@@ -432,9 +432,9 @@ FR-016 を実装する。**画像ファイルにも同じ規則を当てはめ�
 3. フロントエンドは状態画面 `confirm-large` を表示する（IMP-250）。
 4. `Open anyway` の押下で `OpenConfirmed(path)` を呼ぶ。Go 側は `LoadOptions{Confirmed: true}` で再試行する。
 
-`OpenConfirmed` は、直前に確認画面を出したパスに対してのみ有効とする。Go 側が「確認待ちのパス」を 1 つだけ保持し、それ以外のパスを渡された場合は拒否する。任意のサイズのファイルを無条件に開く経路を作らないため。
+`OpenConfirmed` は、直前に確認画面を出したパスに対してのみ有効とする。Go 側が「確認待ちのパス」を 1 つだけ保持し、それ以外のパスを渡された場合は拒否する。任意のサイズのファイルを無条件に開く経路を作らないため。**確認待ちは `ioMu` の内側で読む**（`Reload` の `target` と同じ。IMP-310）。錠の外で読むと、`Open anyway` と `Alt+←` がほぼ同時に届いたとき、戻る処理が確認待ちを消した後に、消えた確認待ちのパスを開いてしまう（画面は確認の対象を表示するのに、履歴の位置は戻った先を指す。4.89.0）。
 
-**拒否は失敗として返さず、「何も起きなかった」（IMP-308）とする。** 拒否が起きるのは、`Open anyway` の二度押し（1 回目で本文が出た後に 2 回目が届く）と、確認画面の間に確認以外の失敗（ツリーで消えたファイルを選ぶなど）で確認待ちが消えた後の押下である（IMP-192）。**v1.0.0 は分類できないエラーとして `render-error` を返しており**、二度押しでは出たばかりの本文が状態画面に置き換わり、Go 側は文書を表示中のまま食い違った（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md) と同じ形）。確認待ちが消えた後は、`F5` で確認画面を出し直せる（`Reload` は画面の対象を読み直す。IMP-310）。
+**拒否は失敗として返さず、「何も起きなかった」（IMP-308）とする。** 拒否が起きるのは、`Open anyway` の二度押し（1 回目で本文が出た後に 2 回目が届く）と、確認画面の間に確認以外の失敗（履歴の移動で消えたファイルへ戻ろうとした・ダイアログで読めないファイルを選んだなど）で確認待ちが消えた後の押下である（IMP-192）。**ツリーの操作の検査（IMP-135）で落ちたとき（ツリーで消えたファイルを選ぶなど）は開く処理を通らないため、確認待ちは残る**——表示も変わっておらず、出ている `Open anyway` がそのまま効く（4.89.0。利用者の判断。v1.1.0 は検査を持たず、開く処理の `not-found` で確認待ちが消えていた）。**v1.0.0 は分類できないエラーとして `render-error` を返しており**、二度押しでは出たばかりの本文が状態画面に置き換わり、Go 側は文書を表示中のまま食い違った（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md) と同じ形）。確認待ちが消えた後は、`F5` で確認画面を出し直せる（`Reload` は画面の対象を読み直す。IMP-310）。
 
 **確認画面を出した時点で、ツリールートと表示履歴は対象へ移す**（FR-016）。FR-016 は「確認画面を表示した時点でタイトルとパス表示を対象のものに更新し、履歴に積む。`Alt+←` で直前の文書へ戻れること」を求めており、積まないと戻る先が 1 つずれる。適用する規則は成功時と同じ表（IMP-192）に従う。**監視は張らず、前の文書の監視も外し、表示中の文書（`current`）は差し替えない。** 描画を始めていないファイルは FR-014 の対象外であり（FR-016）、前の文書は表示対象ではなくなっている（FR-014）。ステータス領域のパスは確認画面の対象を指す（`ErrorDTO.DisplayPath`。IMP-307）。
 

@@ -111,9 +111,9 @@ go_MarkView/
 ├── main.go                    アプリのエントリポイント、CLI 引数処理、埋め込み、Wails の起動
 ├── console_*.go               親プロセスのコンソールへの接続（OS 別。IMP-193）
 ├── desktop/                   Wails との境界（package desktop。IMP-011, IMP-012）
-│   ├── app.go                 App 型の状態とライフサイクル
-│   ├── bind.go / editor.go / link.go / editmode.go / clipboard.go / tree.go   Wails にバインドするメソッド（責務で分割。editmode.go は編集モード。IMP-195。tree.go はファイルツリーの操作。IMP-196）
-│   ├── open.go / watch.go / drop.go / history.go   文書を開く共通処理・監視のイベント・ドロップ・履歴の知らせ（IMP-323）
+│   ├── app.go / lifecycle.go  App 型の状態とライフサイクル
+│   ├── bind.go / editor.go / link.go / editmode.go / clipboard.go / tree.go / history.go   Wails にバインドするメソッド（責務で分割。editmode.go は編集モード。IMP-195。tree.go はファイルツリーの操作。IMP-196。history.go は戻る・進むと履歴の知らせ。IMP-191, IMP-323）
+│   ├── open.go / open_commit.go / watch.go / drop.go   文書を開く共通処理・監視のイベント・ドロップ
 │   ├── errors.go / recover.go / dto*.go   エラー分類・パニックの回復・境界の型
 │   └── webview_*.go           WebView の版の取得（OS 別。IMP-181）
 ├── go.mod / go.sum

@@ -39,8 +39,10 @@ go_MarkView/
 ├── console_other.go            同上。Windows 以外は何もしない（IMP-031）
 ├── desktop/                    Wails との境界（package desktop。IMP-012）
 │   ├── desktop.go              パッケージの説明と、ライフサイクルの関数の取り出し（IMP-193, IMP-194）
-│   ├── app.go                  App 型の状態とライフサイクル（IMP-190, IMP-193, IMP-194）
+│   ├── app.go                  App 型の状態（IMP-190）
+│   ├── lifecycle.go            ライフサイクルの関数と設定の保存（IMP-193, IMP-194, UI-114）
 │   ├── open.go                 文書を開く共通処理（IMP-192）
+│   ├── open_commit.go          開いた結果の状態への反映（target・ツリールート・履歴・確認待ち。IMP-192, IMP-314）
 │   ├── open_route.go           文書を開いた経路と、経路によって変わるもの（IMP-192）
 │   ├── watch.go                表示中ファイルの監視のイベントの受け取り（IMP-140, IMP-192）
 │   ├── drop.go                 ファイルのドロップの受け取りと判定（IMP-313）
@@ -49,15 +51,16 @@ go_MarkView/
 │   ├── editor.go               エディタで開くバインドメソッド（IMP-310, IMP-331）
 │   ├── editmode.go             編集モードのバインドメソッド。錠・読み書きの呼び出し・イベント送出だけ（IMP-195, IMP-316）。外部エディタの editor.go と混ぜない
 │   ├── tree.go                 ファイルツリーの操作のバインドメソッド。検査は filetree（IMP-196, IMP-135）
-│   ├── history.go              history:changed の送出（IMP-191, IMP-323）
+│   ├── history.go              戻る・進むのバインドメソッドと history:changed の送出（IMP-191, IMP-310, IMP-323）
 │   ├── link.go                 リンク遷移の判定（IMP-312）
 │   ├── recover.go              バインドメソッドの入口で回復したパニックの扱い（IMP-022, IMP-310）
 │   ├── errors.go               エラーの分類（IMP-315）
-│   ├── dto.go                  フロントエンドとの境界の型（IMP-302〜IMP-305, IMP-307, IMP-308）
+│   ├── dto.go                  フロントエンドとの境界の型（IMP-302, IMP-305, IMP-307, IMP-308）
+│   ├── dto_state.go            起動直後の状態と設定の型（IMP-303）
 │   ├── dto_about.go            アプリケーション情報の型（IMP-306）
 │   ├── dto_editor.go           外部エディタの型（IMP-309）
 │   ├── dto_editmode.go         編集モードの型（IMP-316）
-│   ├── dto_tree.go             ファイルツリーの操作と履歴の型（IMP-317, IMP-323）
+│   ├── dto_tree.go             ファイルツリーと、その操作と履歴の型（IMP-304, IMP-317, IMP-323）
 │   ├── webview_windows.go      WebView2 の版の取得（IMP-031, IMP-181）
 │   └── webview_other.go        WebKitGTK の版の取得（IMP-031, IMP-181）
 ├── go.mod / go.sum
@@ -268,7 +271,7 @@ var (
 
 FR-111（異常終了の回避）を実装レベルで保証するため、以下の 2 点で `recover` を行う。
 
-1. `desktop` の各バインドメソッドの入口（`bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go` / `tree.go`。回復の関数は `recover.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタのメソッドは `editor-failed`、編集モードの書き込みは `edit-failed`、`SetEditMode` とソースの取得（`GetCellSource` / `GetCodeSource`）とツリーの操作（`OpenFromTree` と、エディタのメソッドでもある `ListEditorsForTree` を除く）と `CloseEditor` / `SetEditBoxOpen` は通知しない（IMP-310 が正。4.76.0）。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
+1. `desktop` の各バインドメソッドの入口（`bind.go` / `clipboard.go` / `editor.go` / `link.go` / `editmode.go` / `tree.go` / `history.go`。回復の関数は `recover.go`。IMP-011）。回復したパニックは失敗として返す。**種別は IMP-310 に従う**——文書を開くものは状態画面（UI-052）の `render-error`、エディタのメソッドは `editor-failed`、編集モードの書き込みは `edit-failed`、`SetEditMode` とソースの取得（`GetCellSource` / `GetCodeSource`）とツリーの操作（`OpenFromTree` と、エディタのメソッドでもある `ListEditorsForTree` を除く）と `CloseEditor` / `SetEditBoxOpen` は通知しない（IMP-310 が正。4.76.0）。**すべてを状態画面にしない。** ステータス領域に出る操作で本文が消えると、利用者は何が失敗したのか分からない。
 2. `renderer` の変換処理。goldmark 拡張や chroma の想定外の入力で発生したパニックを、変換エラーとして返す。
 
 `recover` した内容は、開発モード（IMP-023）でのみ標準エラー出力へスタックトレースを出力する。

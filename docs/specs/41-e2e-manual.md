@@ -328,13 +328,15 @@ flowchart TD
 - **環境**: W1
 - **優先度**: 中
 - **関連要求**: FR-011, FR-030
-- **概要**: ディレクトリをドロップした場合の動作を確認する
-- **前提条件**: MarkView が起動している。ファイルマネージャで `testdata` を開いている
+- **概要**: ディレクトリをドロップした場合の動作を確認する（README の無いディレクトリを含む）
+- **前提条件**: `go run ./scripts/gentestdata -edit` を実行している。MarkView が起動している。ファイルマネージャで `testdata` を開いている
 - **手順**:
   1. `testdata/e2e` ディレクトリをウィンドウへドロップする
+  2. `testdata/e2e/generated/edit` ディレクトリ（`README.md` が無い。E2E-012）をウィンドウへドロップする
 - **確認内容**:
   1. `testdata/e2e` がファイルツリーのルートになる
   2. 直下の `testdata/e2e/README.md` が表示される
+  3. 手順 2 で、`testdata/e2e/generated/edit` がファイルツリーのルートになり、本文は `testdata/e2e/README.md` のまま、ウィンドウタイトルも `README.md - MarkView` のままである。**ステータス領域にエラー（`Not a supported file`）が出ない**（FR-011。4.89.0。v1.1.0 までは `Not a Markdown file` が出ていた）
 
 ### E2E-225: 開けないファイルのドロップ
 - **環境**: W1
