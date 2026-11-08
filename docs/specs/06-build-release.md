@@ -356,7 +356,7 @@ flowchart TD
     SKIP --> B3
     K --> B2
     K --> B3
-    B1 --> A["自動 E2E テスト<br/>(40 章 E2E-101〜109)"]
+    B1 --> A["自動 E2E テスト<br/>(e2e ジョブ: E2E-101 / 107 / 108 / 109。<br/>E2E-102〜106 は各ビルドジョブの中)"]
     B2 --> A
     B3 --> A
     A -->|失敗| X2["リリース中止"]
@@ -438,11 +438,11 @@ Release の本文には少なくとも以下を含める。
 | ビルド | Windows / Linux の両方でビルドが通ること | 失敗 |
 | `go vet` | 静的解析 | 失敗 |
 | `gofmt` | 整形の差分がないこと | 失敗 |
-| ユニットテスト | `go test -race ./...`（30 / 31 章の単体テスト仕様に基づく） | 失敗 |
+| ユニットテスト | `go test -race ./...`（30 / 31 章の単体テスト仕様に基づく）。**Linux と Windows の両方で実行する**——OS ごとに `t.Skip` するケースを、どちらかの OS のジョブで必ず通すため（UT-035。4.81.0 で書き足した） | 失敗 |
 | テストカバレッジ | `go test -cover ./...` の結果を記録 | 記録のみ（**合否にしない**。UT-060） |
 | 生成物の鮮度（BR-041） | `licenses/THIRD_PARTY.md` と `frontend/css/chroma.css` を再生成し、差分がないこと | 失敗 |
 | バイナリサイズ（BR-060） | 計測して記録すること | 警告のみ（CI は失敗させない） |
-| 描画スモークテスト（BR-054） | **描画に関わるパス**に変更を含むとき実行（`frontend/vendor/`, `frontend/js/`（全体）, `frontend/css/tokens.css`, `frontend/css/markdown.css`, `internal/renderer/`, `internal/localurl/`, `internal/applog/`, `scripts/smoke/`, `testdata/smoke.md`, `testdata/e2e/plantuml-limits.md`, `testdata/e2e/docs/img/sample.png`, `go.mod`, `go.sum`）。**スモークが呼ぶ本番のモジュールと変換と、検証用の文書が読む画像を、すべて契機に含める**——含めないと、検査の対象を直した PR でスモークが走らない。**`frontend/js/` は個別のファイルで挙げない。** スモークが動的に読む `viewer.js` / `lazy.js` / `tablesort.js` / `refs.js` は他のモジュールを import しており、**そのどれか 1 つが壊れても読み込みが失敗する。**（`visible.js` も動的に読む。これは他を import しない。IMP-266。4.77.0） CSS はスモークのページが読むもの（`scripts/smoke/harness.html`）、`internal/` は `renderer` とその依存（`go list -deps ./scripts/smoke` で確かめる）、`testdata/e2e/docs/img/sample.png` は `testdata/smoke.md` の読める画像（消すと画像の検査が落ちる）、`go.mod` / `go.sum` は goldmark・bluemonday の版（上げると目印と `id` の出力が変わりうる） | 失敗 |
+| 描画スモークテスト（BR-054） | **描画に関わるパス**に変更を含むとき実行（`frontend/vendor/`, `frontend/js/`（全体）, `frontend/css/tokens.css`, `frontend/css/markdown.css`, `internal/renderer/`, `internal/localurl/`, `internal/applog/`, `scripts/smoke/`, `testdata/smoke.md`, `testdata/e2e/plantuml-limits.md`, `testdata/e2e/docs/img/sample.png`, `testdata/e2e/images/nosize.svg`, `go.mod`, `go.sum`）。**スモークが呼ぶ本番のモジュールと変換と、検証用の文書が読む画像を、すべて契機に含める**——含めないと、検査の対象を直した PR でスモークが走らない。**`frontend/js/` は個別のファイルで挙げない。** スモークが動的に読む `viewer.js` / `lazy.js` / `tablesort.js` / `refs.js` は他のモジュールを import しており、**そのどれか 1 つが壊れても読み込みが失敗する。**（`visible.js` も動的に読む。これは他を import しない。IMP-266。4.77.0） CSS はスモークのページが読むもの（`scripts/smoke/harness.html`）、`internal/` は `renderer` とその依存（`go list -deps ./scripts/smoke` で確かめる）、`testdata/e2e/docs/img/sample.png` と `testdata/e2e/images/nosize.svg` は `testdata/smoke.md` の読める画像（消すと画像の検査が落ちる。SVG は 4.80.0 で足し、4.81.0 で契機に加えた）、`go.mod` / `go.sum` は goldmark・bluemonday の版（上げると目印と `id` の出力が変わりうる） | 失敗 |
 | **依存の既知の脆弱性**（NFR-034） | `go run golang.org/x/vuln/cmd/govulncheck@<固定した版> ./...`（Linux は `-tags webkit2_41`）。**呼んでいる関数に届く脆弱性があれば失敗**（4.62.0。利用者の判断）。**Linux と Windows の両方で実行する**——ビルド制約で片方の OS にしか入らない依存（`go-webview2`、`golang.org/x/sys/windows` など）は、もう片方では調べられない。**標準ライブラリも対象であり、ビルドに使う Go の版（BR-001 の `toolchain`）で結果が変わる**。版は Wails CLI と同じく固定する | 失敗 |
 | **決め打ち id の交差**（BR-042, BR-043） | `go run ./scripts/domids`。同梱資産が `getElementById` で決め打ちする id と、`frontend/index.html` の id が交差しないこと。**どちらも `user-content-` で始まらないこと**（AR-053）。**毎回実行する**（衝突は資産と `index.html` のどちらからも生まれる） | 失敗 |
 

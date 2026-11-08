@@ -365,7 +365,7 @@ type EditorResultDTO struct {
 
 ### IMP-311: SetScrollTop の扱い **MUST**
 
-- フロントエンドは、文書を離れる直前（リンク遷移・ツリー選択・履歴移動・再読み込みの前）に呼ぶ。
+- フロントエンドは、文書を離れる直前（リンク遷移・ツリー選択・履歴移動・再読み込み・**ファイル選択ダイアログを開く**前）に呼ぶ。**ドロップは Go が直接受け取る（IMP-313）ため、OS からのファイルのドラッグがウィンドウに入ったときに呼ぶ**（IMP-245。4.81.0。ダイアログは v1.0.0 からの実装を書き写し、ドラッグは利用者の判断で足した）。
 - スクロールのたびに呼ばない。呼び出し頻度を抑えるため、離脱時の 1 回に限る。
 - Go 側は受け取った値を現在の履歴エントリに記録する（IMP-191）。
 
@@ -449,7 +449,7 @@ Go 側の番兵エラー（IMP-021）を `ErrorDTO.Kind` へ写像し、フロ�
 | Go のエラー | `Kind` | 表示先 | 文言（英語） |
 | --- | --- | --- | --- |
 | `document.ErrNotFound` | `not-found` | ステータス | `File not found: <path>` |
-| `document.ErrPermission` | `permission` | ステータス | `Cannot access: <path>` |
+| `document.ErrPermission`、**ツリーの操作の検査が権限の失敗を返した**（FR-036。IMP-196。4.81.0 で書き足した） | `permission` | ステータス | `Cannot access: <path>` |
 | `document.ErrNotSupported` | `not-supported` | ステータス | `Not a supported file: <path>`（4.75.0。v1.1.0 の `not-markdown` / `Not a Markdown file: <path>`） |
 | `document.ErrNeedsConfirm` | `needs-confirm` | 状態画面 | `This file is large.` ほか（UI-052） |
 | `document.ErrTooLarge` | `too-large` | 状態画面 | `<size>` / `Maximum size is <limit>.`（DSP-181） |
@@ -542,7 +542,7 @@ type TreeActionDTO struct {
     Root        string    `json:"root"`        // ツリールートを変えたときの新しいルート。変えなければ空
     DisplayPath string    `json:"displayPath"` // 同上のとき、画面の対象の表示用パス（FR-052）。対象が無ければ空
     OutsideTree bool      `json:"outsideTree"` // 同上のとき、画面の対象がツリールートの外か
-    Error       *ErrorDTO `json:"error"`       // not-found / open-failed / clipboard（IMP-315）
+    Error       *ErrorDTO `json:"error"`       // not-found / permission / open-failed / clipboard（IMP-315）
 }
 ```
 
@@ -557,10 +557,10 @@ Go からフロントエンドへの一方向通知。`runtime.EventsEmit` で�
 
 | イベント名 | ペイロード | 契機 | 対応要求 |
 | --- | --- | --- | --- |
-| `document:opened` | `DocumentDTO` | ドロップ・引数など、フロントエンドの呼び出し以外で表示対象が変わったとき | FR-011 |
+| `document:opened` | `DocumentDTO` | ドロップなど、フロントエンドの呼び出し以外で表示対象が変わったとき（**起動時の文書はイベントでなく `GetInitialState` の戻り値で渡す**。IMP-211, IMP-303。4.81.0 で「引数」を外した） | FR-011 |
 | `document:changed` | `DocumentDTO` | 表示中ファイルの更新を検知して再変換したとき。**編集モードの書き込みの直後に Go 側が読み直したとき**（IMP-195 の 8）、**編集モードを始めたときの目印付きの描き直し**（IMP-195。4.75.0）と、書き込み前の不一致で読み直したとき（IMP-195 の 4） | FR-014, FR-143 |
 | `document:removed` | `ErrorDTO` | 表示中ファイルが削除されたとき（**画面が表示している文書のものに限る**。IMP-192 の「イベントの照合」）。**編集モードも同時に終える**（IMP-195） | FR-014, FR-110, FR-140 |
-| `tree:root-changed` | `string`（絶対パス） | ツリールートが変わったとき（ダイアログ・ドロップ・引数で開いた結果。**ツリーの右クリックメニューで変えたときは送らない**——戻り値の `TreeActionDTO` で伝える。IMP-196） | FR-030 |
+| `tree:root-changed` | `string`（絶対パス） | ツリールートが変わったとき（ダイアログ・ドロップで開いた結果。**起動時のツリールートは `InitialStateDTO.TreeRoot` で渡す**（4.81.0 で「引数」を外した）。**ツリーの右クリックメニューで変えたときは送らない**——戻り値の `TreeActionDTO` で伝える。IMP-196） | FR-030 |
 | `history:changed` | `HistoryDTO` | 表示履歴が変わったとき（積む・戻る・進む・取り除く。IMP-323。4.75.0） | FR-051 |
 | `error` | `ErrorDTO` | 非同期処理で発生したエラー。**監視のイベントによる読み直しと、編集モードの書き込みの前後の読み直し（IMP-195 の 4 と 8）・編集モードを始めたときの描き直し（IMP-195。4.76.0）に失敗したとき**を含む。**編集欄が開いている間のドロップを拒んだとき（`edit-busy`。IMP-313。4.75.0）** | FR-014, FR-016, FR-110, FR-143, FR-140 |
 

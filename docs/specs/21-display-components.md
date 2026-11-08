@@ -22,7 +22,7 @@
 > | DSP-190 系 | 21.11 | ドロップオーバーレイ |
 > | DSP-140 系 | 21.12 | **右クリックメニュー** |
 >
-> 本文ペインの 21.3 には、**図と画像のボタン（DSP-124）・並べ替えのボタン（DSP-125）・編集モード（DSP-126, DSP-127）**を置いている。
+> 本文ペインの 21.3 には、**図と画像のボタン（DSP-124）・並べ替えのボタン（DSP-125）・編集モード（DSP-126, DSP-127）・コードブロックと図の編集欄（DSP-128）・画像ファイル（DSP-129）**を置いている（DSP-128 / DSP-129 は 4.81.0 で書き足した）。図のファイル（DSP-273）は 21.6 にある。
 
 ## 21.1 ツールバー（DSP-100 系）
 
@@ -269,7 +269,7 @@ UI-050 を実装する。
 
 ### DSP-121: 本文要素 **MUST**
 
-MD-020〜MD-026 を実装する。値は `github-markdown-css` に従う（DSP-001）。代表値を以下に示す。
+MD-020, MD-022〜MD-026 を実装する（見出しのアンカーの生成規則 MD-021 は IMP-117、アンカーのアイコンの見た目は DSP-023 が受け持つ。4.81.0 で範囲から外した）。値は `github-markdown-css` に従う（DSP-001）。代表値を以下に示す。
 
 | 要素 | 主な指定 |
 | --- | --- |
@@ -281,7 +281,7 @@ MD-020〜MD-026 を実装する。値は `github-markdown-css` に従う（DSP-0
 | インラインコード | 背景 `--neutral-muted`、角丸 6px、パディング 0.2em 0.4em、サイズ 85 % |
 | リンク | 色 `--accent-fg`、**常に下線**（`text-underline-offset: 0.2em`）。色だけで区別しない |
 | 脚注 | 文書末尾に区切り線を挟んで一覧表示、12px。参照は `[1]` の形（括弧は CSS で付ける）、戻りリンクは `↩` |
-| 文字色（FR-147。4.75.0） | `span.md-color-<名前>`（IMP-116 がサニタイズの後に付ける）の文字を `var(--md-color-<名前>)` で描く（DSP-010。**Light と Dark で値が違う**）。`del` と重なっても、取り消し線の色は文字色に従う（`text-decoration-color` を指定しない） |
+| 文字色（FR-147。4.75.0） | `span.md-color-<名前>`（IMP-116 がサニタイズの後に付ける）の文字を `var(--md-color-<名前>)` で描く（DSP-010。**Light と Dark で値が違う**）。取り消し線の線は、**線を引く要素（`del`）の文字色**で描く（`text-decoration-color` を指定しない）。色の `span` が `del` の外側にあれば（`<span style="color: …"><del>…</del></span>`。FR-146 の入れ子）線も文字色になり、内側にあれば（`del` の中身の一部に色を付けたとき）線は `del` の色のまま、文字だけが色になる（4.81.0 で書き分けた） |
 | 生 HTML のインライン要素（MD-072） | `mark` は背景 `--attention-subtle`・文字 `--fg-default`（**ブラウザ既定の純黄色を使わない**）。`del` / `s` / `strike` は取り消し線（ブラウザ既定と同じ。`strike` は 4.74.0 で許可した）。`small` は 90 %。`abbr[title]` は点線の下線。`kbd` は等幅 11px 相当、地 `--canvas-subtle`、枠と内側の影 `--border-muted`、角丸 6px |
 
 ### DSP-122: 表 **MUST**
@@ -384,7 +384,7 @@ UI-053 / FR-121 / FR-145 / IMP-228 / IMP-264 を実装する。
 | 画像 | `.media-image` の上 8px、右 8px。右から「拡大画面」「原寸表示」の順に 4px 間隔。**画像ファイル（DSP-129）では、読み込みに成功していれば「拡大画面」を常に出す**（FR-027） |
 
 - 画像の `.media-image` は `display: inline-block`、`position: relative`、`max-width: 100%` とし、中の `.media-frame` は `display: block`、`max-width: 100%` とする。**包む前と画像の位置と大きさが変わらない**ようにする（段落の中の画像の流れを崩さない）。原寸表示では `.media-image` も `display: block` にする（横スクロールの器を本文幅いっぱいに取るため）。セレクタは `.media-image:has(> .media-frame.is-actual)` とする（既存の `.code-block:has(> .mermaid-rendered)` と同じ書き方。クラスを 2 か所に付けない）。
-- **画像が小さく、ボタンが画像からはみ出す場合**は、ボタンを画像の外（右上の外側）へ出してよい。ボタンを出すのは縮小表示中の画像だけであり（FR-120）、本文幅いっぱいに近い大きさを持つため、通常は起こらない。
+- **画像が小さく、ボタンが画像に収まらない場合**（画像の幅か高さが、ボタンの並びと上・右の余白に足りない）は、**ボタンを画像の右上の外側に、上端をそろえて出す**（4.81.0。利用者の判断）。本文の中の画像では、ボタンを出すのは縮小表示中だけであり（FR-120）、本文幅いっぱいに近い大きさを持つため、通常は起こらない。**画像ファイル（DSP-129）では、縮小していなくても拡大画面のボタンを常に出す**（FR-027）ため、`.ico` などの 16〜48 px の画像で起こる。画像は本文の幅の中で中央にあり、右に余白がある。
 
 **原寸表示**（`.media-frame.is-actual`）
 
@@ -718,7 +718,7 @@ MD-060 を実装する。
 | インライン数式 | 本文と同じ行に配置。前後に余白を入れない |
 | ブロック数式 | 中央寄せ、上下マージン 16px、横に溢れる場合はその要素内で横スクロール |
 | 文字色 | `--fg-default`（KaTeX の既定色を上書きし、テーマに追従させる） |
-| 描画失敗時 | 元のソースを `--danger-fg` の等幅テキストで表示（MD-060） |
+| 描画失敗時 | 元のソースを `--danger-fg` の等幅テキストで表示（MD-060）。**エラーの内容は本文に出さない**（KaTeX が付ける `title` は残るが、要求にしない。MD-060。4.81.0） |
 
 ### DSP-272: PlantUML 図 **MUST**
 
@@ -908,7 +908,7 @@ UI-052 を実装する。
 | 種別 | アイコン | 主テキスト | 副テキスト | ボタン |
 | --- | --- | --- | --- | --- |
 | `welcome` | `icon-open` 32px、`--fg-subtle` | `Open a file` 16px（4.75.0。種類を名指ししない。UI-052） | 操作方法 3 行（Ctrl+O / ドラッグ＆ドロップ / ツリー選択）13px、`--fg-muted` | なし |
-| `confirm-large` | `icon-warning` 32px、`--attention-fg` | ファイル名 16px | `12.4 MB` / `This file is large.` / `Rendering may take a while.` | `Open anyway` |
+| `confirm-large` | `icon-warning` 32px、`--attention-fg` | ファイル名 16px | `12.4 MB` / `This file is large.` / `Rendering may take a while.` | `Open anyway`。**押した後は `Rendering...` にして押せなくする**（DSP-182 の「押した後」。FR-016, UI-052。4.81.0） |
 | `too-large` | `icon-caution` 32px、`--danger-fg` | ファイル名 16px | `52.1 MB` / `Maximum size is 50 MB.` | なし |
 | `render-error` | `icon-caution` 32px、`--danger-fg` | ファイル名 16px | `Failed to render this document.` + エラー内容（等幅 12px、`--fg-muted`） | なし |
 
@@ -921,6 +921,7 @@ UI-052 を実装する。
 | 角丸 | 6px |
 | ホバー | 明度を 8 % 下げる |
 | フォーカス | フォーカスリング（DSP-016） |
+| **押した後**（`confirm-large` の `Rendering...`。4.81.0） | DSP-172 の `Open` の無効時と同じ（文字 `--fg-subtle`、背景 `--neutral-muted`、`cursor: default`、ホバー効果なし）。**塗りを消して透明にはしない** |
 
 上表を**主スタイル**とする。並べて置く補助的なボタン（情報ダイアログの `Close`、エディタ選択の `Cancel` と `Browse`）には**副次スタイル**を用いる。
 
@@ -991,7 +992,9 @@ UI-100 を実装する。
 │                                   │
 │  (o) Notepad                      │
 │  ( ) Visual Studio Code           │
+│  ( ) Notepad++                    │
 │  ( ) Hidemaru      (not installed)│
+│  ( ) sakura editor (not installed)│
 │                                   │
 │  ( ) Other...                     │
 │      gvim.exe          [ Browse ] │

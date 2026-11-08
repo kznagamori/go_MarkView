@@ -969,7 +969,7 @@ export function syncHits(root)   // 図・数式を描き終えたときに件�
 - 現在位置のヒットには `search-hit` に加えて `search-hit-current` を付与する。配色は DSP-161 で定める。クラス名を 2 種に分けることで、移動時は付け替えだけで済み、DOM の作り直しが起きない。
 - 検索終了時（`Esc`・文書切り替え・再描画・**表の並べ替え**。FR-080, IMP-229）は、包んだ `<mark>` を必ず解除して元のテキストノードへ戻す。解除処理を持たないハイライト実装を採らない。
 - **自前で足したボタン（`.copy-btn` / `.media-actions` / `.sort-btn`）は `svg` しか持たず、上の `svg` の除外で走査から外れる。** セルの編集欄（`input.cell-editor`。IMP-262）の値はテキストノードではなく、走査に入らない。
-- **文字を持つ自前の要素は、走査から外す**（4.75.0）: 編集欄の `Save` / `Cancel`（`.edit-actions`。IMP-262, IMP-264）と、図のファイルの `No diagrams found.`（`p.no-diagrams`。IMP-220）。UI の文言であり、文書の文字ではない。コードブロックの編集欄（`textarea.code-editor`）の値も走査に入らない。
+- **文字を持つ自前の要素は、走査から外す**（4.75.0）: 編集欄の `Save` / `Cancel`（`.edit-actions`。IMP-262, IMP-264）と、図のファイルの `No diagrams found.`（`p.no-diagrams`。IMP-220）、**描けなかった図に併記した理由とエラー内容（`.plantuml-error` / `.mermaid-error`。IMP-231, IMP-233。4.81.0 で書き足した）**。UI の文言であり、文書の文字ではない。コードブロックの編集欄（`textarea.code-editor`）の値も走査に入らない。
 - **コードブロックの編集欄を開いている間は、隠した元の中身（`.is-code-editing` の中の `[hidden]`）を走査から外す**（4.76.0）。数えると、移っても見えないヒットが件数に残る（BUG-004 と同じ形）。**編集欄を開いたとき・閉じたとき・確定の直後に中身を置き換えたとき（`pre.code-pending`、セルの `.cell-pending`）に、そのブロックで `syncHits` を呼ぶ**——DOM から外れた `<mark>` を落とし、戻った中身を探し直す（BUG-017 と同じ形）。
 - 大文字小文字を区別しない比較には `toLowerCase()` を用いる。正規表現でユーザ入力を直接使わない（メタ文字の混入を避けるため）。
 - 200 件を超えるヒットがある場合もハイライトは全件に付ける。件数表示は実数を出す。
@@ -1133,7 +1133,8 @@ export function initDnd()   // Wails の drop リスナの取り付けと、ド�
   - 第 2 引数（`useDropTarget`）は `true` とする。ただし**これが検査するのは JS 側のコールバックだけ**であり、Go 側のコールバックは検査を通らずに呼ばれる。
 - **受け口となる要素は CSS で宣言する。** ドロップ地点の要素の計算済みスタイルに `--wails-drop-target: drop`（既定のプロパティ名と値）があるかで、Wails の**JS 側のコールバック**が呼ばれるかが決まる。カスタムプロパティは継承するため、`#app` に 1 度だけ置けばウィンドウ全体が対象になる（UI-070, FR-011）。**この宣言は Go 側のコールバックの条件ではない**（上記のとおり検査を通らない）。宣言を残すのは UI-070 の意図を DOM 上に残すためである。
 - **`#dropzone` は `pointer-events: none` とする。** Wails は `document.elementFromPoint` でドロップ地点の要素を求めるため、全面を覆うオーバーレイがマウスイベントを受け取ると、その下の要素を検出できずドロップが無効になる。
-- `dragenter` / `dragover` / `dragleave` は、オーバーレイ（`#dropzone`）の表示制御にのみ使う。
+- `dragenter` / `dragover` / `dragleave` は、オーバーレイ（`#dropzone`）の表示制御と、下のスクロール位置の記録にだけ使う。
+- **OS からのファイルのドラッグがウィンドウに入ったとき（オーバーレイを出すとき）に、表示履歴へスクロール位置を記録する**（`navigate.js` の `recordScroll()` を公開して呼ぶ。`navigate.js` は `dnd.js` を import しないため循環しない。IMP-311, FR-051。4.81.0。利用者の判断）。**ドロップは Go が直接受け取る**（IMP-313）ため、フロントエンドは文書を離れる直前を知らない。ドロップの前には必ずドラッグが入るので、ここで記録する。ドラッグを取り消しても、いまの項目の位置が新しくなるだけで害は無い。
 - **`dragover` と `drop` では、条件を付けずに自分でも `preventDefault()` を呼ぶ**（4.70.0。[BUG-020](../bugs/2026-09-21-bug-020-file-drop-webview-navigation.md)）。Wails のランタイムも同じことを行うが、**WebView 内でページ遷移を起こさないという規約（AR-060）を外部のランタイムの実装に委ねない。**
   - **下のファイルの見分けに掛けない。** 見分けはオーバーレイを出すためのものであり、**遷移を止める条件ではない。**掛けると、見分けられないエンジンで**画面がファイルの中身に置き換わり、戻す手段が無くなる**（Wails の Linux の実装は `onDragDrop` が `FALSE` を返し、WebKitGTK の既定の処理を止めない）。ウィンドウ内のドラッグでも、リンクを落とせば遷移しうる
   - **`DisableWebViewDrop` は使わない。** `gtk_drag_dest_unset` を呼ぶだけであり、真にすると**ドロップ自体が届かなくなる**（FR-011）
@@ -1192,7 +1193,7 @@ UI-024 / DSP-102 を実装する。
 - 描画する要素は `#tooltip` の 1 つだけを使い回す。ボタンごとに持たせない。
 - 配線は `#app` への委譲で行い、`closest('[data-tip]')` で対象を求める。ボタンごとにリスナを置くと、文言が変わるボタン（テーマ。IMP-243）や、描画のたびに作り直すボタン（IMP-228, IMP-229）で付け替えが要る。
 - **位置はボタンの下を基本とし、ウィンドウの下端から出る場合はボタンの上に出す**（DSP-102）。本文の最下部の図や、拡大画面の操作バーの近くでも読めるようにする。
-- 位置はボタンの下・水平中央。**ウィンドウの外へ出る場合は左右に寄せて収める。** 左端の `Open` と右端の `?` は、中央に置くと枠外へ出る。
+- 位置はボタンの下・水平中央。**ウィンドウの外へ出る場合は左右に寄せて収める。** 左端の戻るボタンと右端の `?` は、中央に置くと枠外へ出る（4.81.0 で、v1.2.0 の並び（UI-020）に合わせて `Open` から改めた）。
 - `pointer-events: none` を与える。ツールチップがポインタを受け取ると `pointerout` が発生して点滅する。
 - 押下時・ウィンドウのフォーカス喪失時・キー操作時に消す。トグルの状態が変わると文言が古くなるため（IMP-243）。
 - **フィルターボタンの文言は、表示している種類から組み立てる**（`S.tipFilter(['Markdown', 'Diagrams'])`。UI-024, UI-033）。切り替えたら `data-tip` と `aria-label` を書き換える（テーマのボタンと同じ。IMP-243）。
@@ -1392,7 +1393,7 @@ export function leaveDocument()   // 文書の切り替えと状態画面への�
 - **v1.0.0 の `main.js` の `leaveDocument`（文書を離れる直前にスクロール位置を記録する。IMP-311）は `recordScroll` と呼び分ける**（`navigate.js` に置く）。同じ名前の関数が 2 つあると、呼ぶべきほうを取り違える。
 - **状態画面を出すのは `navigate.js` の `enterStateScreen` だけとする**（`OpenResultDTO` / `LinkResultDTO` / イベントの `ErrorDTO` と、起動時。起動時は `main.js` がこれを呼ぶ）。順序は、`leaveDocument()` → `state.doc = null` と `state.target` の設定 → `showStateScreen(kind, params)` → `updateStatus()` とする。
 - **状態画面の間も、ステータス領域の左に対象のファイルのパスを出す**（FR-016, UI-060, DSP-302）。`state.target` に `ErrorDTO` の `path` / `displayPath` / `outsideTree` / `targetKind`（IMP-307。`targetKind` は 4.76.0）を入れ、`status.js` の `updateStatus()` は **`state.doc ?? state.target`** のパスを出す（ツリー外なら絶対パスと `(outside tree)`。DSP-150）。**右の文字コード・行数は出さない**（描画していない）。`welcome` では `state.target` を `null` にする。**ツリーの強調（`filetree.js` の選択状態と、対象までの経路を開く処理。DSP-330）も同じく `state.doc ?? state.target` から決める**（DSP-302 の「対象ファイル」。ツリー外なら強調しない）。**v1.0.0 の `updateStatus()` とツリーの `markSelected` は `state.doc` しか見ておらず、状態画面の間も前の文書のパスと強調が残っていた**（[BUG-012](../bugs/2026-09-14-bug-012-state-screen-previous-document.md)）。
-- `confirm-large` の `Open anyway` の押下で `api.openConfirmed(path)` を呼ぶ（IMP-310, IMP-314）。
+- `confirm-large` の `Open anyway` の押下で `api.openConfirmed(path)` を呼ぶ（IMP-310, IMP-314）。**呼ぶ前に、ボタンを `disabled` にして文言を `S.rendering`（`Rendering...`）に変える**（処理中であることを示す。二度押しも防ぐ。FR-016, UI-052, DSP-181。4.81.0。利用者の判断）。本文が出れば状態画面ごと消え、別の状態画面になれば描き直される。**応答で何も変わらなかったとき（`OpenResultDTO` の `document` も `error` も空。確認待ちでなかった等。IMP-314）は、元の文言に戻して押せるようにする。**
 - **`welcome` の文言は、開くファイルの種類を名指ししない**（`S.welcomeTitle` / `S.welcomeHintDrop`。UI-052。4.75.0）。
 - 文言は `strings.js` から取得する。
 
@@ -1479,7 +1480,7 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 **対象を移す**
 
 - **複製せず、本文の要素そのものを `.expand-content` へ移す。** 本文の元の位置には、移す前の大きさを持つ代わりの要素（`.expand-placeholder`）を置く。閉じたら要素を代わりの要素の位置へ戻す。
-- **複製しない理由は 2 つある。** (1) Mermaid の SVG は `id` を持ち、中の `<style>` と矢印（`url(#…)`）がその `id` を参照する。複製すると `id` が 2 つになり、参照の解決先が定まらない。(2) 画像を複製すると、ローカル画像は `Cache-Control: no-store`（IMP-162）で配信されているため、取り直しが起きうる（FR-120 の「再取得しない」）。
+- **複製しない理由は 2 つある。** (1) Mermaid の SVG は `id` を持ち、中の `<style>` と矢印（`url(#…)`）がその `id` を参照する。複製すると `id` が 2 つになり、参照の解決先が定まらない。(2) 画像を複製すると、FR-120 の「再取得しない」を WebView のキャッシュの振る舞いに委ねることになる（NFR-061）。同じ URL の画像はページの中で使い回されることが多いが（[BUG-026](../bugs/2026-11-08-bug-026-stale-embedded-image.md)。`no-store` でも使い回す）、それを当てにしない（4.81.0 で理由を改めた。4.80.0 までは「`no-store` なので取り直しが起きうる」としていた——BUG-026 で覆った前提である。IMP-162）。
 - 代わりの要素の大きさは、移す前の `getBoundingClientRect()` の幅と高さを CSS カスタムプロパティ（`--placeholder-width` / `--placeholder-height`）で与える。**本文のレイアウトを動かさない**（FR-122 の「本文のスクロール位置を保つ」）。
 - **Mermaid の SVG のインラインの `max-width` は、移すときに控えて外し、戻すときに戻す**（IMP-228 と同じ扱い）。
 
@@ -1695,6 +1696,7 @@ export function markEditableBlocks()  // applyEditMode（IMP-260）から。編�
 - **編集モードを始めたときの描き直し**（IMP-195）は、編集欄が開いている間には届かない（始めるのは編集モードでない間、編集欄を開くのは編集モードの間だけで、終了は拒む）。表に入れない（4.76.0）。
 - **控えるのは最新の 1 つだけ**とし、後から届いたもので置き換える。**置き換える前に控えていたものが文書の切り替え（`sameDocument` が偽・状態画面）なら、後のものも切り替えとして当てる**（`sameDocument` を偽として扱う。並べ替え・原寸表示・拡大画面の解除を落とさない。4.76.0）。**ただし削除の印（`document:removed`）は、その後の再描画で消さず、閉じた時点まで残す**（FR-140 の「閉じた時点で終える」）。警告は次の順に 1 つだけ選ぶ（DSP-151 は前のメッセージを置き換える。4.76.0）: **削除を控えたら `removed-editing`**、**読み直した内容が不正なバイト列を含んでいた（`editable` が偽の再描画）なら `encoding-editing`**（FR-110。その旨と、編集欄を閉じると編集モードを終える旨。4.75.0）、それ以外の外部の更新（`trigger` が `watch` / `reload`）・切り替え・状態画面なら `edit-held`。**自分の書き込みの直後（`trigger` が `edit`）では出さない。**
 - **閉じた時点で、控えたものを当てる**（`deps.applyHeld(item)`。`main.js` が配線し、届いたときと同じ処理——`renderDocument`・`enterStateScreen`・`leaveEditMode`——へ渡す）。削除の印があり、**その後に再描画を控えていなければ**、その後に `leaveEditMode()` を呼ぶ。**削除の後に再描画が届いていれば呼ばない**——ファイルが戻った後の Go 側の状態（編集モードは終わり、開始できる）を運んでおり、それに従う（4.76.0）。
+- **確定の応答を待つ間に控えた再描画では、警告（`edit-held`）を出さない。知らせは確定の応答が決める**（4.81.0。利用者の判断）——ファイルが変わっていれば `edit-conflict`（エラー）、成功なら何も出さない。Go は衝突のとき読み直した再描画（`trigger: reload`）も送り、応答との届く順は決まっていない（IMP-195）。ここで出すと、最後に残る知らせが到着順で変わる（DSP-151 は前のメッセージを置き換える）。控えた再描画は、開き直した編集欄の次の確定で `canSubmit()` が `edit-held` を出す。
 - **確定の応答を待つ間も「開いている」とみなす**（4.75.0）。待つ間に届いた再描画も控え、失敗で開き直すときに、書き込む先の要素が DOM に残っているようにする。応答で閉じるときに、控えたものを当てる。**待つ間も `is-cell-editing` / `is-code-editing` は付けたままにし、閉じるときに外す**（表の下の余白（DSP-127）と右上のボタンの隠し（DSP-128）を保ち、テーマの描き直しもそのブロックを飛ばす。4.76.0）。**失敗で開き直すときは `openBox` を呼び直さない**——登録は開いたまま続いており、Go 側の `editBoxOpen` も真のままである。
 - **確定の呼び出しそのものが失敗した（`setCell` / `setCode` / `applyFormat` の `Promise` が拒否された）ときは、`stale` と同じに扱う**（IMP-261 のチェックボックスと同じ。編集欄は入力ごと開き直し、修飾は包みを外す。通知しない。4.76.0）。扱わないと「開いている」とみなしたまま固まり、文書の切り替えもドロップも拒まれ続ける。
 - **確定してよいか**（`canSubmit()`）: 外部の更新・切り替え・状態画面を控えていれば `edit-held`、削除の印があれば `edit-removed` の警告を出し直して `false` を返す（FR-145, FR-140）。**編集欄は閉じず、Go へ送らない。** 送っても Go 側は鍵の照合か編集モードの確かめで `Stale` にする（IMP-195）——**安全は Go 側が保ち、ここは知らせ方を決める。** 自分の書き込みの直後の再描画だけを控えているときは確定してよい（鍵は引き継がれている。IMP-102）。
@@ -1763,6 +1765,7 @@ export function clearFormatState()      // leaveDocument（IMP-250）から。�
 
 **見た目を先に変える**（NFR-012, DSP-321）
 
+- **取り消し線を外す操作では、仮の見た目を出さない**（祖先の `<del>` が引いた線は子孫の要素から消せない。再描画で外れて見える。FR-146, NFR-012。4.81.0。利用者の判断）。選択の中の文字（空白を除く）がすべて `del` / `s` / `strike` の中にあれば外す操作とみなし、包まずに送る（外すかどうかの正は Go 側。IMP-124 の 5。ここは見た目だけを決める）。
 - 送る前に、選んだ範囲のテキストを仮の `span`（取り消し線は `fmt-pending-strike`、色は `fmt-pending-color md-color-<名前>`、`default` は `fmt-pending-default`）で包む。**テキストノードごとに包み**（要素の境界をまたいで 1 つの `span` で包まない）、包んだ `span` を控える。包みは見える文字を変えない（IMP-266 は包みそのものを数えない）。
 - 結果: `changed` なら再描画を待つ。`changed` が偽・`stale`・`error` なら、包みを外して元に戻す。`error` は `notify`（`format-rejected` は警告。IMP-315）。**`notice` が `format-widened` なら警告を出す**（FR-146。IMP-316）。
 
@@ -1819,14 +1822,14 @@ FR-036 / UI-032 / DSP-140 を実装する。配置は `js/treemenu.js`。**器�
 
 ```js
 // js/treemenu.js — contextmenu.js / filetree.js / navigate.js を import しない（main.js が配線する）
-export function initTreeMenu(deps)     // { api, notify, openFromTree(path), showEditors(list, opener), applyTreeAction(dto) }
+export function initTreeMenu(deps)     // { api, notify, openFromTree(path), openEditorsForTree(path), applyTreeAction(dto) }
 export function treeMenuItems(place)   // 右クリックした所（ファイル・ディレクトリ・ツリールートの名前の行）の項目
 export function runTreeAction(action, place)
 ```
 
 | 右クリックした所 | 判定 | 項目（`strings.js`） | 実行 |
 | --- | --- | --- | --- |
-| ファイル | `li.tree-item` で、ディレクトリでない | `Open` / `Open in editor...` / `Open containing folder` / 区切り / `Copy path` | `deps.openFromTree(path)`（ツリーのクリックと同じ `navigate.js` の経路。編集欄が開いていれば拒む）/ `deps.openEditorsForTree(path)`（`main.js` が `api.listEditorsForTree(path)` を呼び、IMP-252 の確かめ（拡大画面・フィルターの枚）を経て `showEditors` で描く。4.76.0）/ `api.openContainingFolder(path)` / `api.copyTreePath(path)` |
+| ファイル | `li.tree-item` で、ディレクトリでない | `Open` / `Open in editor...` / `Open containing folder` / 区切り / `Copy path` | `deps.openFromTree(path)`（ツリーのクリックと同じ `navigate.js` の経路。編集欄が開いていれば拒む）/ `deps.openEditorsForTree(path)`（`main.js` が `api.listEditorsForTree(path)` を呼び、IMP-252 の確かめ（拡大画面の表示中は出さない）を経て `showEditors` で描く。4.76.0。4.81.0 で、IMP-252 に無い「フィルターの枚」を確かめの中から外した）/ `api.openContainingFolder(path)` / `api.copyTreePath(path)` |
 | ディレクトリ | `li.tree-item` で、ディレクトリ | `Open in file manager` / `Set as tree root` / 区切り / `Copy path` | `api.openInFileManager(path)` / `api.setTreeRoot(path)` / `api.copyTreePath(path)` |
 | ツリールートの名前の行 | `#tree-root-name` | `Open in file manager` / `Set parent as tree root` / 区切り / `Copy path` | `api.openInFileManager(root)` / `api.setTreeRootUp()` / `api.copyTreePath(root)` |
 
@@ -1837,7 +1840,7 @@ export function runTreeAction(action, place)
 - **右クリックだけでは項目を選ばず、開かず、ツリーの強調とフォーカスも動かさない**（FR-036）。メニューを閉じたら、フォーカスは開く前の位置（ツリーの項目）へ戻る（IMP-249）。**`Open` で文書を開いたら、フォーカスは本文ペインへ移る**（IMP-220 の手順 11）。`Open in editor...` ではエディタ選択ウィンドウへ移り、閉じたらツリーの項目へ戻る（IMP-252）。
 - **キーボード**（UI-031, UI-032）: ツリーの項目にフォーカスがあるときの `Shift+F10` / アプリケーションキーは、IMP-249 がフォーカスのある項目の下に開く（`li` の矩形ではなく `.tree-row` の矩形を使う。展開中の `li` は配下の木全体を含む）。
 - **結果の反映**:
-  - `TreeActionDTO.error` があれば `notify`（`not-found` / `open-failed` / `clipboard`。IMP-315）。
+  - `TreeActionDTO.error` があれば `notify`（`not-found` / `permission` / `open-failed` / `clipboard`。IMP-315。`permission` は 4.81.0 で書き足した。IMP-196）。
   - **`root` が空でなければ、`deps.applyTreeAction(dto)` を呼ぶ**（`main.js` が配線する）。`state.treeRoot` を新しいルートにし、ツリーを読み直し（`loadTreeRoot`。FR-035 の 4 番目の契機。IMP-240）、ステータス領域のパスを `displayPath` / `outsideTree` で差し替える（`state.doc` か `state.target` の表示用パスを書き換えて `updateStatus()`。FR-052）。**表示中の文書・履歴・編集モードは変えない**（FR-030）。**メニューを開いた項目が組み直しで消えたら（フォーカスが `body` に落ちる）、組み直したツリーの `tabindex="0"` の項目（IMP-248）へ `focus({ preventScroll: true })` で移す**（4.76.0。DSP-330）。
   - `Copy path` の成功は知らせない（UI-060）。
 - **閉じる契機は IMP-249 と同じ**とし、**ツリーのスクロール（`.pane-body` の `scroll`）でも閉じる**（UI-032）。IMP-249 の `scroll` の購読（キャプチャ）に `.pane-body` を含める。
@@ -1984,6 +1987,7 @@ export const S = {
   welcomeHintDrop:'Or drop a file onto this window',
   welcomeHintTree:'Use the file tree to browse documents',
   openAnyway:     'Open anyway',
+  rendering:      'Rendering...',                // Open anyway を押した後（FR-016, UI-052。4.81.0）
   largeTitle:     'This file is large.',
   largeHint:      'Rendering may take a while.',
   tooLarge:       (limit) => `Maximum size is ${limit}.`,

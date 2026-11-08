@@ -103,7 +103,8 @@ go_MarkView/
 │   │   ├── check.go            ツリーの操作の検査と種類の判定（IMP-135）
 │   │   └── filetree_test.go
 │   ├── watcher/                IMP-140 系
-│   │   └── watcher.go          単一ファイル監視
+│   │   ├── watcher.go          単一ファイル監視
+│   │   └── *_test.go
 │   ├── config/                 IMP-150 系
 │   │   ├── config.go           Config 型、Load / Save
 │   │   ├── path.go             保存先の解決
@@ -111,14 +112,16 @@ go_MarkView/
 │   │   ├── path_other.go       $TMPDIR/MarkView-<uid>（IMP-031, IMP-152）
 │   │   └── config_test.go
 │   ├── assetsrv/               IMP-160 系
-│   │   └── assetsrv.go         埋め込み資産とローカル画像の配信（画像の拡張子の表は mdfile。IMP-161）
+│   │   ├── assetsrv.go         埋め込み資産とローカル画像の配信（画像の拡張子の表は mdfile。IMP-161）
+│   │   └── *_test.go
 │   ├── opener/                 IMP-170 系
 │   │   ├── opener.go           既定ブラウザ・既定アプリ・ファイルマネージャへの委譲（IMP-170, IMP-173）
 │   │   ├── editor.go           選ばれたエディタの起動（IMP-171）
 │   │   ├── open_windows.go     rundll32.exe（IMP-031, IMP-170, IMP-173）
 │   │   ├── open_other.go       xdg-open（IMP-031, IMP-170, IMP-173）
 │   │   ├── presets_windows.go  既知パスの探索（IMP-031, IMP-172）
-│   │   └── presets_other.go    $PATH の探索（IMP-031, IMP-172）
+│   │   ├── presets_other.go    $PATH の探索（IMP-031, IMP-172）
+│   │   └── *_test.go
 │   ├── ostheme/                IMP-175（`app.go` からのみ使う。IMP-012 の例外の葉ではない）
 │   │   ├── ostheme.go          OS のテーマの取得と、値の解釈
 │   │   ├── ostheme_windows.go  レジストリ（IMP-031, IMP-175）
@@ -126,7 +129,8 @@ go_MarkView/
 │   │   └── ostheme_test.go
 │   ├── buildinfo/              IMP-180 系
 │   │   ├── buildinfo.go        バージョン情報（IMP-180）
-│   │   └── vendor.go           vendor.json の読み出しと環境情報（IMP-181）
+│   │   ├── vendor.go           vendor.json の読み出しと環境情報（IMP-181）
+│   │   └── *_test.go
 │   └── session/                IMP-190 系のうち Wails に依存しない部分
 │       ├── history.go          表示履歴（IMP-191）
 │       ├── startup.go          起動時の対象解決（IMP-193）
@@ -400,7 +404,7 @@ GUI に依存しない層にユニットテストを用意する（NFR-070）。
 | `applog` | `MARKVIEW_DEBUG` の判定と出力先の切り替え（`"1"` 以外はすべて無効） | NFR-041 |
 | `buildinfo` | `vendor.json` の解析と環境情報の組み立て | BR-042, UI-100 |
 | `session` | 表示履歴（**戻る・進むで開けなかった項目の取り除き**。BUG-023。4.76.0）、起動時の対象解決、表示用パスの算出、**同じファイルの判定（`SameFile`。UT-809）** | FR-051, FR-013, FR-052, FR-140 |
-| `scripts/domids`・`scripts/smoke`（**判定だけ**） | 同梱資産と画面の id の衝突、描画スモークの結果の判定（ページが返した事実から合否を決める関数） | BR-043, BR-054, AR-053 |
+| `scripts/domids`・`scripts/smoke`・`scripts/vendorupdate`（**判定だけ**） | 同梱資産と画面の id の衝突、描画スモークの結果の判定（ページが返した事実から合否を決める関数）、同梱資産の更新でリリースを止める判定（ライセンスと告知の照合。UT-818。4.81.0 で書き足した） | BR-043, BR-054, AR-053 |
 
 ### IMP-041: ゴールデンテスト **SHOULD**
 

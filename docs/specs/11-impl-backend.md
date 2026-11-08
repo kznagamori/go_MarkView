@@ -11,7 +11,7 @@
 
 責務: **開けるファイル（[1.7](01-overview.md)）の拡張子と種類の判定**。**依存を一切持たない葉パッケージ**であり、`document` / `filetree` / `session` / `assetsrv` / `desktop` のいずれからも直接参照してよい（IMP-012）。**パッケージ名は v1.2.0 でも変えない**——Markdown 以外も扱うようになった（FR-025〜FR-027）が、変えると import がすべて変わる。
 
-### IMP-105: 拡張子の判定 **MUST**
+### IMP-105: 拡張子と種類の判定 **MUST**
 
 ```go
 package mdfile
@@ -609,7 +609,8 @@ func PlanCode(r *renderer.Renderer, raw []byte, kind mdfile.Kind, ref Ref, text 
 - **次のどれかに当たるブロックは `Locked` とし、編集できないものとする**（FR-145。編集のボタンを淡色にし、ダブルクリックでは `code-locked` の警告を出す。IMP-264）。
   - 前置きがブロックの前置きと違う行がある。**ただし空の行は、前置きから末尾の半角空白とタブを除いたものと一致してもよい**（引用の中の `>` だけの行、リストの中の何も無い行。どちらもよく書かれ、書き込みの規則は上の 4 で決まっている）
   - 中身の行の区間がタブの途中から始まる（goldmark の `Segment.Padding` が 0 でない。番号付きリストの中でタブを使った場合など。実測）
-- **書き換えの規則を、この 2 つ以上に手で増やさない。** 増やすほどパーサと食い違いうる（IMP-106 のセルの `\` の件と同じ）。食い違いは 9 の確かめが捕まえる。
+  - **前置きを決められない**: 中身の行も閉じの囲いも無く、開きの囲いの行の頭から囲いの文字の手前までに、半角空白・タブ・`>` 以外の文字（リストの記号）がある（上の 2 つ目の箇条。UT-118 のケース 30。4.78.0 で決め、4.81.0 でこの一覧に書き写した）
+- **書き換えの規則を、この 3 つ以上に手で増やさない。** 増やすほどパーサと食い違いうる（IMP-106 のセルの `\` の件と同じ）。食い違いは 9 の確かめが捕まえる。
 
 **PlantUML ファイルの図**（FR-025, MD-086）
 
@@ -1734,7 +1735,7 @@ func OpenURL(rawurl string) error
 func OpenFile(path string) error
 ```
 
-**外部プログラムを起動する経路は、この 4 つに限る**（NFR-035。4.73.0 で 3 つから 4 つになった）。
+**外部プログラムを起動する経路は、この 4 つに限る**（NFR-035。4.73.0 で 3 つから 4 つになった）。**OS の設定の問い合わせ（Linux の `gsettings`。IMP-175）はこの数に入れない**——コマンドも引数も固定であり、NFR-035 が例外として認めている（4.81.0）。
 
 | 経路 | 関数 | 契機 |
 | --- | --- | --- |
@@ -1804,7 +1805,7 @@ func Editors() []Editor
 ```
 
 - **順序を定義順に固定する。** 見つかったものを前へ並べ替えない（UI-103）。並びが環境や起動のたびに変わると、位置で覚えられなくなる。
-- **検出は `os.Stat`（Windows）と `exec.LookPath`（Linux）だけで行う。レジストリを読まない。** 依存が増えるうえ、「レジストリに触らない」という製品の性格（NFR-033）と一貫しなくなる。
+- **検出は `os.Stat`（Windows）と `exec.LookPath`（Linux）だけで行う。レジストリを読まない。** 既知のパスで足りるため、読む経路を増やさない。**NFR-033 が禁じるのはレジストリへの書き込みであり、読むことではない**（OS のテーマの取得は読む。IMP-175。4.81.0 で理由を改めた。4.80.0 までは「レジストリに触らない（NFR-033）」としていた）。
 - **`ID` に `custom` を使わない。** フロントエンドとの間で「任意指定」を表す予約語である（IMP-309）。
 - **探索処理は変数として差し替えられるようにする**（`runCommand` と同じ流儀。UT-705）。実際にエディタがインストールされているかどうかに依存するテストを書かないためである（UT-035）。
 
@@ -1891,6 +1892,7 @@ func Detect() string
 | Windows | レジストリ `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize` の `AppsUseLightTheme`（`REG_DWORD`）を読む。**0 がダーク、1 がライト**。`golang.org/x/sys/windows/registry` を用いる |
 | Linux | `gsettings get org.gnome.desktop.interface color-scheme` を実行し、`'prefer-dark'` / `'prefer-light'` を解釈する。`'default'` または取得に失敗した場合は `gtk-theme` を読み、名前が `-dark` で終わるものだけをダークとみなす |
 
+- `AppsUseLightTheme` は真偽の `REG_DWORD` として読み、**0 ならダーク、0 以外ならライト**とする（UT-703 のケース 1〜3）。**判定できないのは、キーや値が無い・読めない・型が違うとき、`gsettings` が使えないときと、`color-scheme` / `gtk-theme` から決められないとき**である（4.81.0 で書き分けた）。
 - **判定できない場合に Light を返さない。** 「OS がライトである」ことと「OS の設定を読めなかった」ことは別であり、呼び出し側が区別できる必要がある。FR-071 の「判定できない場合は Light テーマとする」の適用は呼び出し側（`resolvedTheme`）の責務とする。
 - `SystemUsesLightTheme`（タスクバー等の配色）ではなく `AppsUseLightTheme` を見る。アプリケーションの配色に対応するのは後者である。
 - Linux では外部コマンドを起動するため、応答を待つ上限を 500 ms とする。GNOME が入っていない環境では実行そのものが失敗し、待ち時間は発生しない。引数は `exec.Command` の可変長引数として渡し、シェルを経由しない（IMP-170 と同じ理由）。
@@ -2027,7 +2029,6 @@ type App struct {
     // 確認画面を表示中のファイル（FR-016）。OpenConfirmed が受け付ける
     // 対象をこの 1 つに限定するために保持する（IMP-314）。
     pendingConfirm string
-    pendingSource  openSource // 確認画面を出したときの経路（IMP-192）
 
     // pendingEditor は BrowseEditor で選ばれた「確定前の候補」（IMP-310）。
     // 実行ファイルの絶対パスであり、フロントエンドへ渡さない（IMP-309, NFR-035）。
@@ -2159,7 +2160,7 @@ type openSource int
 const (
     openFromDialog openSource = iota // FR-010
     openFromDrop                     // FR-011
-    openFromArgs                     // FR-012
+    openFromArgs                     // FR-012, FR-013（起動時の表示。引数なしで見つけた README も同じ経路）
     openFromTree                     // FR-033, FR-036（メニューの Open）。開く前に IMP-135 の検査を通す（IMP-196）
     openFromLink                     // FR-050
     openFromHistory                  // FR-051
@@ -2320,7 +2321,7 @@ func ResolveStartup(args []string, cwd, exeDir string) (Startup, error)
    > エクスプローラからのダブルクリック起動（UC-01。本アプリの主たる使い方）で
    > 黒いコンソール窓が開いてしまう。**主たる使い方を優先し、この見え方を許容する。**
 2. 引数にパスがある場合、ファイルなら「親ディレクトリ + そのファイル」、ディレクトリなら「そのディレクトリ + 直下の README」。
-3. 引数がない場合、以下の順で `README.md`（大文字小文字を区別しない）を探す（FR-013）。**探すのは Markdown のままである**（`mdfile.IsMarkdown`。図や画像のファイルを探さない。4.75.0）。
+3. 引数がない場合、以下の順で README（拡張子を除いた名前が `README` の Markdown。大文字小文字を区別しない）を探す（FR-013）。**探すのは Markdown のままである**（`mdfile.IsMarkdown`。図や画像のファイルを探さない。4.75.0）。
    1. `os.Getwd()`
    2. `os.Executable()` を `filepath.EvalSymlinks` で解決したディレクトリ
 4. どちらにも見つからない場合、ツリールートをカレントディレクトリとし、表示対象なしとする。
