@@ -71,31 +71,67 @@ func (h *History) Forward() (Entry, bool) {
 }
 
 // Peek は位置を動かさずに、delta（-1: 戻る / +1: 進む）先の項目を返す（IMP-191。4.75.0。BUG-023）。
+// 無ければ（履歴の端・空の履歴）ok は偽。
 //
-// TODO(v1.2.0): 未実装（テストの先行実装で置いたスタブ）。Back / Forward を置き換える。
+// **戻る・進むは Peek → 開く → Step / Drop の順に分ける。** v1.1.0 の Back / Forward は開く前に位置を
+// 動かし、開けなくても戻さなかった。画面は前の文書のまま位置だけが消えた文書を指し、その間に別の文書を
+// 開くと、見ていた文書が履歴から消えて戻れなくなった（BUG-023。UT-804 のケース 2・12）。
 func (h *History) Peek(delta int) (Entry, bool) {
-	return Entry{}, false
+	i, ok := h.at(delta)
+	if !ok {
+		return Entry{}, false
+	}
+	return h.entries[i], true
 }
 
-// Step は位置を delta 動かす。開けた後（状態画面を含む）に呼ぶ（IMP-191）。
-//
-// TODO(v1.2.0): 未実装。
-func (h *History) Step(delta int) {}
+// Step は位置を delta 動かす。開けた後（状態画面を含む）に呼ぶ（IMP-191）。範囲外なら何もしない。
+func (h *History) Step(delta int) {
+	if i, ok := h.at(delta); ok {
+		h.index = i
+	}
+}
 
 // Drop は delta 先の項目を取り除く。位置が指す文書は変えない。開けなかった後に呼ぶ（IMP-191。4.76.0）。
 //
-// TODO(v1.2.0): 未実装。
-func (h *History) Drop(delta int) {}
+// **何を取り除き、位置をどこに置くかを 1 つの呼び出しにまとめる**（desktop に添字の計算を置かない。
+// IMP-012。BUG-023 の調査報告）。位置より前（delta が負）を取り除いたら、位置を 1 つ前へずらして同じ文書を
+// 指す（UT-804 のケース 8）。位置より後ろなら位置は変わらない（ケース 9）。delta が 0（位置そのもの）なら、
+// 位置は 1 つ前（先頭なら 0）を指す（App はこの使い方をしない境界。ケース 10）。空の履歴・範囲外の delta
+// では何もしない（ケース 1・11）。
+func (h *History) Drop(delta int) {
+	i, ok := h.at(delta)
+	if !ok {
+		return
+	}
+	h.entries = append(h.entries[:i], h.entries[i+1:]...)
+	if delta < 0 || (delta == 0 && h.index > 0) {
+		h.index--
+	}
+	if len(h.entries) == 0 {
+		h.index = -1
+	}
+}
 
 // CanBack は戻れるかを返す（FR-051 のボタンの淡色。IMP-323）。
-//
-// TODO(v1.2.0): 未実装。
-func (h *History) CanBack() bool { return false }
+func (h *History) CanBack() bool {
+	_, ok := h.at(-1)
+	return ok
+}
 
 // CanForward は進めるかを返す。
-//
-// TODO(v1.2.0): 未実装。
-func (h *History) CanForward() bool { return false }
+func (h *History) CanForward() bool {
+	_, ok := h.at(+1)
+	return ok
+}
+
+// at は位置から delta 先の添字を返す。履歴が空か、範囲の外なら ok は偽。
+func (h *History) at(delta int) (int, bool) {
+	i := h.index + delta
+	if h.index < 0 || i < 0 || i >= len(h.entries) {
+		return 0, false
+	}
+	return i, true
+}
 
 // SetScrollTop は現在位置のスクロール位置を更新する（IMP-191, FR-050）。
 //
