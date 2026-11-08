@@ -212,6 +212,33 @@ func TestHistory(t *testing.T) {
 			t.Errorf("Step(-1) の後の Peek(-1) = %q, want A", got)
 		}
 	})
+
+	// ケース 13: 1 件だけの履歴で Drop(0) すると、空の履歴と同じになる（4.88.0）。位置が空の履歴を
+	// 指したままだと、SetScrollTop が範囲の外を書いて panic する。
+	t.Run("13 1件だけの履歴でDrop(0)", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A")
+		h.Drop(0)
+		wantAround(t, h, "-", "-")
+		h.SetScrollTop(100) // 落ちないことが要求（FR-111）
+		h.Push(Entry{Path: "B"})
+		wantAround(t, h, "-", "-")
+	})
+
+	// ケース 14: 範囲外の delta の Step は何もしない（Drop と同じ。4.88.0）。panic しない。
+	t.Run("14 範囲外のStep", func(t *testing.T) {
+		h := NewHistory()
+		pushPaths(h, "A", "B") // B
+		h.Step(+1)
+		wantAround(t, h, "A", "-")
+		h.Step(-5)
+		wantAround(t, h, "A", "-")
+		h.SetScrollTop(100)
+
+		h2 := NewHistory()
+		h2.Step(-1)
+		wantAround(t, h2, "-", "-")
+	})
 }
 
 // TestHistory_Anchor はアンカーが保持されることを検証する（IMP-191）。
