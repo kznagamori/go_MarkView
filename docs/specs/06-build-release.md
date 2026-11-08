@@ -464,7 +464,7 @@ Release の本文には少なくとも以下を含める。
 | Mermaid | `flowchart` / `sequenceDiagram` / `classDiagram` / `stateDiagram` / `erDiagram` / `gantt` / `pie` を含む検証用文書を描画し、各ブロックについて SVG 要素が生成されること |
 | KaTeX | インライン数式・ブロック数式・`math` コードブロックを描画し、数式要素が生成されること |
 | PlantUML | **Graphviz を要する図（`class`）と要さない図（`sequence`）の両方**を描画し、各ブロックについて SVG 要素が生成されること |
-| **画像** | **読み込みに失敗した画像が `<span class="img-broken">` へ置き換わり、代替テキストが本文として読めること**（FR-022, IMP-226, DSP-123）。**正常な画像は置き換えないこと**（過検出の検査）|
+| **画像** | **読み込みに失敗した画像が `<span class="img-broken">` へ置き換わり、代替テキストが本文として読めること**（FR-022, IMP-226, DSP-123）。**正常な画像は置き換えないこと**（過検出の検査）。**固有の大きさを持たない SVG も、読み込みに成功した画像として置き換えないこと**（`naturalWidth` が 0 になりうる。FR-027, IMP-226。4.80.0。利用者の判断。UT-811）|
 | **PlantUML の制限** | **`plantuml-limits.md` を描画し、4096 px を超えるブロックが図にならず理由が出ること**（MD-083, DSP-272）。取り込み指令のブロックが描画対象から外れていること（MD-084, IMP-119）|
 | **文書の id の名前空間** | **本文の中の `id` が AR-053 の表のとおりであること**——図の SVG の外では、`user-content-` で始まるか、フロントエンドが作る図の器の id（`plantuml-svg-N`）であること。**図の SVG の中では、XHTML 名前空間の要素（Mermaid のラベルの HTML）の `id` が `user-content-` で始まること。** SVG 名前空間の要素の `id`（`mermaid-svg-N`、シーケンス図の `actor0`、PlantUML の `ent0001` など）は処理系のものとして判定しない。**Mermaid のラベルに書いた `id` が接頭辞付きになっていること**（IMP-231）。**`Status` という見出しの文字が、PlantUML の描画の後も書き換わっていないこと**（[BUG-011](../bugs/2026-09-14-bug-011-document-id-collision.md)。同梱の `plantuml.js` は `#status` を決め打ちで書き換える）|
 | **表の並べ替えの比較** | 本番の `tablesort.js` の `parseNumber` と `compareCells` を決めた入力で呼び、結果が FR-130 の比較の規則（数値として比べる・`,` と `%`・数字の並び・数値を先に置く・空のセルを後ろに置く）どおりであること。**降順での空のセルの扱いと安定性は並べる側の処理であり、ここでは見ない**（手動テスト） |
