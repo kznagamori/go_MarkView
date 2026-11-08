@@ -155,13 +155,14 @@ func (s *EditSession) Discard() {
 // Check は、指示がいまの描画に対して有効かを確かめる（IMP-195 の 1, 2）。ファイルを読む前に呼ぶ。
 //
 //  1. 編集モードで、doc があり、画面が doc を表示している
-//  2. OpTask / OpCell なら、ParseRef で解け、鍵が doc.RefKey と一致し、種類が Op の種類と一致する
-//     （取り消し・やり直しは鍵を持たないため省く）
+//  2. OpTask / OpCell / OpCode / OpFormat なら、ParseRef で解け、鍵が doc.RefKey と一致し、目印の種類が
+//     Op の種類に合う（refFits。取り消し・やり直しは鍵を持たないため省く）。**OpFormat は、さらに
+//     doc が Markdown で、修飾の目印（TextRefs）を付けた描画であること**（IMP-120。UT-115 のケース 25）
 //
 // どちらかに当てはまらなければ ErrStale とする。指示を作った描画の後に、文書の切り替えか、
 // 自分の書き込み以外による再描画が起きている（FR-143）。**生 HTML で偽装した目印も、鍵が
 // 合わないためここで止まる**（NFR-030, UT-115 ケース 3）。種類の食い違う指示（セルの目印で
-// タスクを書き換える）も拒む（ケース 19）。
+// タスクを書き換える）も拒む（ケース 19・22・24）。
 func (s *EditSession) Check(doc *Document, showing bool, op Op) error {
 	if !s.on || doc == nil || !showing {
 		return ErrStale
@@ -169,9 +170,12 @@ func (s *EditSession) Check(doc *Document, showing bool, op Op) error {
 	switch op.Kind {
 	case OpUndo, OpRedo:
 		return nil
-	case OpTask, OpCell:
+	case OpTask, OpCell, OpCode, OpFormat:
 		ref, err := ParseRef(op.Ref)
-		if err != nil || ref.Key != doc.RefKey || ref.Kind != refKindOf(op.Kind) {
+		if err != nil || ref.Key != doc.RefKey || !refFits(op.Kind, ref.Kind) {
+			return ErrStale
+		}
+		if op.Kind == OpFormat && (doc.Kind != mdfile.KindMarkdown || !doc.TextRefs) {
 			return ErrStale
 		}
 		return nil
@@ -180,58 +184,57 @@ func (s *EditSession) Check(doc *Document, showing bool, op Op) error {
 	}
 }
 
-// Plan は読んだ生バイト列 raw に対する Patch を作る（IMP-195 の 4, 5）。
+// Plan は読んだ生バイト列 raw に対する Patch を作る（IMP-195 の 4, 5）。kind は表示中の文書の種類。
 //
 //  4. **raw の SHA-256 が Known と一致する**こと。違えば ErrChanged（書き込まない。FR-143）
-//  5. OpTask は PlanTask、OpCell は PlanCell、OpUndo は Undo、OpRedo は Redo
+//  5. OpTask は PlanTask、OpCell は PlanCell、OpCode は PlanCode（IMP-122）、OpFormat は PlanFormat
+//     （IMP-124）、OpUndo は Undo、OpRedo は Redo
 //
-// PlanTask / PlanCell の ErrBadRef / ErrRefNotFound は ErrStale に写す。**ErrNotEditable は
-// そのまま返す**——表の形の確かめ（IMP-106）で拒んだのは古い指示ではなく、黙って戻すと
-// 確定した入力が通知も無く消える（FR-142, FR-110。IMP-195 が edit-failed で通知する）。
-// 変わらない・履歴が空なら changed は偽。
-//
-// kind は表示中の文書の種類。widened は、手書きの取り消し線を全体で外した（FR-146。IMP-124）。
-// TODO(v1.2.0): kind・OpCode・OpFormat・widened はまだ見ない（4.75.0 で引数と戻り値を足した宣言だけ）。
+// ErrBadRef / ErrRefNotFound は ErrStale に写す（OpFormat の見える文字の食い違いもここ。FR-146 の
+// 「古い指示として扱う」）。**ErrNotEditable / ErrRejected / ErrLocked / ErrCannotFormat はそのまま
+// 返す**——確かめで拒んだのは古い指示ではなく、黙って戻すと確定した入力が通知も無く消える
+// （FR-142, FR-145, FR-110。IMP-195 が edit-failed / edit-rejected / code-locked / format-rejected で
+// 通知する。UT-115 のケース 26・27）。変わらない・履歴が空なら changed は偽。
+// widened は、手書きの取り消し線を全体で外した（FR-146。IMP-124）。
 func (s *EditSession) Plan(r *renderer.Renderer, raw []byte, kind mdfile.Kind, op Op) (p Patch, changed, widened bool, err error) {
-	p, changed, err = s.plan(r, raw, op)
-	return p, changed, false, err
-}
-
-// plan は v1.1.0 の Plan の中身（TODO(v1.2.0): Plan へ戻す）。
-func (s *EditSession) plan(r *renderer.Renderer, raw []byte, op Op) (p Patch, changed bool, err error) {
 	if !s.on || s.log == nil {
-		return Patch{}, false, ErrStale
+		return Patch{}, false, false, ErrStale
 	}
 	if sha256.Sum256(raw) != s.log.Known() {
-		return Patch{}, false, ErrChanged
+		return Patch{}, false, false, ErrChanged
 	}
 
 	switch op.Kind {
-	case OpTask, OpCell:
+	case OpTask, OpCell, OpCode, OpFormat:
 		ref, err := ParseRef(op.Ref)
-		if err != nil || ref.Kind != refKindOf(op.Kind) {
-			return Patch{}, false, ErrStale
+		if err != nil || !refFits(op.Kind, ref.Kind) {
+			return Patch{}, false, false, ErrStale
 		}
-		if op.Kind == OpTask {
+		switch op.Kind {
+		case OpTask:
 			p, changed, err = PlanTask(r, raw, ref, op.Checked)
-		} else {
+		case OpCell:
 			p, changed, err = PlanCell(r, raw, ref, op.Text)
+		case OpCode:
+			p, changed, err = PlanCode(r, raw, kind, ref, op.Text)
+		default:
+			p, changed, widened, err = PlanFormat(r, raw, ref, op.Format)
 		}
 		if err != nil {
-			return Patch{}, false, staleOr(err)
+			return Patch{}, false, false, staleOr(err)
 		}
-		return p, changed, nil
+		return p, changed, widened, nil
 
 	case OpUndo:
 		p, ok := s.log.Undo()
-		return p, ok, nil
+		return p, ok, false, nil
 
 	case OpRedo:
 		p, ok := s.log.Redo()
-		return p, ok, nil
+		return p, ok, false, nil
 
 	default:
-		return Patch{}, false, ErrStale
+		return Patch{}, false, false, ErrStale
 	}
 }
 
@@ -244,7 +247,7 @@ func (s *EditSession) Commit(op Op, p Patch, after []byte) {
 	}
 	h := sha256.Sum256(after)
 	switch op.Kind {
-	case OpTask, OpCell:
+	case OpTask, OpCell, OpCode, OpFormat:
 		s.log.Record(p, h)
 	case OpUndo:
 		s.log.CommitUndo(h)
@@ -278,9 +281,30 @@ func (s *EditSession) CellSource(r *renderer.Renderer, raw []byte, ref string) (
 
 // CodeSource は raw の中の ref のコードブロック・図のソースを返す（GetCodeSource。IMP-122, IMP-195）。
 //
-// TODO(v1.2.0): 未実装（テストの先行実装で置いたスタブ）。
+// CellSource と同じ確かめを行い（一致しなければ ErrChanged）、document.CodeSource の結果を返す。
+// ErrBadRef / ErrRefNotFound / ErrNotEditable は ErrStale とする（編集欄が開かないだけで済み、通知
+// しない）。**ErrLocked はそのまま返す**（IMP-195 が code-locked の警告を出す。FR-145。UT-115 の
+// ケース 31）。呼ぶ前に Check（OpCode）を通す。
 func (s *EditSession) CodeSource(r *renderer.Renderer, raw []byte, kind mdfile.Kind, ref string) (string, error) {
-	return "", errNotImplemented
+	if !s.on || s.log == nil {
+		return "", ErrStale
+	}
+	if sha256.Sum256(raw) != s.log.Known() {
+		return "", ErrChanged
+	}
+	parsed, err := ParseRef(ref)
+	if err != nil || !refFits(OpCode, parsed.Kind) {
+		return "", ErrStale
+	}
+	src, err := CodeSource(r, raw, kind, parsed)
+	switch {
+	case err == nil:
+		return src, nil
+	case errors.Is(err, ErrLocked):
+		return "", err
+	default:
+		return "", ErrStale
+	}
 }
 
 // end は編集モードを終え、履歴を捨てる（seq は呼び出し側が進める）。
@@ -289,12 +313,20 @@ func (s *EditSession) end() {
 	s.log = nil
 }
 
-// refKindOf は書き込みの種類に対応する目印の種類を返す。
-func refKindOf(k OpKind) RefKind {
-	if k == OpCell {
-		return RefCell
+// refFits は、書き込みの種類 op が目印の種類 ref を受け付けるかを返す（IMP-109 の「指示と目印の種類の
+// 対応」。4.75.0）。コードブロックの書き換えは図も含み、修飾は表のセルも対象にする（FR-146）。
+func refFits(op OpKind, ref RefKind) bool {
+	switch op {
+	case OpTask:
+		return ref == RefTask
+	case OpCell:
+		return ref == RefCell
+	case OpCode:
+		return ref == RefCode || ref == RefMermaid || ref == RefPlantUML
+	case OpFormat:
+		return ref == RefText || ref == RefCell
 	}
-	return RefTask
+	return false
 }
 
 // staleOr は書き換え位置の特定のエラーを、Plan が返すエラーへ写す（IMP-109 の表の 5）。

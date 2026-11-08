@@ -120,7 +120,7 @@ func classifyError(path string, err error) (kind, message string) {
 	case errors.Is(err, document.ErrPermission):
 		return errKindPermission, fmt.Sprintf("Cannot access: %s", path)
 
-	case errors.Is(err, document.ErrNotMarkdown):
+	case errors.Is(err, document.ErrNotSupported):
 		return errKindNotMarkdown, fmt.Sprintf("Not a Markdown file: %s", path)
 
 	case errors.Is(err, errLinkNotFound):

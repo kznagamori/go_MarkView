@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kznagamori/go_MarkView/internal/localurl"
 	"github.com/kznagamori/go_MarkView/internal/mdfile"
 	"github.com/kznagamori/go_MarkView/internal/renderer"
 )
@@ -18,18 +19,16 @@ import (
 //
 // 文言は開発者向けの英語とする。利用者に見せる文言は app.go が組み立てる
 // （IMP-315, UI-024）。
+//
+// ErrNotSupported は v1.1.0 の「Markdown でない」の番兵を改名したもの（4.75.0。IMP-102）。開けるファイルが
+// Markdown・図のファイル・画像ファイルの 3 種類になり、「Markdown でない」では理由を表せなくなった。
 var (
 	ErrNotFound     = errors.New("file not found")
 	ErrPermission   = errors.New("permission denied")
-	ErrNotMarkdown  = errors.New("not a markdown file")
+	ErrNotSupported = errors.New("not a supported file")
 	ErrTooLarge     = errors.New("file exceeds the maximum size")
 	ErrNeedsConfirm = errors.New("file requires confirmation before rendering")
 )
-
-// ErrNotSupported は開けるファイルでないことを表す（IMP-021, IMP-102。4.75.0 で ErrNotMarkdown を改名した）。
-//
-// TODO(v1.2.0): ErrNotMarkdown を改名する（テストの先行実装では同じ値を指す別名として置いた）。
-var ErrNotSupported = ErrNotMarkdown
 
 // サイズ閾値（IMP-101, FR-016）。
 //
@@ -43,6 +42,7 @@ const (
 // Document は表示対象の 1 文書を表す（IMP-100）。
 type Document struct {
 	Path          string             // 絶対パス（IMP-025）
+	Kind          mdfile.Kind        // 種類（IMP-105）。変換の分け方と編集の可否を決める（4.75.0）
 	Size          int64              // ファイルの実バイト数
 	HTML          string             // サニタイズ済みの本文 HTML
 	Headings      []renderer.Heading // アウトライン（FR-040）
@@ -53,20 +53,18 @@ type Document struct {
 	Warnings      []Warning          // 描画は継続するが利用者に伝える事象
 	Digest        [sha256.Size]byte  // 読み込んだ生バイト列の要約（FR-143 の「把握している内容」）
 	RefKey        string             // この描画の目印の鍵（IMP-120）。描画のたびに作り直す
-
-	// TODO(v1.2.0): 以下は Load がまだ埋めない（テストの先行実装で置いた宣言。IMP-100）。
-	Kind       mdfile.Kind // 種類（IMP-105）。変換の分け方と編集の可否を決める（4.75.0）
-	TextRefs   bool        // 修飾の目印（text:<n>）を付けて描画したか（IMP-120。編集モードの間だけ真）
-	NoDiagrams bool        // 図のファイルで、図が 1 つも無い（FR-025, FR-026。IMP-126, IMP-127）
+	TextRefs      bool               // 修飾の目印（text:<n>）を付けて描画したか（IMP-120。編集モードの間だけ真）
+	NoDiagrams    bool               // 図のファイルで、図が 1 つも無い（FR-025, FR-026。IMP-126, IMP-127）
 }
 
 // Editable は編集モードを開始できる文書かを返す（IMP-100, FR-140 の表）。
 // 不正なバイト列を置き換えた文書は、表示とファイルの内容が一致しないため偽とする。
+// 画像ファイルも偽とする（書き換える対象を持たない。FR-027）。
 //
 // 置き換えたかどうかは、Load が付ける WarnInvalidEncoding で判断する。同じ事実を
 // 別のフィールドにも持つと、片方だけが食い違いうる。
 func (d *Document) Editable() bool {
-	if d == nil {
+	if d == nil || d.Kind == mdfile.KindImage {
 		return false
 	}
 	for _, w := range d.Warnings {
@@ -97,7 +95,8 @@ type Warning struct {
 // LoadOptions は読み込みの指示（IMP-102）。
 type LoadOptions struct {
 	// Confirmed が true の場合、ConfirmThreshold を超えていても描画する。
-	// FR-016 の「Open anyway」に対応する。
+	// FR-016 の「Open anyway」と、確認して描画した文書を同じファイルとして
+	// 読み直すとき（IMP-192 の currentConfirmed）に渡す。
 	Confirmed bool
 
 	// RefKey が空でなく、読んだ生バイト列の要約が ExpectDigest と一致すれば、
@@ -108,7 +107,7 @@ type LoadOptions struct {
 
 	// TextRefs が true なら、修飾の目印（text:<n>）も付けて描画する（IMP-120, renderer.Options）。
 	// 編集モードの間の、同じ文書の読み直しだけが渡す（IMP-192）。
-	// TODO(v1.2.0): Load がまだ見ない。
+	// Markdown 以外では見ない（修飾の対象外。FR-146）。
 	TextRefs bool
 }
 
@@ -130,15 +129,17 @@ func (e *SizeError) Unwrap() error { return e.Err }
 
 // Load はファイルを読み込み、変換して Document を返す（IMP-102）。
 //
-// 返しうるエラー: ErrNotFound / ErrPermission / ErrNotMarkdown /
+// 返しうるエラー: ErrNotFound / ErrPermission / ErrNotSupported /
 // ErrTooLarge / ErrNeedsConfirm / 変換エラー。
 // サイズ超過は *SizeError でラップして返す。
 //
 // **検査の順序は IMP-102 が固定している。** 拡張子 → 存在と権限 → サイズ →
 // 読み込み → 正規化 → 変換の順で、途中で失敗したら以降は行わない。
+// 画像ファイルは中身を読まず、サイズの判定の後で版から HTML を作る（loadImage）。
 func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error) {
-	if !mdfile.IsMarkdown(path) {
-		return nil, fmt.Errorf("%s: %w", path, ErrNotMarkdown)
+	kind := mdfile.KindOf(path)
+	if kind == mdfile.KindNone {
+		return nil, fmt.Errorf("%s: %w", path, ErrNotSupported)
 	}
 
 	// 内部で保持するパスは常に絶対パスとする（IMP-025）。
@@ -152,13 +153,18 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 		return nil, classifyError(abs, err)
 	}
 	if info.IsDir() {
-		// 拡張子が Markdown のディレクトリ。読める文書ではない。
-		return nil, fmt.Errorf("%s: %w", abs, ErrNotMarkdown)
+		// 開ける拡張子の名前のディレクトリ（x.md / x.png など）。種類を問わず開けない（UT-106 のケース 5・6）。
+		return nil, fmt.Errorf("%s: %w", abs, ErrNotSupported)
 	}
 
+	// 大きさの規則は画像にも当てはめる（FR-016, FR-027）。画像は os.Stat の大きさで判定する。
 	size := info.Size()
 	if limit, err := checkSize(size, opts.Confirmed); err != nil {
 		return nil, &SizeError{Path: abs, Size: size, Limit: limit, Err: err}
+	}
+
+	if kind == mdfile.KindImage {
+		return loadImage(r, abs, info)
 	}
 
 	raw, err := os.ReadFile(abs)
@@ -184,13 +190,20 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	// ツリールートを基準にしてはならない。
 	// **自分の鍵を渡す。** 渡さないと目印が付かず、編集・並べ替え・リンクのコピーが
 	// 働かない（IMP-110, UT-116 ケース 8・9）。
-	res, err := r.Render(text, renderer.Options{BaseDir: filepath.Dir(abs), RefKey: key})
+	// **修飾の目印は Markdown だけ**（FR-146 の対象外。IMP-102）。渡した値を Document にも写す。
+	ropts := renderer.Options{
+		BaseDir:  filepath.Dir(abs),
+		RefKey:   key,
+		TextRefs: opts.TextRefs && kind == mdfile.KindMarkdown,
+	}
+	res, err := render(r, kind, text, ropts)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", abs, err)
 	}
 
 	doc := &Document{
 		Path:          abs,
+		Kind:          kind,
 		Size:          size,
 		HTML:          res.HTML,
 		Headings:      res.Headings,
@@ -200,6 +213,8 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 		NeedsPlantUML: res.NeedsPlantUML,
 		Digest:        digest,
 		RefKey:        key,
+		TextRefs:      ropts.TextRefs,
+		NoDiagrams:    res.NoDiagrams,
 
 		// 警告がなくても nil ではなく空スライスを返す。JSON で [] になり、
 		// フロントエンドが null を場合分けせずに済む（Headings と同じ扱い）。
@@ -211,6 +226,43 @@ func Load(r *renderer.Renderer, path string, opts LoadOptions) (*Document, error
 	}
 
 	return doc, nil
+}
+
+// render は種類ごとの変換を呼ぶ（IMP-102 の「種類ごとの変換」の表）。画像は loadImage が扱う。
+func render(r *renderer.Renderer, kind mdfile.Kind, text []byte, opts renderer.Options) (renderer.Result, error) {
+	switch kind {
+	case mdfile.KindPlantUML:
+		return r.RenderPlantUMLFile(text, opts)
+	case mdfile.KindMermaid:
+		return r.RenderMermaidFile(text, opts)
+	default:
+		return r.Render(text, opts)
+	}
+}
+
+// loadImage は画像ファイルの Document を組み立てる（IMP-102, IMP-128, FR-027）。
+//
+//   - **中身を読まない。** 版（localurl.Version。更新時刻と大きさ）を URL に付け、外部で書き換えられたら
+//     URL が変わって WebView が取り直す（BUG-026）
+//   - **Digest は版の文字列の SHA-256**（版が同じなら同じ内容とみなす）。零値のままにすると、監視の
+//     読み直しの「同じ内容なら送らない」（IMP-192）で、外部の書き換えが画面に届かない（UT-117 のケース 7）
+//   - 鍵は作らない（編集しない）。LoadOptions.RefKey も見ない（UT-117 のケース 10）
+func loadImage(r *renderer.Renderer, abs string, info os.FileInfo) (*Document, error) {
+	version := localurl.Version(info)
+	res, err := r.RenderImageFile(abs, version)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", abs, err)
+	}
+
+	return &Document{
+		Path:     abs,
+		Kind:     mdfile.KindImage,
+		Size:     info.Size(),
+		HTML:     res.HTML,
+		Headings: res.Headings,
+		Digest:   sha256.Sum256([]byte(version)),
+		Warnings: []Warning{},
+	}, nil
 }
 
 // refKeyLen は鍵の元にする乱数のバイト数（IMP-102。16 進で 16 文字になる）。

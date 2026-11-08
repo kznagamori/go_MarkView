@@ -21,7 +21,9 @@ const cellTrimSet = " \t\v\f"
 // 区切りの `|` とその内側の前後の空白は残す。整えた結果が元の内容と同じなら changed は偽。
 //
 // **組み立てた Patch を当てた結果をもう一度解き直し、表の形が変わらないことを確かめる。**
-// 確かめられなければ Patch を返さず ErrNotEditable とする（書き込まない）。エスケープの
+// 確かめられなければ Patch を返さず ErrRejected とする（書き込まない。4.75.0。v1.1.0 は
+// ErrNotEditable を返していた。拒んだのは書き込めないからではなく表の形が変わるためであり、
+// IMP-195 が edit-rejected で通知する）。エスケープの
 // 規則はパーサの実装に依存し、手で書いた規則だけでは形が変わらないことを保証できない
 // （IMP-106。4.43.0 で `\` の個数を数える規則が goldmark と食い違っていた）。
 func PlanCell(r *renderer.Renderer, raw []byte, ref Ref, text string) (p Patch, changed bool, err error) {
@@ -63,7 +65,7 @@ func PlanCell(r *renderer.Renderer, raw []byte, ref Ref, text string) (p Patch, 
 
 	p = Patch{Offset: start, Old: bytes.Clone(old), New: []byte(written)}
 	if !keepsTableShape(r, src, raw, locs, ref, p, content) {
-		return Patch{}, false, ErrNotEditable
+		return Patch{}, false, ErrRejected
 	}
 	return p, true, nil
 }

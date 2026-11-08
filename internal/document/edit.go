@@ -19,20 +19,21 @@ import (
 type RefKind int
 
 const (
-	RefTask RefKind = iota // タスクリストのチェックボックス（FR-141）
-	RefCell                // 表のセル（FR-142。修飾の対象にもなる。FR-146）
-	// TODO(v1.2.0): ParseRef はまだ以下を解かない（テストの先行実装で置いた宣言。IMP-106）。
-	RefCode     // フェンス付きのコードブロック（FR-145。4.75.0）
-	RefMermaid  // Mermaid のブロックと Mermaid ファイル（FR-145）
-	RefPlantUML // PlantUML のブロックと PlantUML ファイルの図（FR-145）
-	RefText     // 修飾できるブロック（FR-146, FR-147）
+	RefTask     RefKind = iota // タスクリストのチェックボックス（FR-141）
+	RefCell                    // 表のセル（FR-142。修飾の対象にもなる。FR-146）
+	RefCode                    // フェンス付きのコードブロック（FR-145。4.75.0）
+	RefMermaid                 // Mermaid のブロックと Mermaid ファイル（FR-145）
+	RefPlantUML                // PlantUML のブロックと PlantUML ファイルの図（FR-145）
+	RefText                    // 修飾できるブロック（FR-146, FR-147）
 )
 
 // Ref はフロントエンドから届く書き換え対象の指示を解いたもの（IMP-120 の目印の値）。
 type Ref struct {
-	Key   string // 描画の鍵（Document.RefKey と照合する）
-	Kind  RefKind
-	Index int // RefTask: 文書の中で何番目のタスクか（0 起点）。RefCell: 何番目の表か
+	Key  string // 描画の鍵（Document.RefKey と照合する）
+	Kind RefKind
+	// Index は、RefTask なら文書の中で何番目のタスクか（0 起点）、RefCell なら何番目の表か、
+	// RefCode / RefMermaid / RefPlantUML / RefText ならその種類の中で何番目か。
+	Index int
 	Row   int // RefCell: 行（0 が見出し行、1 以降が本体の行。ソース上の順）
 	Col   int // RefCell: 列（0 起点）
 }
@@ -44,7 +45,7 @@ var (
 	ErrNotEditable = errors.New("document is not editable")
 	ErrChanged     = errors.New("file changed on disk")
 
-	// v1.2.0 の番兵（IMP-106。4.75.0）。TODO(v1.2.0): PlanCell の確かめで拒んだときは ErrRejected に改める。
+	// v1.2.0 の番兵（IMP-106。4.75.0）。
 	ErrRejected     = errors.New("edit would change the document structure") // 確かめで拒んだ（FR-143。edit-rejected）
 	ErrLocked       = errors.New("code block cannot be edited")              // 前置きが行ごとに違う（FR-145。code-locked）
 	ErrCannotFormat = errors.New("formatting cannot be applied")             // 修飾を分けられない・確かめで拒んだ（FR-146。format-rejected）
@@ -54,12 +55,21 @@ var (
 //
 // **サニタイズが通す形（IMP-116 の editRefPattern）と揃える。** 鍵は小文字の 16 進
 // 16 文字、数は符号なしの 10 進数だけを受け付ける。`strconv.Atoi` だけで解くと
-// `+3` を受け付けてしまう（UT-108 ケース 5）。表の目印（`table:<t>`）と図の目印
-// （`mermaid:<n>` / `plantuml:<n>`）は書き込みの対象ではないため、ここでは形に含めない。
-var refPattern = regexp.MustCompile(`^([0-9a-f]{16}):(?:task:([0-9]+)|cell:([0-9]+):([0-9]+):([0-9]+))$`)
+// `+3` を受け付けてしまう（UT-108 ケース 5）。表の目印（`table:<t>`）は書き込みの対象では
+// ないため、ここでは形に含めない。コードブロックと図（`code` / `mermaid` / `plantuml`）と
+// 修飾（`text`）は v1.2.0 で書き換えの対象になった（FR-145〜FR-147。UT-108 ケース 10）。
+var refPattern = regexp.MustCompile(`^([0-9a-f]{16}):(?:task:([0-9]+)|cell:([0-9]+):([0-9]+):([0-9]+)|(code|mermaid|plantuml|text):([0-9]+))$`)
+
+// blockKinds は番号を 1 つだけ持つ目印の種類の名前と RefKind（IMP-120 の値の形）。
+var blockKinds = map[string]RefKind{
+	"code":     RefCode,
+	"mermaid":  RefMermaid,
+	"plantuml": RefPlantUML,
+	"text":     RefText,
+}
 
 // ParseRef は data-ref 属性の値（IMP-120）を解く。形が違えば ErrBadRef。
-// 書き込みの対象（task / cell）以外の目印（table / mermaid / plantuml。IMP-120）も ErrBadRef とする。
+// 書き込みの対象（task / cell / code / mermaid / plantuml / text）以外の目印（table。IMP-120）も ErrBadRef とする。
 // 数は IMP-116 の正規表現と同じ形（符号なしの 10 進数）だけを受け付け、int に収まらなければ ErrBadRef。
 func ParseRef(s string) (Ref, error) {
 	m := refPattern.FindStringSubmatch(s)
@@ -67,14 +77,21 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{}, ErrBadRef
 	}
 
-	// 部分一致の添字: 1 鍵、2 タスクの番号、3〜5 セルの表・行・列。
-	// 使わなかった側の群は空文字になる。
+	// 部分一致の添字: 1 鍵、2 タスクの番号、3〜5 セルの表・行・列、6・7 コードブロックと図と
+	// 修飾の種類と番号。使わなかった側の群は空文字になる。
 	if m[2] != "" {
 		index, ok := parseIndex(m[2])
 		if !ok {
 			return Ref{}, ErrBadRef
 		}
 		return Ref{Key: m[1], Kind: RefTask, Index: index}, nil
+	}
+	if m[6] != "" {
+		index, ok := parseIndex(m[7])
+		if !ok {
+			return Ref{}, ErrBadRef
+		}
+		return Ref{Key: m[1], Kind: blockKinds[m[6]], Index: index}, nil
 	}
 
 	table, ok1 := parseIndex(m[3])

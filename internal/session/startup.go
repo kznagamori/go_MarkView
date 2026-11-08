@@ -79,7 +79,7 @@ func resolveFromArg(arg, cwd string) (Startup, error) {
 	}
 
 	// ファイルの場合、Markdown かどうかはここで判定しない。
-	// 拡張子が対象外であることは document.Load が ErrNotMarkdown として
+	// 拡張子が対象外であることは document.Load が ErrNotSupported として
 	// 報告する（IMP-102）。判定を 2 箇所に分散させないため、ここでは通す。
 	return Startup{TreeRoot: filepath.Dir(target), Initial: target, Requested: target}, nil
 }

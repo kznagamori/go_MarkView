@@ -33,7 +33,7 @@ func (a *App) onFileDrop(paths []string) {
 	if target == "" {
 		// Markdown でもディレクトリでもない。ツリーも本文も変えず、
 		// 対応していない旨をステータスへ出す（FR-011 の表の 4 行目）。
-		a.emit(eventError, newErrorDTO(firstPath(paths), document.ErrNotMarkdown))
+		a.emit(eventError, newErrorDTO(firstPath(paths), document.ErrNotSupported))
 		return
 	}
 
