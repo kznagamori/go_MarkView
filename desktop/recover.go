@@ -69,6 +69,11 @@ func (a *App) recoverLink(href string, res *LinkResultDTO) {
 // showing を偽にし、監視を外し、編集モードを終える。**対象が分からなければ target を空にする**
 // ——前の文書のまま残すと、F5 と「エディタで開く」が画面に無い前の文書を指す（IMP-190）。
 //
+// **表示履歴とツリールートは回復では動かさない**（IMP-310。パニックは想定外の失敗であり、どこまで
+// 進んだかを推し量らない）。commit へは、どちらも動かさない経路（openFromReload。IMP-192 の表）を
+// 明示して渡す——経路を省くとゼロ値の openFromDialog になり、状態画面を積む規則（BUG-024）で履歴に
+// 積んでツリールートを移してしまう。
+//
 // **錠は、パニックの時点で解けている。** ioMu と mu を取る箇所は、パニックが途中で起きても
 // defer で解くように書く（open・commit・watch.go、bind.go と history.go の読み出し）。
 func (a *App) openPanicked(errPath, target string, r any) *ErrorDTO {
@@ -81,7 +86,7 @@ func (a *App) openPanicked(errPath, target string, r any) *ErrorDTO {
 	defer a.ioMu.Unlock()
 
 	a.edit.Left()
-	c := a.commit(openRequest{path: target}, nil, err, outcomeState, target, documentView{})
+	c := a.commit(openRequest{path: target, src: openFromReload}, nil, err, outcomeState, target, documentView{})
 	switchWatch(c.watcher, outcomeState, target)
 
 	name := ""

@@ -46,7 +46,7 @@ func changesTreeRoot(src openSource) bool {
 		return true
 	default:
 		// openFromConfirm はここに含めない。確認画面を出した時点で
-		// 変更済みである（commitPending）。
+		// 変更済みである（commitState）。
 		return false
 	}
 }
@@ -59,7 +59,7 @@ func pushesHistory(src openSource) bool {
 	switch src {
 	case openFromHistory, openFromReload, openFromConfirm:
 		// openFromConfirm は確認画面を出した時点で積み済みである
-		// （commitPending）。ここで積むと同じ文書が 2 つ並ぶ。
+		// （commitState）。ここで積むと同じ文書が 2 つ並ぶ。
 		return false
 	default:
 		return true
