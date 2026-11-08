@@ -18,7 +18,8 @@ import (
 // 結果は document:opened で送る。フロントエンドの呼び出しではなく OS の
 // 操作で表示対象が変わるためである（IMP-320）。
 func (a *App) onFileDrop(paths []string) {
-	if root := dropRoot(paths); root != "" {
+	root := dropRoot(paths)
+	if root != "" {
 		a.mu.Lock()
 		changed := a.setTreeRoot(root)
 		newRoot := a.treeRoot
@@ -31,6 +32,13 @@ func (a *App) onFileDrop(paths []string) {
 
 	target := dropTarget(paths)
 	if target == "" {
+		// **ディレクトリに README が無いだけなら、ツリールートを移したところで終える。** 表示を変えず、
+		// 通知もしない（FR-011 の表の 2 行目。4.89.0）。v1.0.0 から、ここで「開けないファイル」を
+		// ステータスに出していた（起動時の引数でディレクトリを渡したときは出さない。E2E-214）。
+		if root != "" {
+			return
+		}
+
 		// Markdown でもディレクトリでもない。ツリーも本文も変えず、
 		// 対応していない旨をステータスへ出す（FR-011 の表の 4 行目）。
 		a.emit(eventError, newErrorDTO(firstPath(paths), document.ErrNotSupported))
