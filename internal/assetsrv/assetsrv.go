@@ -4,7 +4,7 @@
 // WebView は file:// スキームでの任意のローカルファイル参照を制限するため、
 // ローカル画像（FR-022）はこのハンドラを通して配信する。
 //
-// 依存するのは localurl だけである（IMP-012）。
+// 依存するのは葉の localurl と mdfile だけである（IMP-012）。
 package assetsrv
 
 import (
@@ -17,29 +17,13 @@ import (
 	"strings"
 
 	"github.com/kznagamori/go_MarkView/internal/localurl"
+	"github.com/kznagamori/go_MarkView/internal/mdfile"
 )
 
 // AppIconPath はアプリケーションアイコンの配信パス（IMP-160, UI-025）。
 //
 // 情報ダイアログ（UI-100）が参照する。配信するのは png のみとする。
 const AppIconPath = "/appicon.png"
-
-// allowedImageExt は配信を許す拡張子と Content-Type（IMP-161, FR-022）。
-//
-// **画像として扱える拡張子だけを配信する。** 任意の拡張子を配信すると、
-// 文書と同じディレクトリにある鍵や設定ファイルまで WebView から読めてしまう
-// （AR-041, NFR-031）。
-var allowedImageExt = map[string]string{
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".gif":  "image/gif",
-	".svg":  "image/svg+xml",
-	".webp": "image/webp",
-	".avif": "image/avif",
-	".bmp":  "image/bmp",
-	".ico":  "image/x-icon",
-}
 
 // Handler は 3 系統のパスを配信する（IMP-160）。
 //
@@ -102,8 +86,12 @@ func (h *Handler) serveLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. **解決後のパス**の拡張子を検査する。
-	ctype, ok := allowedImageExt[strings.ToLower(filepath.Ext(resolved))]
+	// 4. **解決後のパス**の拡張子を検査する。**画像として扱える拡張子だけを配信する。**
+	//    任意の拡張子を配信すると、文書と同じディレクトリにある鍵や設定ファイルまで
+	//    WebView から読めてしまう（AR-041, NFR-031）。拡張子と Content-Type の表は mdfile が
+	//    持つ（IMP-105, IMP-161。v1.1.0 まではここの allowedImageExt）——開ける画像（FR-027）と
+	//    配信する画像を同じ一覧にする。名前全体が拡張子のもの（".png"）は画像としない。
+	ctype, ok := mdfile.ImageContentType(resolved)
 	if !ok {
 		notFound(w)
 		return

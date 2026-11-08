@@ -54,8 +54,13 @@ type Config struct {
 	WindowHeight    int    `json:"windowHeight"`
 	Editor          string `json:"editor"` // 実行ファイルの絶対パス（UI-116）
 
-	// ツリーのフィルター（FR-037, UI-110。IMP-150。4.75.0）。
-	// TODO(v1.2.0): Default() の既定（TreeShowDiagrams は true）をまだ入れていない（宣言だけ）。
+	// ツリーのフィルター（FR-037, UI-110。IMP-150。4.75.0）。種類ごとの表示・非表示。
+	// Markdown は常に表示するため項目を持たない。**ツリーについて保存するのは、ペインの表示と幅と、
+	// この 2 つだけ**であり、パスでも閲覧の痕跡でもない（NFR-042）。
+	//
+	// v1.1.0 までの設定ファイルにはこの 2 つが無く、Default() を初期値として読むため既定値で始まる
+	// （IMP-151, UI-113）。**真偽値なので Normalize の対象にしない**（IMP-153。ゼロ値と「利用者が
+	// 非表示を選んだ状態」を区別できない）。
 	TreeShowDiagrams bool `json:"treeShowDiagrams"` // 既定 true
 	TreeShowImages   bool `json:"treeShowImages"`   // 既定 false
 }
@@ -74,6 +79,10 @@ func Default() Config {
 		WindowWidth:     1280,
 		WindowHeight:    860,
 		Editor:          "", // 未選択。押したときに選択ウィンドウで選ぶ（UI-103）
+
+		// ツリーのフィルター（FR-037）。図は表示し、画像は表示しない
+		TreeShowDiagrams: true,
+		TreeShowImages:   false,
 	}
 }
 
