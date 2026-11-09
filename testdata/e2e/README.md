@@ -106,6 +106,13 @@ go run ./scripts/gentestdata -clean   # 消す
 
 ![GitHub のアイコン](https://github.githubassets.com/favicons/favicon.png)
 
+### 大きさを持たない SVG
+
+`images/nosize.svg` は `width` / `height` を持たず、`viewBox` だけを持つ SVG です。
+**本文の幅いっぱいに、縦横比（2 : 1）を保って**出るはずです（GitHub と同じ。E2E-236。BUG-029）。
+
+![大きさの無い SVG](./images/nosize.svg)
+
 ## リンク
 
 ### 画像へのリンク
