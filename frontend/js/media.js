@@ -212,7 +212,26 @@ function wrapImage(img) {
   frame.appendChild(img);
   outer.append(frame, buttons.actions);
 
-  settle({ key, kind: "image", frame, target: img, ...buttons });
+  const entry = { key, kind: "image", outer, frame, target: img, fluid: null, ...buttons };
+  classifyImage(entry);
+  settle(entry);
+}
+
+// classifyImage は、固有の大きさを持たない画像（width / height の無い SVG）を見分け、器を本文の幅いっぱいに
+// する（BUG-029, IMP-228, DSP-124）。**naturalWidth が 0 か、器が描かれているのに画像の幅が 0 に縮んだもの**。
+// 器（inline-block）は中身に合わせて縮むため、大きさを持たない SVG はその中で幅 0 になる（包む前は本文の幅
+// いっぱいに描かれる。GitHub と同じ）。**naturalWidth だけでは見分けられない**——Chromium は 300 と返す。
+// 器が描かれていない（閉じた <details> の中）ときは決めずに残し、scheduleUpdate（toggle と幅の変化）で決め直す。
+// **書き手が width / height を指定した画像（生 HTML。IMP-116 が数値だけ通す）は見分けず、その大きさで描く。**
+function classifyImage(entry) {
+  if (entry.fluid !== null) return;
+
+  const img = entry.target;
+  if (img.hasAttribute("width") || img.hasAttribute("height")) entry.fluid = false;
+  else if (img.naturalWidth === 0) entry.fluid = true;
+  else if (entry.outer.getClientRects().length === 0) return;
+  else entry.fluid = img.getBoundingClientRect().width === 0;
+  entry.outer.classList.toggle("is-fluid", entry.fluid);
 }
 
 // settle は準備の済んだ対象を登録し、待っていた原寸表示を当て、ボタンの表示を決め、拡大画面へ知らせる。
@@ -352,7 +371,11 @@ function scheduleUpdate() {
     frameRequest = 0;
     for (const [key, entry] of [...entries]) {
       if (!entry.frame.isConnected) entries.delete(key);
-      else if (entry.frame.contains(entry.target)) updateButtons(entry);
+      else if (entry.frame.contains(entry.target)) {
+        // 閉じた <details> の中で包んだ画像は、描かれた時点で見分ける（BUG-029）
+        if (entry.kind === "image") classifyImage(entry);
+        updateButtons(entry);
+      }
     }
   });
 }

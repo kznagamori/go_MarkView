@@ -637,6 +637,20 @@
   max-width: 100%;
 }
 
+/* 固有の大きさを持たない画像（width / height の無い SVG。media.js が is-fluid を付ける）は、器をブロックにして
+   本文の幅いっぱいに描く（BUG-029, DSP-124）。包む前の描かれ方であり、GitHub と同じ。inline-block の器のままだと
+   中身に合わせて縮み、幅 0 になって見えない。
+   **画像の width: 100% は明示する。** ブロックの中の大きさを持たない画像の幅は CSS 2.1 では「未定義」で、
+   幅いっぱいは推奨にすぎない（Chromium はそう描くため、外しても Chromium では変わらない）。要求をエンジンの
+   既定に委ねない（NFR-061） */
+.markdown-body .media-image.is-fluid {
+  display: block;
+}
+
+.markdown-body .media-image.is-fluid > .media-frame > img {
+  width: 100%;
+}
+
 /* 原寸表示では横スクロールの器を本文幅いっぱいに取る */
 .markdown-body .media-image:has(> .media-frame.is-actual) {
   display: block;
