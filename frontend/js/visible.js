@@ -44,10 +44,11 @@ export function visibleText(block) {
 // offsetOf は DOM の位置（Range の端と同じ (node, offset)）を、見える文字の中の符号位置へ移す。
 // ブロックの外・リストの項目の数えない部分（入れ子のリストなど）なら -1。
 //
-// **部品（数式・画像・脚注の参照）の中の位置は、その部品の手前とする**（部品は 1 文字であり、中の
-// 位置に当たる符号位置が無い）。数えない要素（見出しのアンカーなど）の中の位置は、その要素の手前の
-// 文字までを数えた位置になる。
-export function offsetOf(block, node, offset) {
+// edge は選択の端の向き（"start" | "end"。4.92.0）。**部品（数式・画像・脚注の参照）の中の位置は、始まりの端なら
+// 部品の手前、終わりの端なら部品の後ろとする**——どちらの端でも部品を選択に含める（部品は 1 文字であり、中の位置に
+// 当たる符号位置が無い。Go 側の IMP-124 の 3 の「部品の一部にかかっていたら全体へ広げる」と同じ向き）。数えない要素
+// （見出しのアンカーなど）の中の位置は、その要素の手前の文字までを数えた位置になる。
+export function offsetOf(block, node, offset, edge = "start") {
   if (!block || !node || !(block === node || block.contains(node))) return -1;
 
   let point;
@@ -83,6 +84,8 @@ export function offsetOf(block, node, offset) {
       count += 1;
       continue;
     }
+    // 位置が部品の中（始まり（要素の直前）が位置より手前）で、終わりの端なら、部品の後ろとする（部品を含める）
+    if (edge === "end" && point.comparePoint(piece.node.parentNode, indexOf(piece.node)) < 0) count += 1;
     break;
   }
   return count;
