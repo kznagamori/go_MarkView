@@ -153,8 +153,9 @@ jobs:
           #     他のモジュールを import しており、どれか 1 つが壊れても読み込みが失敗する
           #   - CSS はスモークのページ（scripts/smoke/harness.html）が読む 2 つ
           #   - internal/ は renderer とその依存（go list -deps ./scripts/smoke で確かめる）
-          #   - testdata/e2e/docs/img/sample.png は testdata/smoke.md の「読める画像」
-          paths="frontend/vendor/ frontend/js/ frontend/css/tokens.css frontend/css/markdown.css internal/renderer/ internal/localurl/ internal/applog/ scripts/smoke/ testdata/smoke.md testdata/e2e/plantuml-limits.md testdata/e2e/docs/img/sample.png go.mod go.sum"
+          #   - testdata/e2e/docs/img/sample.png と testdata/e2e/images/nosize.svg は testdata/smoke.md の
+          #     「読める画像」（SVG は固有の大きさを持たない画像。v1.2.0。消すと画像の検査が落ちる）
+          paths="frontend/vendor/ frontend/js/ frontend/css/tokens.css frontend/css/markdown.css internal/renderer/ internal/localurl/ internal/applog/ scripts/smoke/ testdata/smoke.md testdata/e2e/plantuml-limits.md testdata/e2e/docs/img/sample.png testdata/e2e/images/nosize.svg go.mod go.sum"
           if git diff --quiet "$base" "$head" -- $paths; then
             echo "描画に関わる変更なし"
             echo "changed=false" >> "$GITHUB_OUTPUT"
