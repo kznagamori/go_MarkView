@@ -49,10 +49,12 @@ frontend/
 │   ├── about.js            情報ダイアログの中身（IMP-251）
 │   ├── editors.js          エディタ選択ダイアログの中身（IMP-252）
 │   ├── media.js            図と画像のボタン・原寸表示（IMP-228）
+│   ├── mediabuttons.js     図と画像のボタンの組み立てと、小さい画像のボタンの置き場所（IMP-228。4.91.0）
 │   ├── tablesort.js        表の表示上の並べ替え（IMP-229）
 │   ├── contextmenu.js      右クリックメニュー（IMP-249）
 │   ├── menuactions.js      右クリックメニューの項目の実行（IMP-249。4.70.0）
 │   ├── expand.js           拡大画面（IMP-253）
+│   ├── expandbar.js        拡大画面の操作バーとキーの表（IMP-253。4.91.0）
 │   ├── editmode.js         編集モード・チェックボックス・取り消し（IMP-260, IMP-261, IMP-263）
 │   ├── blockedit.js        編集欄の共通の部品（開いている間の拒む・保留・確定の待ち・開き直し。IMP-264。4.75.0）
 │   ├── celledit.js         セルの編集欄（IMP-262。4.75.0 で editmode.js から分けた）
@@ -71,6 +73,7 @@ frontend/
 - **v1.2.0 で、セルの編集欄（IMP-262）を `celledit.js` へ分け、セルとコードブロックの編集欄に共通する部品を `blockedit.js` に置いた**（4.75.0。v1.1.0 の `editmode.js` は 358 行で、コードブロックの編集欄を足すと 400 行の目安（IMP-011）を超える）。分けても、鍵を読むのは `refs.js` だけとする（IMP-260）。
 - **`blockedit.js` は `celledit.js` / `codeedit.js` / `editmode.js` / `viewer.js` / `navigate.js` / `main.js` を import しない**（いずれもこのモジュールを呼ぶ。IMP-264）。
 - **`visible.js` は自前の他のモジュールを import しない**（描画スモーク（BR-054）が直接読み、Go 側の数え方と突き合わせる。IMP-266）。
+- **`mediabuttons.js` と `expandbar.js` は、自前のモジュールのうち `strings.js` と `util.js` だけを import する**（4.91.0）。`media.js` と `expand.js` はどちらも 400 行で、画像ファイルの表示（FR-027）を足すと 400 行の目安を超えるため、状態を持たない組み立ての部分を分けた。**状態は元のモジュールが持ち、押されたときの処理を渡す**（IMP-228, IMP-253）。元のモジュールの import の制約（IMP-228 / IMP-253）を崩さない。
 - **`navigate.js` は `main.js` を import しない**（`main.js` が配線のために `navigate.js` を import する）。`main.js` が 400 行の目安を超えたため、文書を開く経路（ダイアログ・ツリー・リンク・履歴・再読み込み・確認画面の `Open anyway`）と、その結果（`OpenResultDTO` / `LinkResultDTO` / イベントの `DocumentDTO` / `ErrorDTO`）の反映を分けた。
 - **`decorate.js` は `viewer.js` / `overlay.js` / `main.js` / `navigate.js` / `docswitch.js` を import しない**（`viewer.js` が `renderDocument` の手順 4〜6 で呼ぶ）。`viewer.js` が 400 行の目安を超えたため、手順の順序を持たない飾り付け（IMP-225 / IMP-226 / IMP-227）を分けた。**`viewer.js` は `markBrokenImages` を再 export する**——描画スモーク（BR-054）は `viewer.js` を動的に読んでこの関数を呼び、`viewer.js` の連結の失敗を 1 件の失敗として捉える（UT-811 のケース 8）。`decorate.js` を直接読むと、その失敗が見えなくなる。
 - **`lazy.js` は `puml.js` の `ensurePlantUML` / `drawPlantUML` / `redrawPlantUML` と `drawing.js` の `startDrawing` を再 export する。** 呼び出し側（`viewer.js` / `theme.js` は `drawDiagrams` / `redrawDiagrams`、描画スモークの `harness.js` は `drawMermaid` / `drawPlantUML`）は `lazy.js` だけを import する（IMP-230 の export の置き場所は変えない）。**`drawing.js` は自前の他のモジュールを import しない**——図の器の連番（IMP-233 の 2 で Mermaid と PlantUML が共有する）と描画の世代を片方に置くと循環する。
@@ -567,6 +570,7 @@ export function markBrokenImages(root)   // viewer.js が再 export する（描
 - `root.querySelectorAll('img')` を走査し、各要素に `error` を配線する。`error` で、**その `<img>` を `<span class="img-broken">` へ置き換える**（DSP-123）。
 - **置き換えたら、`img` の `data-media-index`（IMP-220 の手順 5a で IMP-228 の `numberImages` が振った番号）を `span` へ写し、`media.js` の `onImageBroken(span)` を呼ぶ**（IMP-228）。拡大画面が開いていた画像の読み込みに失敗したことを、拡大画面へ知らせるためである（IMP-253）。
 - **配線した時点ですでに失敗しているものを別途拾う。** `img.complete` で `img.decode()` が拒否されたら、その場で置き換える（4.75.0。v1.1.0 は `naturalWidth === 0` で判定していた）。**`naturalWidth` を失敗の判定に使わない**——固有の大きさを持たない SVG は、読み込みに成功しても `naturalWidth` が 0 になりうる（画像ファイルの表示と、URL の版で再描画のたびに同じ画像を使い回す場面で起きる。FR-027, IMP-118）。`naturalWidth` は寸法を出すかどうかの判断にだけ使う（IMP-228）。
+- **本文から外れた画像（次の描画で差し替えられた前の本文の画像。`isConnected` が偽）では何もしない**（4.91.0）。`decode()` の拒否と `error` は描画の後に届く。外れた画像の番号を `onImageBroken` へ渡すと、**新しい本文の同じ番号の画像が対象から外れ、拡大画面が閉じる**（IMP-228 の図の `isConnected` と同じ守り。v1.1.0 からの潜在的な欠陥で、`decode()` が非同期なので起きやすくなる）。前の本文の画像は、外れても親（段落）を持ったままなので、親の有無では見分けられない。
 - **代替テキストは自前で描く。** `span.textContent = img.alt` とする。**`alt` は文書由来の文字列であり、`innerHTML` に渡してはならない**（IMP-220）。
 - **枠と色は CSS が与える**（DSP-123）。フロントエンドが用意するのは**要素とテキストだけ**であり、体裁を JavaScript で組み立てない。
 - ローカル画像とリモート画像（MD-071）を区別しない。FR-022 はどちらも同じ扱いと定めている。
@@ -670,6 +674,13 @@ export function naturalSize(target)          // 本来の大きさ { width, heig
   </span>
   ```
 
+- **固有の大きさを持たない画像（`width` / `height` の無い SVG）は、器（`.media-image`）に `is-fluid` を付けて本文の幅いっぱいに描く**（FR-022, DSP-124。4.91.0。[BUG-029](../bugs/2026-11-09-bug-029-svg-no-size-collapsed.md)）。`inline-block` の器は中身に合わせて縮み、大きさを持たない SVG はその中で幅 0 になる（包む前は本文の幅いっぱいに描かれる。v1.1.0 は見分けず、Markdown に埋め込んだ同じ SVG が見えなかった）。
+  - **見分けるのは、`naturalWidth` が 0 か、包んだ後に器が描かれているのに画像の幅が 0 に縮んだもの**とする（包んだ直後に測る）。**`naturalWidth` だけでは見分けられない**——Chromium（WebView2）は 300 と返す（ヘッドレスの Edge 157 で測った）。
+  - **器が描かれていない（`getClientRects()` が空。閉じた `<details>` の中をエンジンが配置しない場合）ときは決めずに残し**、判定のやり直しの契機（下の「縮小表示中の判定」）で決める。
+  - **書き手が `width` / `height` を書いた画像（生 HTML。IMP-116 が数値だけ通す）は見分けず、その大きさで描く。**
+- **画像が小さく、ボタンが画像に収まらないときは、ボタンの器に `is-outside` を付けて画像の右上の外側に出す**（DSP-124。4.81.0。画像ファイルの `.ico` など）。`mediabuttons.js` の `placeImageButtons` が、ボタンの表示を決めるたびに置き直す。
+  - **収まるかは、ボタンを通常の位置に置いて測る**（ボタンの寸法と余白を JavaScript に書き写さない）。上端は画像の上端にそろえ、その位置を `--media-actions-top` に入れる（行の高さより小さい画像は、器の上端より下に描かれる）。
+  - **外側に出す余地が無ければ（ボタンが画像を含む要素の右端を越える）内側のまま**とする（4.91.0）。本文の幅に縮めた、縦に短い横長の画像では本文の中でも収まらないが、外側に出すと本文ペインが横にはみ出す（UI-050）。親がインラインの要素（画像を囲むリンク）なら余地を測れないため、内側のまま。
 - 図は `.mermaid-rendered` / `.plantuml-rendered` の要素そのものに `media-frame` のクラスを足す。ボタンはその外側の `.code-block` に置く（上記）。
 - **`media-frame` は「原寸表示で横にスクロールする器」だけに付け、ボタンをその中に置かない。** スクロールする器の中の絶対配置は内容と一緒に流れる（IMP-202 の検索バーと同じ事情）。**ボタンは必ずスクロールしない親（図は `.code-block`、画像は `.media-image`）に置く**（DSP-124）。
 - ボタンは `data-tip`（`S.tipActualSize` / `S.tipExpand`）と同じ文字列の `aria-label` を持つ（IMP-247, IMP-295）。**アイコンは `icon-actual-size` / `icon-expand`**（IMP-203）。
@@ -684,13 +695,13 @@ function isReduced(target)           // naturalSize(target).width > target.getBo
 
 - **SVG の本来の幅と高さ**は、`width` / `height` 属性が px の数値（単位の無い数値を含む）ならその値、そうでなければ `viewBox` の幅と高さとする。Mermaid は `width="100%"` と `style="max-width: <幅>px"` を出し、PlantUML は `width` を px で出す。**`getBBox` を使わない**——描画の内容の外接矩形であり、図の大きさではない。
 - **img の `naturalWidth` が 0（固有の大きさを持たない SVG）なら、本文で描いている大きさ（`getBoundingClientRect`）を本来の大きさとみなす**（4.76.0）。0 のまま使うと、画像ファイル（拡大画面のボタンを常に出す。FR-027）を拡大画面で開いたとき、中身の大きさが 0 になる（DSP-173）。
-- 判定は次の契機でやり直す（`requestAnimationFrame` で 1 フレームにまとめる。NFR-012）。
+- 判定は次の契機でやり直す（`requestAnimationFrame` で 1 フレームにまとめる。NFR-012）。**決めずに残した大きさを持たない画像の見分けと、小さい画像のボタンの置き場所も、同じ契機でやり直す**（4.91.0）。
   - `#markdown` の幅の変化（`ResizeObserver`。ウィンドウとペインの幅。FR-120）
   - 画像の `load`、図の描画の完了（`onDiagramSettled`）
   - `<details>` の `toggle`（閉じた中の要素は幅を持たないことがある）
 - **拡大画面へ移している対象（`.media-frame` の中に無い対象）は判定し直さない**（IMP-253）。拡大画面での大きさで決めると、閉じたときにフォーカスを戻すボタンが隠れうる。
 - ボタンの表示は `hidden` 属性で切り替える（IMP-202）。**原寸表示のボタン**は「縮小表示中 **または** 原寸表示中」に出し、**拡大画面のボタン**は図なら常に、画像なら原寸表示のボタンと同じ条件で出す（FR-120 の表）。**画像ファイル（`state.doc.kind === 'image'`）の画像は、読み込みに成功していれば拡大画面のボタンを常に出す**（FR-027。4.75.0）。**判断は `state.doc.kind` で行い、`.image-file` の有無で行わない**（IMP-128）。
-- **画像ファイルの画像が読み込まれたら、`status.js` に本来の寸法（`naturalWidth` / `naturalHeight`）を渡し、ステータス領域の右端に出す**（UI-060, DSP-150。4.75.0）。**固有の大きさを持たない SVG**（`naturalWidth` が 0）と、読み込みに失敗した画像（IMP-226）では寸法を出さない（大きさだけ）。
+- **画像ファイルの画像が読み込まれたら、`status.js` に本来の寸法（`naturalWidth` / `naturalHeight`）を渡し、ステータス領域の右端に出す**（UI-060, DSP-150。4.75.0。`status.js` の `setImageSize(width, height)`。**寸法はどの文書のものかと一緒に持ち**、文書を差し替えると残らない）。**固有の大きさを持たない SVG**（上の見分けで `is-fluid` にしたもの。**`naturalWidth` が 0 かどうかでは決めない**——Chromium は 300 と返し、W1 で `300 × 150 px` が出る。4.91.0。BUG-029）と、読み込みに失敗した画像（IMP-226）では寸法を出さない（大きさだけ）。
 - **編集モードの間は、コードブロックと図に編集のボタン（`media-btn-edit`）も置く**（UI-053。IMP-264）。図では `.media-actions` の先頭（左端）に入れ、コードブロックでは `.media-actions` を作って編集のボタンだけを入れる。**付けるのも外すのも IMP-264 が行う**（このモジュールは場所を用意するだけにする）。**図の器は、IMP-264 が先に作っていればそれを使い**（同じ `data-media-key`。描画を待つ間と描けなかった図にも編集のボタンを置くため）、原寸表示・拡大画面のボタンを編集のボタンの右に足す（4.76.0）。
 
 **原寸表示**（FR-121）
@@ -1477,7 +1488,7 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 - 中身は、操作バー（`.expand-bar`）と、図を置く舞台（`.expand-stage`）と、その中の移動する器（`.expand-content`）とする。**画像ファイル（`state.doc.kind === 'image'`）の画像を開いたときは、`#expand-view` に `is-image-file` のクラスを付け、画像の範囲に市松模様を敷く**（FR-027, DSP-129, DSP-173。4.75.0）。
 - **編集欄が開いたままでも開ける**（FR-140 の表の「保ったまま」）。開いている間は背後を操作できないため、閉じてから編集を続ける（FR-145）。操作バーのボタンは `.expand-fit` / `.expand-actual` / `.expand-zoom-out` / `.expand-zoom-in` / `.expand-close`、倍率の表示は `.expand-zoom-value` とする。
 - **`expand.js` は `viewer.js` / `main.js` / `docswitch.js` / `shortcuts.js` / `zoom.js` を import しない**（いずれもこのモジュールを呼ぶ。`shortcuts.js` は `isExpandOpen` / `handleExpandKey` を、`zoom.js` は `isExpandOpen` を直接 import する）。本来の大きさのために `media.js` の `naturalSize` を import する（`media.js` は `expand.js` を import しない。拡大画面へは `main.js` が渡す `deps` で知らせる）。
-- 操作バーのボタンは `data-tip` と同じ文字列の `aria-label` を持つ（IMP-247, IMP-295）。**キーの表記はこのモジュールのキーの表から組み立て、`strings.js` に書かない**（IMP-290 の考え方）。**キーの表には閉じるボタンの表記のために `Esc` も載せるが、`handleExpandKey` は `Esc` を処理しない**（下記）。
+- 操作バーのボタンは `data-tip` と同じ文字列の `aria-label` を持つ（IMP-247, IMP-295）。**キーの表記は操作バーのキーの表（`expandbar.js`。4.91.0 で `expand.js` から分けた）から組み立て、`strings.js` に書かない**（IMP-290 の考え方）。**キーの表には閉じるボタンの表記のために `Esc` も載せるが、`handleExpandKey` は `Esc` を処理しない**（下記）。
 
 **対象を移す**
 
@@ -1490,7 +1501,7 @@ export function onDocumentSwitched()             // IMP-220 の手順 0a と IMP
 
 - 状態は `{ scale, x, y, fit }` をモジュール変数に持つ。`scale` は 0.1〜10（FR-122 の 10 %〜1000 %）。
 - **倍率は CSS の `transform: scale()` で掛けない。`.expand-content` の幅と高さを「本来の大きさ × 倍率」にする**（CSS カスタムプロパティ `--expand-width` / `--expand-height`）。中の `svg` / `img` はその器いっぱいに描く（DSP-173）。**`transform` による拡大は、エンジンが描画済みのビットマップを引き伸ばすことがあり、SVG の輪郭がぼやけうる**（FR-122 の MUST）。**位置の移動にだけ `transform: translate()` を使う**（CSS カスタムプロパティ `--expand-x` / `--expand-y`。px）。 `will-change` を付けない（ビットマップとして固定されうる）。**両エンジンで輪郭がぼやけないことを実機で確かめる**（NFR-061）。
-- 本来の大きさは IMP-228 の `naturalSize`（幅と、同じ規則の高さ。`height` 属性か `viewBox` の高さ、`naturalHeight`）とする。
+- 本来の大きさは IMP-228 の `naturalSize`（幅と、同じ規則の高さ。`height` 属性か `viewBox` の高さ、`naturalHeight`）とする。**本文から外す前に測る**——`naturalWidth` が 0 の画像は本文で描いている大きさを使うため、外した後では 0 になる（4.91.0。v1.1.0 は外した後に測り、0 なら外す前の大きさを使う処理を別に持っていた。規則を `naturalSize` の 1 か所にした）。
 - **開いた時点の倍率（`Fit`）**は `min(舞台の幅 / 本来の幅, 舞台の高さ / 本来の高さ)` を 0.1〜10 に丸めたものとし、中央に置く（FR-122）。
 - `+` / `-` とボタンは 1.25 倍ずつ、**画面の中心を基準に**変える。範囲の端では丸める（UI-104）。
 - **範囲の端では、`-`（10 %）または `+`（1000 %）のボタンに `aria-disabled="true"` を与え、`disabled` 属性は付けない。** `disabled` にするとフォーカス中のボタンからフォーカスが外れ、操作バーの中を巡るフォーカス（下記）が壊れる。`aria-disabled` のボタンを押しても何もしない。見た目は DSP-173。
