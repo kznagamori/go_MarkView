@@ -8,8 +8,8 @@ import (
 	"github.com/kznagamori/go_MarkView/internal/renderer"
 )
 
-// editformatpos.go は修飾の差し込み・取り除きの位置の決め方（IMP-124 の 4〜7）を持つ。入口の PlanFormat と
-// 確かめは editformat.go にある（400 行の目安。IMP-011）。
+// editformatpos.go は修飾の差し込み・取り除きの位置の決め方（IMP-124 の 4〜7）を持つ。入口の PlanFormat は
+// editformat.go、Patch へのまとめと解き直しての確かめは editformatpatch.go にある（400 行の目安。IMP-011）。
 //
 // 位置はすべて正規化後のテキストの上で求め、記録するときに生バイト列の位置へ移す（IMP-106 の対応表）。
 
