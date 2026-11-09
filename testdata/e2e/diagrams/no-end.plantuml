@@ -1,0 +1,2 @@
+@startuml no-end
+Alice -> Bob : hello

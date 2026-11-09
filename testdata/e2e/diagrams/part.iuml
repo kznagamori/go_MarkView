@@ -1,0 +1,4 @@
+' MarkView の検証用データ（E2E-264）。PlantUML の取り込み用の断片
+' 開けるファイルではない（FR-025）。ツリーに出ず、リンクでは OS の既定のアプリケーションで開く
+skinparam monochrome true
+skinparam shadowing false

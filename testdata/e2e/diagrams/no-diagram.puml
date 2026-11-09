@@ -1,0 +1,3 @@
+' MarkView の検証用データ（E2E-391）。図の始まりの行が無い PlantUML ファイル
+skinparam monochrome true
+Alice -> Bob : hello

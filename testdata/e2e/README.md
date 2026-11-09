@@ -12,9 +12,19 @@
 | --- | --- |
 | `README.md` | このファイル。起動時に自動表示される（FR-013） |
 | `docs/design.md` | 相対リンクの遷移先（E2E-261）。アンカー付きリンクの対象（E2E-263） |
-| `docs/img/sample.png` | ローカル画像（1600 x 300）。本文幅を超えるため縮小され、原寸表示と拡大画面のボタンが付く（E2E-236, E2E-351） |
+| `docs/img/sample.png` | ローカル画像（1600 x 300）。本文幅を超えるため縮小され、原寸表示と拡大画面のボタンが付く（E2E-236, E2E-351）。画像ファイルとしても開く（E2E-264, E2E-393） |
 | `docs/img/badge.png` | 80 x 20 の小さな画像。縮小されないため、ボタンが付かない（E2E-351） |
 | `docs/img/medium.png` | 900 x 200 の画像。初期サイズのウィンドウでは収まり、狭めると縮小される（E2E-351） |
+| `diagrams/multi.puml` | 図が 5 つの PlantUML ファイル（E2E-391） |
+| `diagrams/no-diagram.puml` | `@start…` の行が無い PlantUML ファイル。`No diagrams found.` とソースが出る（E2E-391） |
+| `diagrams/no-end.plantuml` | `@end…` の行が無い図（E2E-391） |
+| `diagrams/part.iuml` | 取り込み用の断片。**開けるファイルではない**——ツリーに出ず、リンクでは既定のアプリケーションで開く（FR-025, E2E-264） |
+| `diagrams/flow.mmd` | 先頭に空行のある Front Matter と、`click` を定義したノードの Mermaid ファイル（E2E-392） |
+| `diagrams/two.mmd` | 図が 2 つ書かれた Mermaid ファイル。構文エラーの表示になる（E2E-392） |
+| `diagrams/blank.mermaid` | 中身が空白だけの Mermaid ファイル。`No diagrams found.` だけが出る（E2E-392） |
+| `images/alpha.png` | 右半分が透明な 240 x 120 の画像。画像ファイルとして開くと市松模様が見える（E2E-393） |
+| `images/nosize.svg` | `width` / `height` を持たない SVG。本文の幅いっぱいに出る（E2E-236, E2E-393） |
+| `images/broken.png` | 拡張子は `.png` だが画像でないファイル。壊れた画像の表示になる（E2E-393） |
 | `outside/external.md` | ツリールート外への遷移先（FR-052, E2E-265） |
 | `broken/invalid-utf8.md` | 不正な UTF-8 を含む（FR-021, E2E-323） |
 | `plantuml-limits.md` | PlantUML の描けないもの（E2E-240） |
@@ -25,31 +35,37 @@
 | `id-collision.md` | 文書の id と画面の id の衝突（E2E-327） |
 | `markers.md` | 生 HTML で偽装した図とコードブロックの目印（E2E-328） |
 | `node_modules/` `vendor/` `.hidden/` | **ツリーに出てはいけない**ディレクトリ（FR-031, E2E-241） |
-| `notes.txt` | Markdown ではないファイル。**ツリーに出てはいけない**（FR-031） |
-| `generated/` | 巨大ファイルなど。`go run ./scripts/gentestdata` で作る。**編集モードの検証用の `generated/edit/`** は `-edit` で作り直す（G18。E2E-381〜E2E-388）。コミットしない |
+| `notes.txt` | 開けないファイル。**ツリーに出てはいけない**（FR-031）。リンクでは既定のアプリケーションで開く（E2E-264） |
+| `generated/` | 巨大ファイルなど。`go run ./scripts/gentestdata` で作る。**編集モードと、ファイルを書き換える手順の検証用の `generated/edit/`** は `-edit` で作り直す（G18・G20 ほか。E2E-206）。コミットしない |
 
 `testdata/showcase.md`（BR-053）は**複製しません**。記法の網羅はあちらが担い、
 ここは「ファイルとディレクトリの関係」を確かめるためのものです。
 
 ## 生成が要るもの
 
-12 MB / 60 MB のファイル（E2E-322）と、極端に深い入れ子・巨大な表（E2E-323）は
+12 MB / 60 MB のファイル（E2E-322）と、極端に深い入れ子・巨大な表（E2E-323）、
+描き終えるまで時間のかかる PlantUML（E2E-271）、約 1 MB の文書（E2E-381）、
+大きな画像と画素の多い画像（`large-12mb.png` / `large-60mb.png` / `huge-pixels.png`。E2E-395）は
 リポジトリに含めません。検証の直前に作ります。
 
 ```bash
 go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
-go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18 の各ケースの前）
+go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18・G20 の各ケースと、ファイルを書き換える手順の前）
 go run ./scripts/gentestdata -clean   # 消す
 ```
 
 ## ファイルツリーの確認
 
-ツリーのルートをこのディレクトリにすると、以下のようになるはずです（E2E-241）。
+ツリーのルートをこのディレクトリにすると、**既定のフィルター（Markdown と図を表示し、画像を隠す。FR-037）では**
+以下のようになるはずです（E2E-241）。
 
-- ディレクトリが**先**、ファイルが**後**に並ぶ
+- ディレクトリが**先**、ファイルが**後**に並ぶ。ファイルは種類で分けずに名前の順に並ぶ
 - `node_modules` `vendor` `.hidden` は**出ない**
-- `notes.txt` と `docs/img/` の画像も**出ない**（Markdown ではないため）
-- `generated` は**出る**。除外の対象ではなく、中身も Markdown だからである。
+- `diagrams` は**出る**。その下に図のファイルが 6 つ並ぶ（`part.iuml` は開けるファイルではないため**出ない**）
+- `notes.txt` も**出ない**（開けるファイルではないため）
+- 画像は**出ない**。画像だけのディレクトリ（`docs/img` と `images`）は**ディレクトリごと出ない**。
+  フィルターで画像を入れると現れる（E2E-248）
+- `generated` は**出る**。除外の対象ではなく、中身に Markdown があるからである。
   ここから `large-12mb.md` を選んで E2E-322 を実施できる
 
 `.git` も同じ規則で除外されます。名前が `.` で始まるディレクトリはすべて対象です。
@@ -117,9 +133,25 @@ go run ./scripts/gentestdata -clean   # 消す
 
 ### 画像へのリンク
 
-画像を**開く**リンクです。クリックすると OS の既定の画像ビューアに委譲されます（FR-053, E2E-264）。
+画像を**開く**リンクです。クリックすると **MarkView で画像ファイルとして開きます**（FR-053, FR-027, E2E-264）。
+2 つ目はファイルがありません。表示はこの文書のままで、ステータス領域に知らせが出ます。
 
-- [図を既定のビューアで開く](./docs/img/sample.png)
+- [図を MarkView で開く](./docs/img/sample.png)
+- [存在しない画像を開く](./docs/img/nosuch.png)
+
+### 図のファイルへのリンク
+
+PlantUML ファイルも MarkView で開きます（FR-050, FR-025, E2E-394）。
+
+- [PlantUML ファイルを開く](./diagrams/multi.puml)
+
+### 開けないファイルへのリンク
+
+MarkView で開けないファイルへのリンクは、OS の既定のアプリケーションに委譲されます（FR-050, E2E-264）。
+`part.iuml` は PlantUML の取り込み用の断片で、開けるファイルではありません（FR-025）。
+
+- [notes.txt を既定のアプリケーションで開く](./notes.txt)
+- [取り込み用の断片を開く](./diagrams/part.iuml)
 
 ### 外部リンク
 
@@ -161,7 +193,8 @@ go run ./scripts/gentestdata -clean   # 消す
 ### 段落 1
 
 MarkView は Markdown の**閲覧に特化した**軽量デスクトップアプリケーションです。
-表示中のファイルを書き換えるのは、編集モードでのチェックボックスと表のセルだけです（FR-140）。
+表示中のファイルを書き換えるのは、編集モードでの 4 種類——チェックボックス・表のセル・コードブロックと図・
+選んだ文字の取り消し線と文字色——だけです（FR-140）。
 それ以外の編集には、既にある道具（外部エディタ）を使います。
 
 ### 段落 2

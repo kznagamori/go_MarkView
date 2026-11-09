@@ -61,6 +61,18 @@
 
 本文ペインの枠（`#viewer-frame`）と同じ id になる見出しです。
 
+## Treefilter
+
+ファイルツリーのフィルターの枚（`#treefilter`）と同じ id になる見出しです。枚は本文より後ろに置く要素です（v1.2.0）。
+
+## Contextsubmenu
+
+右クリックメニューのサブメニュー（`#contextsubmenu`）と同じ id になる見出しです。本文より後ろに置く要素です（v1.2.0）。
+
+## Tree root name
+
+ツリールートの名前の行（`#tree-root-name`）と同じ id になる見出しです。右クリックメニューの出し分けに使う id です（v1.2.0）。
+
 ## Status
 
 ```plantuml
