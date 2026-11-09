@@ -304,6 +304,66 @@
   background: var(--accent-subtle);
 }
 
+/* --- ファイルツリーのフィルターの枚（DSP-115, UI-033, IMP-271） ---
+   位置（left / top）は treefilter.js がボタンから求める（右端をボタンの右端に・ボタンの下 4px）。ツリーと一緒に
+   スクロールしない。**トランジションなし**（DSP-050。検索バーと同じ）。状態画面より上、ダイアログより下（DSP-015） */
+.treefilter {
+  position: fixed;
+  z-index: var(--z-treefilter);
+  box-sizing: border-box;
+  /* 320px。ウィンドウ幅が 320 + 16px より狭いときは、ウィンドウ幅 − 16px */
+  width: min(320px, calc(100vw - 16px));
+  padding: var(--space-2) 12px;
+  background: var(--canvas-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-overlay);
+}
+
+.treefilter-head {
+  display: flex;
+  align-items: center;
+  height: var(--pane-btn-size);
+}
+
+.treefilter-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: var(--pane-btn-size);
+  color: var(--fg-default);
+}
+
+/* 選択肢は 1 つずつ行に並べ、行の間 4px。チェックボックスと文言の間 6px。**括弧の中の拡張子は枚の幅で
+   折り返し**（/ の後ろでも折り返してよい）、折り返した行は文言の頭にそろえる */
+.treefilter-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: var(--space-1);
+  font-size: 13px;
+  color: var(--fg-default);
+  overflow-wrap: anywhere;
+}
+
+.treefilter-option > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* チェックボックスの見た目はエンジンの既定に委ね、色だけ本文のタスクリストと同じにする（DSP-121, BUG-018） */
+.treefilter-option > input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent-emphasis);
+}
+
+/* Markdown（外せない）。チェックボックスはエンジンの既定の淡色、**文言は読める濃さの --fg-muted**
+   （UI-033。--fg-subtle にしない） */
+.treefilter-option > input:disabled + span {
+  color: var(--fg-muted);
+}
+
 /* --- ファイルツリー（DSP-112, DSP-330） --- */
 
 .tree,
@@ -1019,6 +1079,16 @@
   color: var(--fg-default);
 }
 
+/* 開くファイルの名前（DSP-172, UI-103。4.75.0）。見出しの下の 1 段。ベース名だけで、長ければ末尾を省略する */
+.editor-file {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .editor-list {
   display: flex;
   flex-direction: column;
@@ -1271,6 +1341,8 @@
 }
 
 .contextmenu-item {
+  /* 印（.contextmenu-check）とサブメニューの矢印（.contextmenu-chevron）の置き場の基準（DSP-141） */
+  position: relative;
   display: block;
   width: 100%;
   height: 28px;
@@ -1305,6 +1377,90 @@
   height: 1px;
   margin: 4px 0;
   background: var(--border-muted);
+}
+
+/* --- サブメニューと文字色の一覧（DSP-141） --- */
+
+/* Text color のサブメニューと、ツールバーから開いた文字色の一覧は、幅の最小値だけが右クリックメニューと違う */
+.contextmenu-sub,
+.contextmenu.is-color-list {
+  min-width: 140px;
+}
+
+/* 印の列。**修飾の項目を含むメニューだけ**、すべての項目が左に 16px の列を取り、印の無い項目も文字の頭をそろえる。
+   含まないメニューは v1.1.0 のまま列を取らない（列 16px と文字の間 8px） */
+.contextmenu:has([role="menuitemcheckbox"], [role="menuitemradio"]) .contextmenu-item {
+  padding-left: calc(12px + 16px + 8px);
+}
+
+.contextmenu-check {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-default);
+  transform: translateY(-50%);
+}
+
+/* サブメニューを持つ項目（Text color）の右端の矢印 */
+.contextmenu-item.has-submenu {
+  padding-right: calc(12px + 12px + 8px);
+}
+
+.contextmenu-chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  color: var(--fg-muted);
+  transform: translateY(-50%);
+}
+
+/* 色の見本。**塗りはいまのテーマで描く色**。本文の外にあるため、DSP-121 の文字色の規則（.markdown-body の中）に
+   頼らず、ここで背景に当てる。Default は見本を見せずに列を空ける（.is-blank） */
+.color-swatch {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border: 1px solid var(--border-muted);
+  border-radius: 2px;
+}
+
+.color-swatch.is-blank {
+  visibility: hidden;
+}
+
+.color-swatch.md-color-red {
+  background-color: var(--md-color-red);
+}
+
+.color-swatch.md-color-orange {
+  background-color: var(--md-color-orange);
+}
+
+.color-swatch.md-color-yellow {
+  background-color: var(--md-color-yellow);
+}
+
+.color-swatch.md-color-green {
+  background-color: var(--md-color-green);
+}
+
+.color-swatch.md-color-blue {
+  background-color: var(--md-color-blue);
+}
+
+.color-swatch.md-color-purple {
+  background-color: var(--md-color-purple);
+}
+
+.color-swatch.md-color-gray {
+  background-color: var(--md-color-gray);
 }
 
 /* --- ドロップオーバーレイ（DSP-190） --- */

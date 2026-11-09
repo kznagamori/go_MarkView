@@ -12,6 +12,18 @@ const MESSAGE_MS = 5000;
 
 let messageTimer = 0;
 
+// imageSize は画像ファイルの本来の寸法（{ doc, width, height }。UI-060, DSP-150, IMP-228）。読み込みを待って
+// media.js が setImageSize で入れる。**どの文書の寸法かを doc で持つ**——文書を差し替えるたびに DocumentDTO は
+// 新しいオブジェクトになるため、前の画像の寸法が次の文書に残らない（空にし忘れる経路を作らない）。
+let imageSize = null;
+
+// setImageSize は表示中の画像ファイルの本来の寸法を受け取り、ステータス領域へ出す（IMP-228）。
+// 固有の大きさを持たない SVG と読み込みに失敗した画像では呼ばれない（大きさだけを出す。UI-060）。
+export function setImageSize(width, height) {
+  imageSize = { doc: state.doc, width, height };
+  updateStatus();
+}
+
 // updateStatus は表示中の文書、または状態画面の対象からステータス領域を組み立てる
 // （DSP-150, DSP-302）。
 //
@@ -62,7 +74,7 @@ export function updateStatus() {
 
   // 倍率は 100 % 以外のときだけ出す（FR-081）。等倍が既定であり、常に
   // 表示すると変更されていることが目に留まらなくなる。
-  const items = [state.doc.encoding, S.statusLines(state.doc.lineCount)];
+  const items = state.doc.kind === "image" ? imageItems(state.doc) : [state.doc.encoding, S.statusLines(state.doc.lineCount)];
   if (state.zoom !== 100) items.push(S.statusZoom(state.zoom));
 
   for (const text of items) {
@@ -71,6 +83,15 @@ export function updateStatus() {
     item.textContent = text;
     meta.appendChild(item);
   }
+}
+
+// imageItems は画像ファイルの右の項目（UI-060, DSP-150）。**文字コードと行数の代わりに、寸法とファイルの大きさ**。
+// 寸法は読み込みの後に足す（それまでは大きさだけ）。
+function imageItems(doc) {
+  const items = [];
+  if (imageSize && imageSize.doc === doc) items.push(S.statusImageSize(imageSize.width, imageSize.height));
+  items.push(S.statusFileSize(doc.fileSize));
+  return items;
 }
 
 // notifyError は ErrorDTO（IMP-307）をステータス領域の一時メッセージに出す（IMP-315, DSP-151）。

@@ -100,8 +100,11 @@ export function markBrokenImages(root) {
     // innerHTML で挿入した直後に配線しても、キャッシュ済みの失敗では
     // error がすでに発火し終えている。これを落とすと、手元では再現せず
     // 実機でだけ枠が出ないという、最も追いにくい形の不具合になる。
-    if (img.complete && img.naturalWidth === 0) {
-      replaceBrokenImage(img);
+    //
+    // **判定は decode() の拒否で行い、naturalWidth === 0 で行わない**（4.75.0）。固有の大きさを持たない
+    // SVG は、読み込めても naturalWidth が 0 になりうる（画像ファイルと、版の変わらない再描画。FR-027, IMP-118）。
+    if (img.complete) {
+      img.decode().catch(() => replaceBrokenImage(img));
     }
   }
 }
@@ -116,8 +119,13 @@ export function markBrokenImages(root) {
 // 読み上げにも寄与しない。
 function replaceBrokenImage(img) {
   // **二重に置き換えない。** error と「配線時にすでに失敗」の 2 経路から
-  // 呼ばれる。置き換えた後の img は親を失うため、それを目印にする。
-  if (img.parentNode === null) return;
+  // 呼ばれる。置き換えた後の img は文書から外れるため、それを目印にする。
+  //
+  // **本文から外れた画像（次の描画で差し替えられた前の本文の画像）でも何もしない。** decode() の拒否と
+  // error は描画の後に届く。外れた画像の番号を media.js へ知らせると、新しい本文の同じ番号の画像が
+  // 対象から外れ、拡大画面が閉じる（IMP-228 の図の isConnected と同じ守り）。前の本文の画像は、
+  // 外れても親（段落）を持ったままなので、親の有無では見分けられない。
+  if (!img.isConnected) return;
 
   const span = document.createElement("span");
   span.className = "img-broken";

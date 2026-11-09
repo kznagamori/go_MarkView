@@ -14,13 +14,14 @@ import { closeSearch } from "./search.js";
 import { clearSort } from "./tablesort.js";
 import { clearMedia } from "./media.js";
 import { onDocumentSwitched } from "./expand.js";
-import { cancelCellEdit, leaveEditMode } from "./editmode.js";
+import { leaveEditMode } from "./editmode.js";
+import { clearFormatState } from "./format.js";
 
 // leaveDocument は前の文書に結び付いた画面の状態を解く（IMP-250）。**足すときもこの関数の中に置き、
 // 呼び出し元に書かない。**
 export function leaveDocument() {
-  // セルの編集欄を取り消す（FR-142, IMP-262）。確定していない入力は書き込まない。
-  cancelCellEdit();
+  // **編集欄（セル・コードブロック）は、ここでは開いていない**（4.75.0）。開いている間は文書を切り替える操作を拒み、
+  // 切り替えの知らせは blockedit.js が控えて、閉じた時点で当てる（IMP-264, IMP-220 の手順 0a）。
 
   // 右クリックメニューを閉じる（FR-063, IMP-249）。メニューが指していたリンクや選択範囲が無くなる。
   closeContextMenu();
@@ -41,4 +42,7 @@ export function leaveDocument() {
   // 編集モードは文書の切り替えで終わる（FR-140, DSP-352）。Go 側は既に終えており（IMP-109 の
   // Loaded / Left）、ここは写しを揃えて画面へ写すだけである（editSeq は変えない。IMP-260）。
   leaveEditMode();
+
+  // 修飾の控え（選択の Range と、再描画の後に当て直す位置）を捨てる（IMP-265。4.76.0）。
+  clearFormatState();
 }

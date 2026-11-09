@@ -142,7 +142,8 @@ export async function drawMermaid(root, gen = startDrawing()) {
 export async function redrawMermaid(root, gen = startDrawing()) {
   for (const block of ownMermaidBlocks(root)) {
     const rendered = block.querySelector(".mermaid-rendered");
-    if (!rendered) continue;
+    // **編集欄を開いているブロックは飛ばす**（FR-140 の表の「保ったまま」。IMP-264。取り消したら codeedit.js が描き直す）
+    if (!rendered || block.classList.contains("is-code-editing")) continue;
 
     holdHeight(block);
     const pre = document.createElement("pre");
@@ -206,6 +207,8 @@ async function drawOne(pre, gen) {
     // Mermaid が securityLevel: 'strict' で自ら無害化したうえで返す SVG であり、
     // これ以外に図を DOM へ入れる手段がない。
     holder.innerHTML = svg;
+    // 編集欄を開いている間に描き終えたら、置き換える原文と同じく隠したままにする（IMP-264。取り消したら戻す）
+    holder.hidden = pre.hidden;
 
     pre.replaceWith(holder);
     if (bindFunctions) bindFunctions(holder);
@@ -249,6 +252,8 @@ function showBlockError(block, error) {
   const line = document.createElement("p");
   line.className = "mermaid-error";
   line.textContent = error && error.message ? error.message : String(error);
+  // 編集欄を開いている間は隠す（取り消したときに codeedit.js が見せる。IMP-264）
+  line.hidden = block.classList.contains("is-code-editing");
   block.insertBefore(line, block.firstChild);
 }
 

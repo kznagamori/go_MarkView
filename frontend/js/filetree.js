@@ -66,6 +66,37 @@ export async function loadTreeRoot(root) {
   refreshFocusTarget();
 }
 
+// reloadTreeKeepingState は、展開の状態・強調・スクロール位置を保ってツリーを読み直す（FR-037 のフィルターの
+// 切り替え。FR-035 の 5 番目の契機。IMP-271）。
+//
+// **loadTreeRoot と違い、表示中の文書までの経路を開き直さない**——利用者が畳んだ経路は畳んだまま（ほかの契機の
+// 読み直しとの違い。FR-037）。展開していたディレクトリを上から順に展開し直し、**隠した種類だけを含む
+// ディレクトリは一覧から無くなるため、展開し直さない。** 強調は state.doc ?? state.target から付け直す
+// （表示中のファイルの種類を隠したら、強調する行は無くなる）。**読み終えてから入れ替える**（空の一覧を挟まない）。
+export async function reloadTreeKeepingState() {
+  const list = $("tree");
+  const body = list.closest(".pane-body");
+  const top = body ? body.scrollTop : 0;
+  const opened = [...list.querySelectorAll('li[data-path][aria-expanded="true"]')].map((item) => item.dataset.path);
+
+  const { nodes, error } = await api.readDir("");
+  if (error) {
+    notifyError(error);
+    return;
+  }
+
+  clear(list);
+  fill(list, nodes, 0);
+  for (const path of opened) {
+    const item = list.querySelector(`li[data-path="${CSS.escape(path)}"]`);
+    if (item && item.getAttribute("aria-expanded") !== "true") await expand(item);
+  }
+
+  markSelected();
+  refreshFocusTarget();
+  if (body) body.scrollTop = top;
+}
+
 // revealCurrent は表示中の文書（状態画面の間はその対象）までの経路を展開し、可視にする
 // （DSP-331, DSP-302）。
 //

@@ -9,6 +9,10 @@
 import { S } from "./strings.js";
 import { icon } from "./util.js";
 
+// ファイルのアイコンは種類ごとに分ける（UI-030, DSP-112。4.75.0）。種類は Go が決めた TreeNodeDTO.kind であり、
+// 名前の拡張子から決めない（IMP-300）。知らない種類は Markdown と同じアイコン
+const FILE_ICONS = { plantuml: "icon-diagram", mermaid: "icon-diagram", image: "icon-image" };
+
 // fill は ReadDir の結果（FileNodeDTO の並び。IMP-304）から項目を作って container へ足す（FR-032, DSP-112）。
 export function fill(container, nodes, depth) {
   for (const node of nodes) {
@@ -29,6 +33,9 @@ function createItem(node, depth) {
   item.tabIndex = -1;
   item.dataset.path = node.path;
   item.dataset.dir = String(node.isDir);
+  // 種類（TreeNodeDTO.kind。IMP-304）。ツリーのメニューが画像ファイルの Open in editor... を淡色にするのに使う
+  // （IMP-270）。ディレクトリは空
+  if (node.kind) item.dataset.kind = node.kind;
 
   const row = document.createElement("div");
   row.className = "tree-row";
@@ -40,7 +47,7 @@ function createItem(node, depth) {
     row.appendChild(icon("icon-dir", "icon"));
   } else {
     row.appendChild(spacer());
-    row.appendChild(icon("icon-file", "icon"));
+    row.appendChild(icon(FILE_ICONS[node.kind] || "icon-file", "icon"));
   }
 
   row.appendChild(name(node.name));

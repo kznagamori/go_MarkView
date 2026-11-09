@@ -10,9 +10,10 @@
 // import しない**（それぞれから呼ばれるため、循環する。IMP-250）。拡大画面（IMP-253）へは main.js が
 // 渡す deps で知らせる。
 
-import { isOwnRef } from "./refs.js";
-import { S } from "./strings.js";
-import { $, icon } from "./util.js";
+import { createButtons, diagramButtons, diagramKindOf, diagramNumberOf, placeImageButtons } from "./mediabuttons.js";
+import { state } from "./state.js";
+import { setImageSize } from "./status.js";
+import { $ } from "./util.js";
 
 // 画像の番号の属性（IMP-228 の手順 5a）。読み込みに失敗した画像の span へも写る（IMP-226）。
 const INDEX_ATTR = "data-media-index";
@@ -91,13 +92,14 @@ export function onImageBroken(span) {
 
 // attachImageButtons は読み込みに成功した画像を包み、ボタンを置く（renderDocument の手順 6b）。
 //
-// **restoreMedia の後に呼ぶ。** 読み込みが済んでいる画像はここで包み、その場で原寸表示を当て直す。
-// 成功の判定は load か、配線時の `complete && naturalWidth > 0`（IMP-226 と同じく、済んだものを拾う）。
+// **restoreMedia の後に呼ぶ。** 包んだ時点で原寸表示を当て直す。
+// 成功の判定は load か、配線時に済んでいれば `img.decode()` の解決（IMP-226 と同じく、済んだものを拾う）。
+// **naturalWidth > 0 で判定しない**——固有の大きさを持たない SVG は、読み込めても 0 になりうる（4.75.0）。
 export function attachImageButtons(root) {
   for (const img of root.querySelectorAll(`img[${INDEX_ATTR}]`)) {
-    if (img.complete && img.naturalWidth > 0) {
-      wrapImage(img);
-    } else if (!img.complete) {
+    if (img.complete) {
+      img.decode().then(() => wrapImage(img), () => {});
+    } else {
       img.addEventListener("load", () => wrapImage(img), { once: true });
     }
   }
@@ -110,17 +112,21 @@ export function onDiagramSettled(block) {
   // 前の描画の遅れた知らせ（IMP-230 の描画の世代と二重の防御）
   if (!block || !block.isConnected) return;
 
-  const kind = diagramKind(block);
+  const kind = diagramKindOf(block);
   if (!kind) return;
 
-  const key = `${kind}:${diagramNumber(block, kind)}`;
+  const key = `${kind}:${diagramNumberOf(block, kind)}`;
   const frame = block.querySelector(`:scope > .${DIAGRAM_KINDS[kind]}`);
   const target = frame ? frame.querySelector(":scope > svg") : null;
 
   if (!target) {
-    // 描画に失敗した図・描画しなかった図は対象にしない（FR-120）
+    // 描画に失敗した図・描画しなかった図は対象にしない（FR-120）。**編集のボタンは残す**（描けなかった図も編集
+    // できる。IMP-264。4.76.0）——原寸表示と拡大画面のボタンだけを外し、器が空になったら器も外す
     const stale = block.querySelector(":scope > .media-actions");
-    if (stale) stale.remove();
+    if (stale) {
+      for (const button of stale.querySelectorAll(".media-btn-actual, .media-btn-expand")) button.remove();
+      if (stale.children.length === 0) stale.remove();
+    }
     entries.delete(key);
     pending.delete(key);
     actual.delete(key);
@@ -129,7 +135,7 @@ export function onDiagramSettled(block) {
   }
 
   frame.classList.add("media-frame");
-  const buttons = diagramButtons(block, key);
+  const buttons = diagramButtons(block, key, handlers);
   settle({ key, kind, frame, target, ...buttons });
 }
 
@@ -173,11 +179,16 @@ export function clearMedia() {
 
 // naturalSize は対象の本来の大きさ（論理ピクセル。{ width, height }）を返す（IMP-228, IMP-253）。
 //
-// img は naturalWidth / naturalHeight。svg は width / height 属性が px の数値ならその値、そうでなければ
-// viewBox の幅と高さ（Mermaid は `width="100%"` と `max-width`、PlantUML は数値を出す）。**getBBox を
-// 使わない**——描画の内容の外接矩形であり、図の大きさではない。
+// img は naturalWidth / naturalHeight。**0（固有の大きさを持たない SVG）なら本文で描いている大きさ**とする
+// （4.76.0。0 のままだと画像ファイルの拡大画面で中身の大きさが 0 になる。DSP-173）。svg は width / height 属性が
+// px の数値ならその値、そうでなければ viewBox の幅と高さ（Mermaid は `width="100%"` と `max-width`、PlantUML は
+// 数値を出す）。**getBBox を使わない**——描画の内容の外接矩形であり、図の大きさではない。
 export function naturalSize(target) {
-  if (target instanceof HTMLImageElement) return { width: target.naturalWidth, height: target.naturalHeight };
+  if (target instanceof HTMLImageElement) {
+    if (target.naturalWidth > 0) return { width: target.naturalWidth, height: target.naturalHeight };
+    const rect = target.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  }
 
   const box = target.viewBox && target.viewBox.baseVal;
   const length = (name, fallback) => {
@@ -206,7 +217,7 @@ function wrapImage(img) {
   outer.className = "media-image";
   const frame = document.createElement("span");
   frame.className = "media-frame";
-  const buttons = createButtons(key, "span");
+  const buttons = createButtons(key, "span", handlers);
 
   img.replaceWith(outer);
   frame.appendChild(img);
@@ -215,6 +226,11 @@ function wrapImage(img) {
   const entry = { key, kind: "image", outer, frame, target: img, fluid: null, ...buttons };
   classifyImage(entry);
   settle(entry);
+
+  // 画像ファイルの画像なら、本来の寸法をステータス領域へ（UI-060, DSP-150）。**固有の大きさを持たない画像では
+  // 出さない**（大きさだけ。BUG-029——Chromium はその naturalWidth を 300 と返す）。判断は state.doc.kind で行う
+  // （.image-file を見ない。IMP-128）。画像ファイルの画像は閉じた <details> の中に無いため、ここで決まっている
+  if (isImageFile() && entry.fluid === false) setImageSize(img.naturalWidth, img.naturalHeight);
 }
 
 // classifyImage は、固有の大きさを持たない画像（width / height の無い SVG）を見分け、器を本文の幅いっぱいに
@@ -234,6 +250,11 @@ function classifyImage(entry) {
   entry.outer.classList.toggle("is-fluid", entry.fluid);
 }
 
+// isImageFile は表示中の文書が画像ファイルか（FR-027）。**DocumentDTO.kind で決める**（IMP-228, IMP-302）。
+function isImageFile() {
+  return state.doc !== null && state.doc.kind === "image";
+}
+
 // settle は準備の済んだ対象を登録し、待っていた原寸表示を当て、ボタンの表示を決め、拡大画面へ知らせる。
 function settle(entry) {
   entries.set(entry.key, entry);
@@ -248,61 +269,14 @@ function settle(entry) {
   deps.onTargetSettled(entry.key, entry.target);
 }
 
-// diagramButtons は図のブロックのボタンを返す。無ければ作り、コピーボタンの前（左）に置く（DSP-124）。
-//
-// **描き直し（テーマの切り替え）ではブロックが残るため、ボタンを作り直さない。** フォーカスを失わない。
-function diagramButtons(block, key) {
-  const existing = block.querySelector(":scope > .media-actions");
-  if (existing && existing.dataset.mediaKey === key) {
-    return {
-      actions: existing,
-      actualButton: existing.querySelector(".media-btn-actual"),
-      expandButton: existing.querySelector(".media-btn-expand"),
-    };
-  }
-  if (existing) existing.remove();
-
-  const buttons = createButtons(key, "div");
-  block.insertBefore(buttons.actions, block.querySelector(":scope > .copy-btn"));
-  return buttons;
-}
-
-// createButtons は原寸表示と拡大画面のボタンを作る（UI-053, DSP-124）。器は図なら div、画像なら span
-// （段落の中に置くため）。右から「拡大画面」「原寸表示」の順に見え、Tab は左から巡る。
-function createButtons(key, tag) {
-  const actions = document.createElement(tag);
-  actions.className = "media-actions";
-  actions.dataset.mediaKey = key;
-
-  const actualButton = button("media-btn-actual", S.tipActualSize, "icon-actual-size", () => toggleActual(key));
-  actualButton.setAttribute("aria-pressed", "false");
-  const expandButton = button("media-btn-expand", S.tipExpand, "icon-expand", () => {
+// handlers はボタンが押されたときの処理（mediabuttons.js へ渡す）。
+const handlers = {
+  onActual: (key) => toggleActual(key),
+  onExpand: (key, button) => {
     const entry = liveEntry(key);
-    if (entry) deps.onExpand(entry.target, key, expandButton);
-  });
-
-  actions.append(actualButton, expandButton);
-  return { actions, actualButton, expandButton };
-}
-
-// button はツールチップと同じ読み上げ名を持つアイコンのボタンを作る（IMP-247, IMP-295）。
-//
-// **押下を本文へ伝えない**（preventDefault と stopPropagation。UI-053, IMP-223）。画像がリンクに
-// 囲まれていても遷移させない。
-function button(className, label, symbol, onClick) {
-  const element = document.createElement("button");
-  element.type = "button";
-  element.className = `media-btn ${className}`;
-  element.dataset.tip = label;
-  element.setAttribute("aria-label", label);
-  element.appendChild(icon(symbol));
-  element.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onClick();
-  });
-  return element;
-}
+    if (entry) deps.onExpand(entry.target, key, button);
+  },
+};
 
 // toggleActual は対象を縮小表示と原寸表示の間で切り替える（FR-121）。
 //
@@ -355,11 +329,13 @@ function setActual(entry, on) {
 // updateButtons はボタンの表示を決める（FR-120 の表。hidden で切り替える。IMP-202）。
 //
 // 原寸表示のボタンは「縮小表示中 **または** 原寸表示中」。拡大画面のボタンは、図なら常に、画像なら
-// 原寸表示のボタンと同じ条件。
+// 原寸表示のボタンと同じ条件。**画像ファイルの画像は、読み込めていれば常に**（FR-027。包むのは読み込めた画像だけ）。
 function updateButtons(entry) {
   const shown = actual.has(entry.key) || isReduced(entry.target);
   entry.actualButton.hidden = !shown;
-  entry.expandButton.hidden = entry.kind === "image" ? !shown : false;
+  entry.expandButton.hidden = entry.kind === "image" ? !(shown || isImageFile()) : false;
+  // 画像が小さくボタンが収まらなければ、画像の右上の外側に出す（DSP-124。mediabuttons.js）
+  if (entry.kind === "image") placeImageButtons(entry);
 }
 
 // scheduleUpdate は縮小表示中の判定のやり直しを次のフレームへまとめる（IMP-228, NFR-012）。**拡大画面へ
@@ -384,25 +360,6 @@ function scheduleUpdate() {
 function liveEntry(key) {
   const entry = entries.get(key);
   return entry && entry.frame.isConnected ? entry : null;
-}
-
-// diagramKind は鍵の合う図のブロックの種類を返す。合わなければ null（IMP-260）。
-function diagramKind(block) {
-  for (const kind of Object.keys(DIAGRAM_KINDS)) {
-    if (isOwnRef(block, kind)) return kind;
-  }
-  return null;
-}
-
-// diagramNumber は図のブロックの番号を返す（FR-120 の「同じ対象」）。
-//
-// **目印の番号を読まずに数える。** 鍵を読むのは refs.js だけであり（IMP-260）、鍵の合う同じ種類の
-// ブロックを文書の順に並べたときの位置は、Go 側が文書の順に振る番号（描画に失敗したもの・取り込み
-// 指令で拒んだものを含む。IMP-120）と一致する。
-function diagramNumber(block, kind) {
-  const scope = $("markdown") || document;
-  const blocks = [...scope.querySelectorAll(".code-block")].filter((candidate) => isOwnRef(candidate, kind));
-  return blocks.indexOf(block);
 }
 
 // indexOf は画像（または置き換えた span）の番号を返す。無ければ null。

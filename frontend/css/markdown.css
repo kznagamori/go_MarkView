@@ -394,6 +394,17 @@
   color: var(--md-color-gray);
 }
 
+/* 修飾の仮の見た目（DSP-321, IMP-265。4.75.0）。書き込みの応答を待つ間だけ、選んだ文字を span.fmt-pending-* で包む。
+   色は上の .md-color-<名前> がそのまま当たる（fmt-pending-color と同じ要素に付く）。Default は色の span の内側でも
+   色を外して見せる。**取り消し線を外す操作には仮の見た目を出さない**（祖先の del の線は子孫から消せない。4.81.0） */
+.markdown-body .fmt-pending-strike {
+  text-decoration: line-through;
+}
+
+.markdown-body .fmt-pending-default {
+  color: var(--fg-default);
+}
+
 /* --- 表（DSP-122, MD-024） --- */
 
 .markdown-body table {
@@ -513,13 +524,38 @@
   position: relative;
 }
 
-/* セルの編集欄（DSP-127）。セルの内側いっぱいに重ね、**セルの寸法を変えない**（UI-055）。
-   パディングはセル（DSP-122 の --md-6 / --md-13。倍率に追随する）から枠の 2px を引き、文字の位置をセルの
-   文字とそろえる（100 % で 4px 11px）。書体と大きさと太さはセルから受け継ぐ（見出し行は太字のまま） */
-.markdown-body .cell-editor {
+/* セルの編集欄の器（DSP-127。4.75.0）。セルの内側いっぱいに重ね、**セルの寸法を変えない**（UI-055）。
+   中に入力欄と、セルの下に重ねる Save / Cancel のボタンの行を持つ */
+.markdown-body .cell-editor-box {
   position: absolute;
   inset: 0;
   z-index: var(--z-copy);
+}
+
+/* 編集中は、表の下にボタンの行の高さと間隔の分（24 + 4 + 4px）の余白を足す（DSP-127。4.75.0）。表は横スクロールの
+   器であり、最後の行のセルや見出し行だけの表では、ボタンの行が表の外へ出て切れる。閉じたら外す */
+.markdown-body table:has(.is-cell-editing) {
+  padding-bottom: 32px;
+}
+
+/* ボタンの行はセルの下端の外側 4px、右端をセルの右端にそろえて、下の行の上に重ねる。表の左へはみ出すときは
+   左端をセルの左端にそろえる（is-align-left。celledit.js が置いた直後に測る。4.76.0） */
+.markdown-body .cell-editor-box > .edit-actions {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+}
+
+.markdown-body .cell-editor-box.is-align-left > .edit-actions {
+  right: auto;
+  left: 0;
+}
+
+/* セルの入力欄（DSP-127）。器いっぱいに描く。パディングはセル（DSP-122 の --md-6 / --md-13。倍率に追随する）から
+   枠の 2px を引き、文字の位置をセルの文字とそろえる（100 % で 4px 11px）。書体と大きさと太さはセルから受け継ぐ
+   （見出し行は太字のまま） */
+.markdown-body .cell-editor {
+  display: block;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
@@ -542,6 +578,107 @@
   color: var(--fg-muted);
 }
 
+/* 編集欄の Save / Cancel（DSP-128。セルとコードブロックで共通。4.75.0）。右寄せで左から Cancel・Save、間隔 8px。
+   本文中に足したボタンであり、寸法は px で与えて倍率に追随させない（DSP-021） */
+.markdown-body .edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  z-index: var(--z-copy);
+}
+
+.markdown-body .edit-actions > button {
+  height: 24px;
+  padding: 0 var(--space-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 1;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+/* Save は主スタイル、Cancel は副次スタイル（DSP-182） */
+.markdown-body .edit-actions > .edit-save {
+  color: var(--fg-on-emphasis);
+  background: var(--accent-emphasis);
+  border: none;
+}
+
+.markdown-body .edit-actions > .edit-save:hover {
+  filter: brightness(0.92);
+}
+
+.markdown-body .edit-actions > .edit-cancel {
+  color: var(--fg-default);
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-default);
+}
+
+.markdown-body .edit-actions > .edit-cancel:hover {
+  background: var(--neutral-muted);
+}
+
+/* コードブロックと図の編集欄（DSP-128。4.75.0）。ブロックの幅いっぱいに、元の中身（hidden にした pre や図）の位置に
+   置く。書体・大きさ・行の高さはコードブロックから受け継ぐ（倍率に追随する。DSP-021）。パディングはコードブロックの
+   内側の余白 16px から枠の 2px を引いた値（文字の位置をそろえる）。**ハイライトしない**（AR-031） */
+.markdown-body .code-editor {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  /* 最小 3 行（行の高さ × 3 ＋ 上下のパディング ＋ 枠）。高さは内容に合わせ、上限は本文ペインの 60 %（codeedit.js が
+     --code-editor-height / --code-editor-max に px で入れる）。上限を超えたら中で縦にスクロールする */
+  min-height: calc(3em * var(--line-height-code) + 2 * (var(--md-16) - 2px) + 4px);
+  height: var(--code-editor-height, auto);
+  max-height: var(--code-editor-max, none);
+  margin: 0;
+  padding: calc(var(--md-16) - 2px);
+  font: inherit;
+  color: var(--fg-default);
+  background: var(--canvas-default);
+  border: 2px solid var(--accent-fg);
+  border-radius: var(--radius-control);
+  /* 折り返さない（コードブロックと同じ） */
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  tab-size: 4;
+  /* 利用者が高さを変えてよい。手で変えた後は内容に合わせない（上限は max-height で効く） */
+  resize: vertical;
+}
+
+/* 枠そのものがフォーカスを示すため、フォーカスリングを重ねない（DSP-016 の例外、DSP-128） */
+.markdown-body .code-editor:focus-visible {
+  outline: none;
+}
+
+.markdown-body .code-editor-box > .edit-actions {
+  margin-top: var(--space-1);
+}
+
+/* 編集欄を開いている間、そのブロックの右上のボタン（コピー・原寸表示・拡大画面・編集）は隠す（編集欄の上に重ねない） */
+.markdown-body .code-block.is-code-editing > .copy-btn,
+.markdown-body .code-block.is-code-editing > .media-actions {
+  display: none;
+}
+
+/* 確定した直後、再描画が届くまでの間の入力（DSP-321）。素の等幅の文字で出す */
+.markdown-body .code-block > pre.code-pending {
+  color: var(--fg-muted);
+}
+
+/* 編集のボタンの無効（前置きが行ごとに違うブロック。FR-145, DSP-124）。DSP-101 の「無効」。**不透明度は 0.5 のまま**
+   （ほかのボタンと同じ。消えたように見せない） */
+.markdown-body .media-btn:disabled {
+  color: var(--fg-subtle);
+  cursor: default;
+}
+
+.markdown-body .media-btn:disabled:hover {
+  opacity: 0.5;
+  background: var(--canvas-default);
+}
+
 /* --- 画像（DSP-123, FR-022） --- */
 
 .markdown-body img {
@@ -555,6 +692,34 @@
 /* 表の中の画像には地を敷かない。行の縞模様が途切れて見える */
 .markdown-body table img {
   background-color: transparent;
+}
+
+/* --- 図のファイル（DSP-273, FR-025, FR-026） ---
+   図が 1 つも無いときの文言。viewer.js が本文の先頭に差し込む（IMP-220 の 1a）。検索の走査から外す（IMP-241） */
+.markdown-body p.no-diagrams {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* --- 画像ファイル（DSP-129, FR-027） ---
+   **#markdown.is-image-file は DocumentDTO.kind から付ける**（IMP-220 の 1a）。.image-file だけで選ばない——
+   生 HTML でも書ける（IMP-128）。本文の幅の中で中央、縦は上に詰める。大きさの規則は埋め込み画像と同じ
+   （上の max-width: 100%。小さい画像は拡大しない）。 */
+#markdown.is-image-file .image-file {
+  text-align: center;
+}
+
+/* 透過した部分に 8px 角の市松模様（画像の範囲だけ。本文の地には敷かない）。**拡大画面の画像ファイルの画像も
+   同じ模様にする**（#expand-view.is-image-file。DSP-173）。模様は px で与え、倍率に合わせて拡大しない。
+   埋め込み画像には敷かない（FR-027）。読み込みに失敗した画像（span.img-broken）は img ではないので敷かれない */
+#markdown.is-image-file .image-file img,
+#expand-view.is-image-file .expand-content > img {
+  background-color: var(--checker-a);
+  background-image:
+    linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%),
+    linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
 }
 
 /* 読み込みに失敗した画像（DSP-123, IMP-226）。
@@ -593,6 +758,15 @@
 
 .markdown-body .media-image > .media-actions {
   right: var(--space-2);
+}
+
+/* 画像が小さく、ボタンが画像に収まらないときは、画像の右上の外側に、上端を画像にそろえて出す（DSP-124。4.81.0。
+   画像ファイルの .ico など）。収まるかと上端の位置（--media-actions-top）は media.js が測る——行の高さより小さい
+   画像は、器の上端より下に描かれる */
+.markdown-body .media-image > .media-actions.is-outside {
+  top: var(--media-actions-top, 0px);
+  right: auto;
+  left: calc(100% + var(--space-1));
 }
 
 /* 見た目はコピーボタン（DSP-251）と同じ。**display: none にしない**（UI-053）。

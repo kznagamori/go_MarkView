@@ -7,6 +7,7 @@
 // main.js（起動・購読・ショートカット・ダイアログの配線）が 400 行の目安（IMP-011）を超えたため分けた。
 // **このモジュールは main.js を import しない**（main.js が配線のためにここを import する）。
 
+import { holdIfEditing, refuseIfEditing } from "./blockedit.js";
 import * as api from "./api.js";
 import { leaveDocument } from "./docswitch.js";
 import { loadTreeRoot, revealCurrent } from "./filetree.js";
@@ -76,12 +77,16 @@ export function enterStateScreen(kind, error) {
 
 // openViaDialog はファイル選択ダイアログから開く（FR-010）。
 export async function openViaDialog() {
+  // 編集欄が開いている間は文書を開かない（FR-140 の表の「拒む」。IMP-264）
+  if (refuseIfEditing()) return;
   await recordScroll();
   handleResult(await api.openFileDialog());
 }
 
 // reloadCurrent は画面の対象を読み直す（FR-015）。
 export async function reloadCurrent() {
+  // 編集欄が開いている間は文書を開かない（FR-140 の表の「拒む」。IMP-264）
+  if (refuseIfEditing()) return;
   await recordScroll();
   handleResult(await api.reload());
 
@@ -100,11 +105,15 @@ export async function reloadCurrent() {
 // 返り、表示は変わらない（IMP-308）。開けなかった項目は Go 側が履歴から取り除き、Error が返る（BUG-023。
 // IMP-191）。ボタンの淡色は戻り値ではなく history:changed で決まる（IMP-323）。
 export async function goBack() {
+  // 編集欄が開いている間は文書を開かない（FR-140 の表の「拒む」。IMP-264）
+  if (refuseIfEditing()) return;
   await recordScroll();
   handleResult(await api.historyBack());
 }
 
 export async function goForward() {
+  // 編集欄が開いている間は文書を開かない（FR-140 の表の「拒む」。IMP-264）
+  if (refuseIfEditing()) return;
   await recordScroll();
   handleResult(await api.historyForward());
 }
@@ -112,6 +121,8 @@ export async function goForward() {
 // openFromTree はツリーで選ばれたファイルを開く（FR-033）。
 // **ツリールートは変わらない**（FR-030）。判断は Go 側にある。
 export async function openFromTree(path) {
+  // 編集欄が開いている間は文書を開かない（FR-140 の表の「拒む」。IMP-264）
+  if (refuseIfEditing()) return;
   await recordScroll();
   handleResult(await api.openFromTree(path));
 }
@@ -120,6 +131,8 @@ export async function openFromTree(path) {
 //
 // 判断は Go 側にある。ここは結果を描画へ落とすだけとする。
 export async function followLink(href) {
+  // 編集欄が開いている間は文書を開かない（FR-140 の表の「拒む」。IMP-264）
+  if (refuseIfEditing()) return;
   await recordScroll();
   handleLink(await api.followLink(href));
 }
@@ -128,14 +141,19 @@ export async function followLink(href) {
 //
 // document も error も null のときは何も起きなかったことを意味する。
 // 表示を変えない（履歴の端、ダイアログの取り消し、確認待ちでない Open anyway など）。
+//
+// **入口で拒んだ後、応答を待つ間に編集欄が開くことがある**（その間のダブルクリック）。そのときは画面を差し替えずに
+// 控え、閉じた時点で当てる（IMP-264 の表の「保留する」。main.js の購読と同じ）。
 function handleResult(result) {
   if (!result) return;
 
   if (result.error) {
+    if (isStateScreenError(result.error) && holdIfEditing({ type: "state", error: result.error })) return;
     showError(result.error);
     return;
   }
   if (result.document) {
+    if (holdIfEditing({ type: "doc", doc: result.document })) return;
     showDocument(result.document);
   }
 }
@@ -146,6 +164,7 @@ function handleLink(result) {
 
   switch (result.kind) {
     case "document":
+      if (holdIfEditing({ type: "doc", doc: result.document })) return;
       showDocument(result.document);
       return;
 
@@ -198,7 +217,7 @@ async function openConfirmed(path) {
 // **文書を離れる直前に 1 回だけ呼ぶ。** スクロールのたびには呼ばない。
 // **docswitch.js の leaveDocument（画面の状態の後始末。IMP-250）と呼び分ける**——v1.0.0 はこの関数を
 // main.js の leaveDocument と呼んでおり、同じ名前が 2 つあると呼ぶべきほうを取り違える。
-async function recordScroll() {
+export async function recordScroll() {
   if (!state.doc) return;
 
   await api.setScrollTop($("viewer").scrollTop);

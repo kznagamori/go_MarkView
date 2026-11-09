@@ -30,6 +30,11 @@ let onLink = null;
 // ダイアログを開く前にフォーカスがあった要素。閉じたら戻す（IMP-251）。
 let restoreFocus = null;
 
+// restoreToOpener は、restoreFocus が呼び出し側の渡した戻り先（showEditors の opener）か（IMP-252。4.75.0）。
+// ツリーの項目は roving tabindex で -1 のことがあり、isControl では戻り先に選ばれないため、渡されたものは
+// DOM に残っていればそのまま使う。
+let restoreToOpener = false;
+
 // いま開いているダイアログの種別（"about" | "editors"）。開いていなければ null。
 //
 // **#overlay に出せるのは 1 つだけであり、種別もこの 1 か所だけで持つ**
@@ -49,7 +54,7 @@ let editorDeps = null;
 
 // initOverlay は 2 つのダイアログを配線する（IMP-211）。
 //
-// deps は { onLink, onBrowse, onOpenEditor }。
+// deps は { onLink, onBrowse, onOpenEditor, onCloseEditors }。
 export function initOverlay(deps) {
   const options = deps || {};
 
@@ -208,10 +213,11 @@ export function hideAbout() {
 // openOverlay はダイアログを 1 つだけ開く（IMP-252）。
 //
 // **2 つを同時に開かない。** 中身を毎回入れ替えるため、構造として重ならない。
-function openOverlay(kind, dialog) {
+function openOverlay(kind, dialog, opener) {
   const overlay = $("overlay");
 
-  restoreFocus = document.activeElement;
+  restoreFocus = opener || document.activeElement;
+  restoreToOpener = Boolean(opener);
 
   clear(overlay);
   overlay.appendChild(dialog);
@@ -228,8 +234,12 @@ function openOverlay(kind, dialog) {
 // F1 や Ctrl+E で開いたときの直前のフォーカスは <body> であることが多く、
 // そのまま戻すと**どこにもフォーカスがない状態になる**。閉じた直後に Tab を
 // 押しても、ツールバーの先頭から辿り直すことになってしまう。
-function closeOverlay() {
+function closeOverlay(launched = false) {
   if (openKind === null) return false;
+
+  // エディタ選択ウィンドウを Open 以外（Cancel・Esc・暗幕）で閉じたら、Go の控えを捨てさせる（IMP-252, IMP-310）。
+  // Open では知らせない（OpenInEditor が捨てる）。Go を呼ぶのは main.js が渡した関数（IMP-201）
+  if (openKind === "editors" && !launched && editorDeps && editorDeps.onCloseEditors) editorDeps.onCloseEditors();
 
   const overlay = $("overlay");
   overlay.hidden = true;
@@ -238,8 +248,10 @@ function closeOverlay() {
   const fallback = $(FALLBACK_FOCUS[openKind]);
   openKind = null;
 
-  const target = isControl(restoreFocus) ? restoreFocus : fallback;
+  const opener = restoreToOpener && restoreFocus && restoreFocus.isConnected ? restoreFocus : null;
+  const target = opener || (isControl(restoreFocus) ? restoreFocus : fallback);
   restoreFocus = null;
+  restoreToOpener = false;
   if (target) target.focus();
 
   return true;
@@ -266,16 +278,18 @@ export function isAboutOpen() {
 // **Go を呼ぶのは main.js の役目**とし、ここは initOverlay で受け取った
 // 関数へ渡すだけにする（IMP-201）。
 const EDITOR_HANDLERS = {
-  onCancel: closeOverlay,
+  // **引数を渡さずに閉じる**——closeOverlay の引数は「Open で閉じたか」であり、click の event を渡すと取り違える
+  onCancel: () => closeOverlay(),
   onBrowse: browse,
   onLaunch: launch,
 };
 
 // showEditors はエディタ選択ダイアログを表示する（FR-091, IMP-252）。
 //
-// list は EditorListDTO（IMP-309）。**受け取った値を描くだけにする**（IMP-201）。
-export function showEditors(list) {
-  openOverlay("editors", buildEditorDialog(list, EDITOR_HANDLERS));
+// list は EditorListDTO（IMP-309）。**受け取った値を描くだけにする**（IMP-201）。opener は閉じたときにフォーカスを
+// 戻す要素（ファイルツリーの項目。4.75.0）。省けば開く前のフォーカス（無ければツールバーのボタン）へ戻す。
+export function showEditors(list, opener) {
+  openOverlay("editors", buildEditorDialog(list, EDITOR_HANDLERS), opener);
   syncOpenButton();
   focusInitial();
 }
@@ -323,7 +337,7 @@ function launch() {
   const id = checkedEditorId();
   if (!id) return;
 
-  closeOverlay();
+  closeOverlay(true);
 
   if (editorDeps && editorDeps.onOpenEditor) editorDeps.onOpenEditor(id);
 }

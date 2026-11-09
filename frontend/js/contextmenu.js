@@ -3,33 +3,39 @@
 // **WebView の標準のメニューは、どの場所でも止める**（AR-060）。document の contextmenu で必ず
 // preventDefault() し、そのうえで場所が PLACES に当たるときだけ自前のメニューを出す。
 //
-// **viewer.js / overlay.js / main.js / navigate.js / docswitch.js / editmode.js を import しない**
-// （IMP-250, IMP-249）。Go の呼び出し・通知・セルの編集欄の取り消しは main.js が deps で渡す。
+// **viewer.js / overlay.js / main.js / navigate.js / docswitch.js / editmode.js / format.js / treemenu.js を
+// import しない**（IMP-250, IMP-249）。Go の呼び出し・通知・修飾の操作・ツリーの項目は main.js が deps で渡す。
 // **目印の鍵を読まない**——書かれたとおりのリンク先は refs.js の ownLinkTarget に聞く（IMP-260）。
+//
+// **右クリックメニューの Text color のサブメニュー（#contextsubmenu）と、ツールバーの文字色の一覧（#contextmenu を
+// 使い回す）もここで開閉する**（UI-085, DSP-141。4.75.0）。項目の要素と位置は menuparts.js が作る。
 
 import { S } from "./strings.js";
-import { $, linkHref } from "./util.js";
-import { ownLinkTarget } from "./refs.js";
+import { $ } from "./util.js";
 import { isExpandOpen } from "./expand.js";
 import { hasAction, restoreRange, runAction } from "./menuactions.js";
+import { buildItems, colorItems, keyboardPoint, linkTargetOf, placeAt, placeBelow, placeBeside, selectionIn, setEnabled } from "./menuparts.js";
 
 // PLACES は場所の判定（IMP-249 の表）。**上から順に見て、最初に当たったものを採る**——入力欄は本文ペインの
 // 中にもある（セルの編集欄。FR-063）。kind が null の行（検索バーの入力欄以外の部分と本文中のボタン）では
 // 出さない。
 const PLACES = [
-  { selector: "input.search-input, input.cell-editor", kind: "input" },
+  { selector: "input.search-input, input.cell-editor, textarea.code-editor", kind: "input" },
   { selector: ".about-licenses", kind: "licenses" },
-  { selector: "#searchbar, #viewer button", kind: null },
+  { selector: "#searchbar, #viewer button, #treefilter", kind: null },
   { selector: "#viewer", kind: "viewer" },
+  // ファイルツリーの項目とツリールートの名前の行（FR-036。4.75.0）。項目と実行は treemenu.js（deps.treeMenu）
+  { selector: "#tree .tree-item, #tree-root-name", kind: "tree" },
 ];
 
-const CELL_EDITOR = "input.cell-editor";
-
-// 右クリックした点からの距離と、ウィンドウの端から空ける幅（DSP-140）
-const [OFFSET, MARGIN] = [2, 8];
-
 // deps を渡さずに初期化しても例外にしない（DOM 検査で単独に読むため）
-const NO_DEPS = { copyText: async () => null, readClipboard: async () => ({ text: "", error: null }), notify() {}, cancelCellEdit() {} };
+const NO_DEPS = {
+  copyText: async () => null,
+  readClipboard: async () => ({ text: "", error: null }),
+  notify() {},
+  treeMenu: { items: () => [], run: async () => {} },
+  format: { enabled: () => false, canFormat: () => false, selectionState: () => ({ strike: false, color: null }), colors: [] },
+};
 let deps = NO_DEPS;
 
 // menu は開いているメニューの状態。閉じていれば null。
@@ -43,11 +49,18 @@ let menu = null;
 // することがあり、座標では見分けられない。
 let rightPressed = false;
 
+// suppressed は、開いている文字色の一覧をそのボタンの pointerdown で閉じたときのボタン。続く click で開き直さない
+// （ボタンをもう一度押すと閉じる）。次の pointerdown で外す。
+let suppressed = null;
+
 // initContextMenu は右クリックメニューを配線する（IMP-249）。
 //
-// given: { copyText(text), readClipboard(), notify(error), cancelCellEdit() }。
+// given: { copyText(text), readClipboard(), notify(error), treeMenu, format }。**v1.1.0 の cancelCellEdit は外した**——
+// メニューの外のクリックで閉じても、編集欄を取り消さない（UI-085, FR-142。4.73.0）。
 //   copyText は失敗したら ErrorDTO を、成功したら null を返す（api.js の copyToClipboard）。
 //   readClipboard は { text, error } を返す（api.js の readClipboard。失敗の error は kind が paste）。
+//   treeMenu は { items(place), run(action, place) }（treemenu.js の treeMenuItems / runTreeAction。IMP-270）。
+//   format は { enabled(), canFormat(), selectionState(), toggleStrike(), applyColor(name), colors }（format.js。IMP-265）。
 export function initContextMenu(given) {
   deps = { ...NO_DEPS, ...given };
 
@@ -66,9 +79,15 @@ export function initContextMenu(given) {
   // **項目を押した瞬間に本文の選択範囲が外れないよう、既定の動作を止める**（FR-063, UI-085）。
   // click は止まらない。mousedown も止める（pointerdown を止めたときに mousedown の既定の動作まで止まるかを
   // エンジンに委ねない。NFR-061）。
-  for (const type of ["pointerdown", "mousedown"]) root.addEventListener(type, (event) => event.preventDefault());
-  root.addEventListener("click", onClick);
+  const sub = $("contextsubmenu");
+  for (const element of [root, sub]) {
+    for (const type of ["pointerdown", "mousedown"]) element.addEventListener(type, (event) => event.preventDefault());
+    element.addEventListener("click", onClick);
+  }
   root.addEventListener("keydown", onMenuKey);
+  sub.addEventListener("keydown", onSubKey);
+  // マウスを Text color に乗せると開き、本メニューの別の項目へ移ると閉じる（IMP-249）
+  root.addEventListener("mouseover", onHover);
 }
 
 // isContextMenuOpen はメニューが開いているかを返す（IMP-244 の振り分け）。
@@ -95,10 +114,86 @@ export function closeContextMenu() {
   return true;
 }
 
+// closeSubmenu は Text color のサブメニューだけを閉じ、Text color の項目へフォーカスを戻す（← と Esc。IMP-244 の
+// (1)、IMP-249）。閉じたら true、開いていなければ false。
+export function closeSubmenu() {
+  if (!menu || !menu.sub) return false;
+
+  const item = menu.sub;
+  hideSubmenu();
+  item.focus({ preventScroll: true });
+  restoreRange(menu);
+  return true;
+}
+
+// openColorList はツールバーの文字色のボタンの下に色の一覧を出す（UI-020, UI-085, DSP-141）。#contextmenu を
+// 使い回し、右クリックメニューと同時には開かない。**開く前に本文の選択範囲を控える**（BUG-019）。閉じたら
+// フォーカスを開く前の要素へ戻す（ボタンではなく、本文の選択を保つため。押したときにフォーカスは移していない）。
+export function openColorList(button) {
+  if (suppressed === button) {
+    suppressed = null;
+    return;
+  }
+  closeContextMenu();
+  if (isExpandOpen()) return;
+
+  const active = document.activeElement;
+  const selection = getSelection();
+  const current = { kind: "colors", place: button, start: 0, end: 0, pasteText: "", link: null, sub: null };
+  current.focus = active instanceof HTMLElement && active !== document.body ? active : null;
+  current.range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+
+  const root = $("contextmenu");
+  root.classList.add("is-color-list");
+  root.append(...colorItems(deps.format.colors, deps.format.selectionState().color));
+  menu = current;
+  root.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  placeBelow(root, button);
+  focusFirst(root);
+}
+
 function hide() {
+  const current = menu;
+  hideSubmenu();
   menu = null;
-  $("contextmenu").hidden = true;
-  $("contextmenu").replaceChildren();
+  const root = $("contextmenu");
+  root.hidden = true;
+  root.replaceChildren();
+  root.classList.remove("is-color-list");
+  if (current && current.kind === "colors") current.place.setAttribute("aria-expanded", "false");
+}
+
+function hideSubmenu() {
+  const sub = $("contextsubmenu");
+  sub.hidden = true;
+  sub.replaceChildren();
+  if (menu && menu.sub) {
+    menu.sub.setAttribute("aria-expanded", "false");
+    menu.sub = null;
+  }
+}
+
+// openSubmenu は Text color の項目の右に 7 色と Default を出し、フォーカスを最初の色へ移す（IMP-249, DSP-141）。
+// **淡色のときは開かない**（DSP-141）。印は開いたときに決めた色（open() の selectionState()）で付ける。
+function openSubmenu(item) {
+  if (!menu || item.disabled || menu.sub === item) return;
+
+  const sub = $("contextsubmenu");
+  sub.replaceChildren(...colorItems(deps.format.colors, menu.formatColor));
+  sub.hidden = false;
+  menu.sub = item;
+  item.setAttribute("aria-expanded", "true");
+  placeBeside(sub, item, $("contextmenu"));
+  focusFirst(sub);
+}
+
+// focusFirst は最初の使える項目へ移し、**その直後に選択範囲を当て直す**（BUG-019。WebKit はフォーカスの
+// 移動で文書の選択範囲を解除する）。
+function focusFirst(root) {
+  const first = root.querySelector(".contextmenu-item:not(:disabled)");
+  if (first) first.focus({ preventScroll: true });
+  restoreRange(menu);
 }
 
 function onContextMenu(event) {
@@ -111,7 +206,7 @@ function onContextMenu(event) {
 
   const root = $("contextmenu");
   const target = event.target instanceof Element ? event.target : null;
-  if (!target || root.contains(target)) return;
+  if (!target || root.contains(target) || $("contextsubmenu").contains(target)) return;
 
   closeContextMenu();
 
@@ -126,100 +221,47 @@ function onContextMenu(event) {
 
 function open(kind, place, target, event, fromKeyboard) {
   const active = document.activeElement;
-  const current = { kind, place, start: 0, end: 0, pasteText: "" };
+  const current = { kind, place, start: 0, end: 0, pasteText: "", sub: null };
   current.focus = active instanceof HTMLElement && active !== document.body ? active : null;
   current.link = kind === "viewer" ? linkTargetOf(target.closest("a")) : null;
 
   // **フォーカスを移す前に、本文の選択範囲を控える**（BUG-019）。**WebKit は要素へフォーカスを移すと
-  // 文書の選択範囲を解除する**ため、下の first.focus() で消える。入力欄が start / end を控えているのと
+  // 文書の選択範囲を解除する**ため、下の focusFirst で消える。入力欄が start / end を控えているのと
   // 同じ扱いを Range にも与える。控えたものは restoreRange で当て直す。
-  const selected = kind === "input" ? null : selectionIn(place);
+  const selected = kind === "input" || kind === "tree" ? null : selectionIn(place);
   current.range = selected ? selected.cloneRange() : null;
-
-  const root = $("contextmenu");
-  if (current.link !== null) root.append(createItem("copyLink", S.menuCopyLink, true), createSeparator());
 
   if (kind === "input") {
     current.start = place.selectionStart ?? 0;
     current.end = place.selectionEnd ?? 0;
-    const selected = current.start !== current.end;
-    root.append(
-      createItem("cut", S.menuCut, selected),
-      createItem("copy", S.menuCopy, selected),
-      // クリップボードの応答が届くまで使えない状態で出す（IMP-249 の「Paste の可否」）
-      createItem("paste", S.menuPaste, false),
-      createItem("selectAll", S.menuSelectAll, true),
-    );
-  } else {
-    root.append(
-      createItem("copy", S.menuCopy, current.range !== null),
-      createItem("selectAll", S.menuSelectAll, true),
-    );
   }
+
+  const root = $("contextmenu");
+  const { elements, pending } = buildItems(current, deps);
+  root.append(...elements);
 
   menu = current;
   root.hidden = false;
   placeAt(root, fromKeyboard ? keyboardPoint(current) : { x: event.clientX, y: event.clientY });
 
-  // 最初の使える項目へ移す（IMP-249）。**移した直後に選択範囲を当て直す**——
-  // **WebKit はフォーカスの移動で文書の選択範囲を解除する**（BUG-019）。当て直さないと、
-  // 右クリックした時点で選択が画面から消え、Copy が空のままになる。
-  const first = root.querySelector(".contextmenu-item:not(:disabled)");
-  if (first) first.focus({ preventScroll: true });
-  restoreRange(current);
+  // 最初の使える項目へ移す（IMP-249）。**移した直後に選択範囲を当て直す**——当て直さないと、右クリックした
+  // 時点で選択が画面から消え、Copy が空のままになる（BUG-019）
+  focusFirst(root);
 
   if (kind === "input") loadPaste(current);
+  for (const { element, ready } of pending) enableWhenReady(current, element, ready);
 }
 
-// linkTargetOf はリンク先を、Markdown に書かれたとおりの形で返す（FR-063, IMP-249）。リンクでなければ null。
-//
-// 鍵の合う data-link があればその値、無ければ（生 HTML の <a>、鍵の合わない目印、図の中のリンク）書かれた
-// リンク先（util.js の linkHref。SVG の <a> は xlink:href）とする。**a.href（解決済みの URL）を使わない**——
-// 絶対パスは利用者のユーザー名を含みうる。**リンク先を持たない <a> はリンクではない**ため、Copy link address
-// の行を出さない。
-function linkTargetOf(anchor) {
-  if (!anchor) return null;
-
-  const written = ownLinkTarget(anchor);
-  return written !== null ? written : linkHref(anchor);
-}
-
-// selectionIn は選択範囲が空でなく、場所の中に収まっていればその Range を、そうでなければ null を返す。
-function selectionIn(place) {
-  const selection = getSelection();
-  if (!selection || selection.rangeCount === 0 || selection.toString() === "") return null;
-
-  const range = selection.getRangeAt(0);
-  return place.contains(range.commonAncestorContainer) ? range : null;
-}
-
-// keyboardPoint はキーボードから開いたときの位置を返す（UI-085）。選択範囲の矩形、無ければフォーカス要素の
-// 矩形の左下とする。**入力欄では文書の選択範囲を見ない**——入力欄の外に残る選択範囲の近くへ出てしまう。
-function keyboardPoint(current) {
-  // **控えた Range を使う**（BUG-019）。**選択を引き直さない**——`closeContextMenu()` を通って
-  // 開き直したときは、そこで解除されていることがある（WebKit）。項目の可否と位置の根拠を 1 つにする。
-  const range = current.kind === "input" ? null : current.range;
-  let rect = range ? range.getBoundingClientRect() : null;
-  if (!rect || (rect.width === 0 && rect.height === 0)) rect = (current.focus || current.place).getBoundingClientRect();
-  return { x: rect.left, y: rect.bottom };
-}
-
-// placeAt は点の右下に置き、はみ出すなら左・上へ折り返す（DSP-140）。
-//
-// **前の位置のまま幅を測ってよい。** 項目は折り返さない（white-space: nowrap）ため、右端の近くにあっても
-// 幅は文言より狭くならない。
-function placeAt(root, point) {
-  root.style.left = `${fold(point.x, root.offsetWidth, window.innerWidth)}px`;
-  root.style.top = `${fold(point.y, root.offsetHeight, window.innerHeight)}px`;
-}
-
-// fold は 1 軸の位置を決める。点の後ろ（右・下）に OFFSET 離して置き、収まらなければ点の前（左・上）へ
-// 折り返し、ウィンドウの端から MARGIN の内側に収める。
-function fold(at, size, limit) {
-  let start = at + OFFSET;
-  if (start + size > limit - MARGIN) start = at - OFFSET - size;
-
-  return Math.max(MARGIN, Math.min(start, limit - MARGIN - size));
+// enableWhenReady は、使えない状態で出した項目を、応答が真なら使える状態にする（Set parent as tree root。IMP-270）。
+// **応答が届く前にメニューが閉じていたら何もしない。** 使える状態へ変えるときにフォーカスを動かさない（Paste と同じ）。
+async function enableWhenReady(current, element, ready) {
+  let ok = false;
+  try {
+    ok = (await ready()) === true;
+  } catch {
+    ok = false;
+  }
+  if (menu === current && ok) setEnabled(element, true);
 }
 
 // loadPaste はクリップボードを読み、テキストがあれば Paste を使える状態にする（IMP-249）。
@@ -248,28 +290,41 @@ async function loadPaste(current) {
 }
 
 function onPointerDown(event) {
+  // **マウスのサイドボタン（3 / 4）では閉じない**（IMP-249 の 4.79.0）。閉じると、続く mouseup の時点でメニューが
+  // 閉じているため、shortcuts.js が戻る・進むを行ってしまう（メニューの表示中、サイドボタンは何もしない操作）
+  if (event.button === 3 || event.button === 4) return;
   rightPressed = event.button === 2;
-  if (!menu || $("contextmenu").contains(event.target)) return;
+  suppressed = null;
+  if (!menu || $("contextmenu").contains(event.target) || $("contextsubmenu").contains(event.target)) return;
 
-  // **フォーカスは戻さない**（押した先へ移る。UI-085）
-  const { focus } = menu;
+  // 開いている文字色の一覧を、そのボタンで閉じたら、続く click で開き直さない
+  if (menu.kind === "colors" && event.target instanceof Node && menu.place.contains(event.target)) suppressed = menu.place;
+
+  // **フォーカスは戻さない**（押した先へ移る。UI-085）。**編集欄から開いていても取り消さない**（FR-142。4.73.0）
   hide();
-
-  // セルの編集欄から開いていたら、フォーカスが外れたものとして取り消す（FR-142, UI-085）。押した先がその
-  // 編集欄なら取り消さない。**取り消さないと、編集欄は blur の取り消しを見送ったまま、フォーカスを持たずに残る**
-  if (focus && focus.matches(CELL_EDITOR) && !focus.contains(event.target)) deps.cancelCellEdit();
 }
 
 function onScroll(event) {
   if (!menu) return;
 
+  // 本文ペイン・ライセンス欄・ファイルツリー（.pane-body。UI-032）のスクロールで閉じる
   const target = event.target;
-  if (target === $("viewer") || (target instanceof Element && target.matches(".about-licenses"))) closeContextMenu();
+  if (target === $("viewer") || (target instanceof Element && target.matches(".about-licenses, #pane-filetree .pane-body"))) closeContextMenu();
 }
 
 function onClick(event) {
   const item = event.target instanceof Element ? event.target.closest(".contextmenu-item") : null;
-  if (item && !item.disabled) run(item.dataset.action);
+  if (!item || item.disabled) return;
+  if (item.classList.contains("has-submenu")) openSubmenu(item);
+  else run(item);
+}
+
+// onHover は、マウスを Text color に乗せたらサブメニューを開き、本メニューの別の項目へ移ったら閉じる（IMP-249）。
+function onHover(event) {
+  const item = event.target instanceof Element ? event.target.closest(".contextmenu-item") : null;
+  if (!menu || !item) return;
+  if (item.classList.contains("has-submenu")) openSubmenu(item);
+  else if (menu.sub) closeSubmenu();
 }
 
 // onMenuKey はメニューの中のキーを受ける（IMP-249）。**↑ / ↓ / Enter / Space / Tab は閉じる契機ではない。**
@@ -280,55 +335,61 @@ function onClick(event) {
 function onMenuKey(event) {
   if (!menu || event.isComposing) return;
 
-  const items = [...$("contextmenu").querySelectorAll(".contextmenu-item:not(:disabled)")];
-  const index = items.indexOf(document.activeElement);
-
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    const next = index < 0 ? (step > 0 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
-    if (items[next]) items[next].focus({ preventScroll: true });
-    // 項目の間を移るたびに当て直す（BUG-019。**このモジュールのフォーカス移動はすべて選択範囲を消しうる**）
-    restoreRange(menu);
-  } else if (event.key === "Enter" || event.key === " ") {
-    if (index >= 0) run(items[index].dataset.action);
-  } else if (event.key !== "Tab") {
-    return;
-  }
+  const active = document.activeElement;
+  const opensSub = active instanceof Element && active.classList.contains("has-submenu");
+  if (opensSub && ["ArrowRight", "Enter", " "].includes(event.key)) openSubmenu(active);
+  else if (!navigate($("contextmenu"), event.key)) return;
 
   event.preventDefault();
   event.stopPropagation();
 }
 
+// onSubKey はサブメニューの中のキーを受ける（IMP-249）。← でサブメニューだけを閉じる。Esc は IMP-244 の (1)。
+function onSubKey(event) {
+  if (!menu || event.isComposing) return;
+  if (event.key === "ArrowLeft") closeSubmenu();
+  else if (!navigate($("contextsubmenu"), event.key)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+// navigate は ↑ / ↓ で使える項目の間を巡回し、Enter / Space で実行する。Tab は何もしない（メニューの外へ出さない）。
+// 扱ったキーなら true。**↑ / ↓ / Enter / Space / Tab は閉じる契機ではない**（UI-085）。
+function navigate(root, key) {
+  const items = [...root.querySelectorAll(".contextmenu-item:not(:disabled)")];
+  const index = items.indexOf(document.activeElement);
+
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const step = key === "ArrowDown" ? 1 : -1;
+    const next = index < 0 ? (step > 0 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
+    if (items[next]) items[next].focus({ preventScroll: true });
+    // 項目の間を移るたびに当て直す（BUG-019。**このモジュールのフォーカス移動はすべて選択範囲を消しうる**）
+    restoreRange(menu);
+    return true;
+  }
+  if (key === "Enter" || key === " ") {
+    if (index >= 0) run(items[index]);
+    return true;
+  }
+  return key === "Tab";
+}
+
 // run は項目を実行する。**先にメニューを閉じてフォーカスを開く前の位置へ戻し、それから実行する**（UI-085）。
-async function run(action) {
+async function run(item) {
   const current = menu;
-  if (!current || !hasAction(action)) return;
+  if (!current) return;
+  const { action, value } = item.dataset;
+
+  // ファイルツリーの項目は treemenu.js が実行する（IMP-270）
+  if (current.kind === "tree") {
+    closeContextMenu();
+    await deps.treeMenu.run(action, current.place);
+    return;
+  }
+
+  if (!hasAction(action)) return;
 
   closeContextMenu();
-  await runAction(action, current, deps);
-}
-
-function createItem(action, label, enabled) {
-  const item = document.createElement("button");
-  item.type = "button";
-  item.className = "contextmenu-item";
-  item.textContent = label;
-  item.setAttribute("role", "menuitem");
-  item.dataset.action = action;
-  setEnabled(item, enabled);
-  return item;
-}
-
-// setEnabled は使えない項目を淡色にし、選べないようにする（FR-063。消さずに出す）。
-function setEnabled(item, enabled) {
-  item.disabled = !enabled;
-  if (enabled) item.removeAttribute("aria-disabled");
-  else item.setAttribute("aria-disabled", "true");
-}
-
-function createSeparator() {
-  const separator = document.createElement("div");
-  separator.className = "contextmenu-separator";
-  separator.setAttribute("role", "separator");
-  return separator;
+  await runAction(action, current, deps, value);
 }

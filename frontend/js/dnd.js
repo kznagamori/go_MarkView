@@ -8,6 +8,7 @@
 // ここで行うのは**ドロップ可能であることの表示だけ**とする。
 
 import { OnFileDrop } from "../wailsjs/runtime/runtime.js";
+import { recordScroll } from "./navigate.js";
 import { S } from "./strings.js";
 import { $, clear, icon } from "./util.js";
 
@@ -64,6 +65,10 @@ function onEnter(event) {
   if (!hasFiles(event)) return;
 
   depth += 1;
+  // **オーバーレイを出すとき（ドラッグがウィンドウに入ったとき）に、表示履歴へスクロール位置を記録する**（FR-051,
+  // IMP-245。4.81.0）。ドロップは Go が直接受け取り、フロントエンドは文書を離れる直前を知らない。ドロップの前には
+  // 必ずドラッグが入る。取り消されても、いまの項目の位置が新しくなるだけで害は無い
+  if (depth === 1) recordScroll().catch(() => {});
   show();
 }
 

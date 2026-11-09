@@ -7,25 +7,17 @@
 // **viewer.js / main.js / docswitch.js / shortcuts.js / zoom.js を import しない**（それぞれから呼ばれ、循環する）。
 // 本文ペインへのフォーカスは main.js が渡す deps.focusViewer で戻す（IMP-220）。
 
+import { buildBar, comboOf, commandOf } from "./expandbar.js";
 import { naturalSize } from "./media.js";
+import { state } from "./state.js";
 import { S } from "./strings.js";
-import { $, icon } from "./util.js";
+import { $ } from "./util.js";
 
 // 倍率の範囲と 1 段（FR-122, UI-104）、方向キーの移動量、舞台に残す最小の幅、タッチパッドの細かいホイールを
 // 1 段にまとめる間隔（IMP-253）。
 const [MIN_SCALE, MAX_SCALE, STEP, PAN, KEEP, WHEEL_MS] = [0.1, 10, 1.25, 40, 48, 50];
 
-// KEYS は UI-104 の表。**ツールチップのキー表記もここから組み立てる**（strings.js に書かない。IMP-290）。
-// keys の表記は shortcuts.js の keyOf と同じ形。**`+` は配列で届き方が違う**（US は Shift+`=`、JIS は
-// Shift+`;`、テンキーは Shift なし）。Esc は閉じるボタンの表記のために載せるが、ここでは処理しない
-// （閉じるのは IMP-244 の振り分け）。
-const KEYS = {
-  fit: { label: "F", keys: ["f", "Shift+f"] },
-  actual: { label: "0", keys: ["0", "Ctrl+0"] },
-  zoomOut: { label: "-", keys: ["-", "Shift+-", "_", "Shift+_", "Ctrl+-", "Ctrl+Shift+-", "Ctrl+_", "Ctrl+Shift+_"] },
-  zoomIn: { label: "+", keys: ["+", "Shift++", "=", "Shift+=", "Ctrl++", "Ctrl+Shift++", "Ctrl+=", "Ctrl+Shift+="] },
-  close: { label: "Esc", keys: [] },
-};
+// 操作バーとキーの表（UI-104 の表）は expandbar.js にある。
 
 // 方向キーはスクロールと同じ向きに見える範囲を動かす（→ で右側が見える。中身は左へ動く）。
 const ARROWS = { ArrowLeft: [PAN, 0], ArrowRight: [-PAN, 0], ArrowUp: [0, PAN], ArrowDown: [0, -PAN] };
@@ -51,27 +43,18 @@ export function initExpand(given) {
   const root = $("expand-view");
   root.setAttribute("aria-label", S.expandTitle);
 
-  const bar = document.createElement("div");
-  bar.className = "expand-bar";
-  const zoomValue = document.createElement("span");
-  zoomValue.className = "expand-zoom-value";
-  parts = {
-    root,
-    bar,
-    zoomValue,
-    fit: textButton("expand-fit", S.expandFit, S.tipExpandFit, "fit", () => applyFit()),
-    actual: textButton("expand-actual", S.expandActual, S.tipExpandActual, "actual", () => zoomAtCenter(1)),
-    zoomOut: iconButton("expand-zoom-out", "icon-zoom-out", S.tipZoomOut, "zoomOut", () => zoomAtCenter(view.scale / STEP)),
-    zoomIn: iconButton("expand-zoom-in", "icon-zoom-in", S.tipZoomIn, "zoomIn", () => zoomAtCenter(view.scale * STEP)),
-    close: iconButton("expand-close", "icon-close", S.tipExpandClose, "close", () => closeExpand()),
-    stage: document.createElement("div"),
-    content: document.createElement("div"),
+  const actions = {
+    fit: () => applyFit(),
+    actual: () => zoomAtCenter(1),
+    zoomOut: () => zoomAtCenter(view.scale / STEP),
+    zoomIn: () => zoomAtCenter(view.scale * STEP),
+    close: () => closeExpand(),
   };
-  bar.append(parts.fit, parts.actual, parts.zoomOut, zoomValue, parts.zoomIn, parts.close);
+  parts = Object.assign({ root, stage: document.createElement("div"), content: document.createElement("div") }, buildBar(actions, isExpandOpen));
   parts.stage.className = "expand-stage";
   parts.content.className = "expand-content";
   parts.stage.appendChild(parts.content);
-  root.append(bar, parts.stage);
+  root.append(parts.bar, parts.stage);
 
   root.addEventListener("keydown", trapTab);
   parts.stage.addEventListener("wheel", onWheel, { passive: false });
@@ -91,6 +74,8 @@ export function openExpand(target, key, opener) {
   view = { key, opener, target: null, placeholder: null, savedMaxWidth: undefined, scale: 1, x: 0, y: 0, fit: true, waiting: false };
   moveIn(target);
 
+  // 画像ファイルの画像なら、画像の範囲に市松模様を敷く（FR-027, DSP-129, DSP-173）。判断は DocumentDTO.kind で行う
+  parts.root.classList.toggle("is-image-file", state.doc !== null && state.doc.kind === "image");
   parts.root.hidden = false;
   // ステータス領域は覆わないが、操作も受け付けない。表示の更新は止まらない（UI-104）
   $("statusbar").toggleAttribute("inert", true);
@@ -135,7 +120,7 @@ export function handleExpandKey(event) {
     return true;
   }
 
-  const id = Object.keys(KEYS).find((name) => KEYS[name].keys.includes(combo));
+  const id = commandOf(combo);
   if (!id) return false;
 
   parts[id].click();
@@ -194,6 +179,9 @@ export function onDocumentSwitched() {
 // max-width は控えて外す（IMP-228 と同じ扱い）。
 function moveIn(target) {
   const rect = target.getBoundingClientRect();
+  // 本来の大きさは本文にあるうちに測る——固有の大きさを持たない SVG の画像は、本文で描いている大きさを本来の
+  // 大きさとみなす（IMP-228 の naturalSize。DSP-173）。外した後では描いている大きさが 0 になる
+  const size = naturalSize(target);
   const placeholder = document.createElement("span");
   placeholder.className = "expand-placeholder";
   placeholder.style.setProperty("--placeholder-width", `${rect.width}px`);
@@ -203,9 +191,8 @@ function moveIn(target) {
   view.savedMaxWidth = target.style ? target.style.maxWidth : "";
   if (view.savedMaxWidth) target.style.removeProperty("max-width");
 
-  const size = naturalSize(target);
-  view.width = size.width || rect.width || 1;
-  view.height = size.height || rect.height || 1;
+  view.width = size.width || 1;
+  view.height = size.height || 1;
   view.target = target;
   view.placeholder = placeholder;
   parts.content.replaceChildren(target);
@@ -228,6 +215,7 @@ function hide() {
   view = null;
   endDrag();
   parts.root.hidden = true;
+  parts.root.classList.remove("is-image-file");
   $("statusbar").toggleAttribute("inert", false);
 }
 
@@ -356,43 +344,6 @@ function trapTab(event) {
   const next = event.shiftKey ? index - 1 : index + 1;
   event.preventDefault();
   buttons[(next + buttons.length) % buttons.length].focus();
-}
-
-// textButton / iconButton は操作バーのボタンを作る。ツールチップと読み上げ名は `Fit (F)` の形（IMP-247, IMP-295）。
-// **aria-disabled のボタンを押しても何もしない**（IMP-253）。
-function textButton(className, text, tip, id, onClick) {
-  const button = barButton(`tb-btn expand-text ${className}`, tip, id, onClick);
-  button.textContent = text;
-  return button;
-}
-
-function iconButton(className, symbol, tip, id, onClick) {
-  const button = barButton(`tb-btn ${className}`, tip, id, onClick);
-  button.appendChild(icon(symbol));
-  return button;
-}
-
-function barButton(className, tip, id, onClick) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = className;
-  const label = `${tip} (${KEYS[id].label})`;
-  button.dataset.tip = label;
-  button.setAttribute("aria-label", label);
-  button.addEventListener("click", () => {
-    if (view && button.getAttribute("aria-disabled") !== "true") onClick();
-  });
-  return button;
-}
-
-// comboOf は KeyboardEvent を KEYS の表記へ変える（shortcuts.js の keyOf と同じ規則。1 文字のキーは小文字）。
-function comboOf(event) {
-  const names = [];
-  if (event.ctrlKey) names.push("Ctrl");
-  if (event.altKey) names.push("Alt");
-  if (event.shiftKey) names.push("Shift");
-  names.push(event.key.length === 1 ? event.key.toLowerCase() : event.key);
-  return names.join("+");
 }
 
 function clamp(value, min, max) {

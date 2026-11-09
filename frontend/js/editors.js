@@ -32,6 +32,13 @@ export function buildEditorDialog(list, handlers) {
   title.textContent = S.editorTitle;
   dialog.appendChild(title);
 
+  // 開くファイルの名前（UI-103, DSP-172。4.75.0）。**Go がウィンドウを開いた時点で控えた対象のベース名**であり、
+  // 開いている間に文書が切り替わっても書き換えない（FR-091）。選べる項目ではない
+  const file = document.createElement("p");
+  file.className = "editor-file";
+  file.textContent = (list || {}).fileName || "";
+  dialog.appendChild(file);
+
   dialog.appendChild(buildList((list || {}).editors || [], handlers));
   dialog.appendChild(buildActions(handlers));
 

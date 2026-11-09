@@ -47,6 +47,10 @@ export const SHORTCUTS = [
   { id: "editMode", keys: ["Ctrl+Shift+m"], label: "Ctrl+Shift+M" },
   { id: "undo", keys: ["Ctrl+z"], label: "" },
   { id: "redo", keys: ["Ctrl+y", "Ctrl+Shift+z"], label: "" },
+
+  // v1.2.0（UI-090, IMP-244。4.75.0）。strike は format.js の toggleStrike（ツールバーのボタン・メニューと同じ入口）。
+  // **入力欄の中では働かない**——素通しもせず、使えないので false を返して何もしない（FR-146）
+  { id: "strike", keys: ["Ctrl+Shift+x"], label: "Ctrl+Shift+X" },
 ];
 
 // 入力欄にフォーカスがある間、素通しさせる割り当て（UI-090）。
@@ -62,17 +66,19 @@ export const SHORTCUTS = [
 // **undo / redo はテキスト編集に関わるキーとして扱う**（FR-144, IMP-244）。入力欄の中の取り消しに任せる。
 const PASS_THROUGH_IN_INPUT = new Set(["copySelection", "undo", "redo"]);
 
-// TEXT_INPUTS は「入力欄」として扱う要素（UI-090, IMP-244）。検索バーの入力欄とセルの編集欄だけとする。
+// TEXT_INPUTS は「入力欄」として扱う要素（UI-090, IMP-244）。検索バーの入力欄とセル・コードブロックの編集欄だけとする
+// （コードブロックの編集欄は 4.75.0。外すと、編集欄の中の Ctrl+Z がファイルの書き込みの取り消しへ回る）。
 //
 // **チェックボックスとラジオボタンを入力欄に数えない。** v1.0.0 は input 要素をすべて入力欄とみなしていた。
 // v1.1.0 では再描画の後にフォーカスがチェックボックスへ戻る（IMP-220 の手順 11）ため、そのままでは
 // チェックボックスを切り替えた直後の Ctrl+Z / Ctrl+Y が素通しされ、既定の動作にも何も無いため黙って
 // 何も起きない（FR-144）。
-const TEXT_INPUTS = "input.search-input, input.cell-editor";
+const TEXT_INPUTS = "input.search-input, input.cell-editor, textarea.code-editor";
 
-// CELL_EDITOR はセルの編集欄（IMP-262）。**Enter / Shift+Enter を検索の移動へ回さない**（FR-142, UI-090）。
-// 編集欄自身の keydown が確定を受け持つ。
-const CELL_EDITOR = "input.cell-editor";
+// EDIT_BOXES はセル・コードブロックの編集欄の器（IMP-262, IMP-264）。**中にフォーカスがある間（Save / Cancel を含む。
+// IMP-264 の isEditBoxFocused と同じ範囲）は、Enter / Shift+Enter を検索の移動へ回さない**（FR-142, UI-090）。セルの
+// 入力欄は自身の keydown が確定を、Save / Cancel は既定の動作（ボタンの実行）が受け持つ。
+const EDIT_BOXES = "input.cell-editor, .cell-editor-box, .code-editor-box";
 const SEARCH_MOVES = new Set(["searchNext", "searchPrev"]);
 
 // 拡大画面を開いている間も既定の動作を残す割り当て（Enter はフォーカスしているボタンの実行。IMP-253）。
@@ -167,7 +173,7 @@ function onKeyDown(event) {
   if (!id) return;
 
   if (isTextInput(event.target) && PASS_THROUGH_IN_INPUT.has(id)) return;
-  if (SEARCH_MOVES.has(id) && matches(event.target, CELL_EDITOR)) return;
+  if (SEARCH_MOVES.has(id) && event.target instanceof Element && event.target.closest(EDIT_BOXES)) return;
 
   const handler = handlers[id];
   if (!handler) return;

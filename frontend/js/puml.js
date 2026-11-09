@@ -140,7 +140,8 @@ export async function drawPlantUML(root, gen = startDrawing()) {
 export async function redrawPlantUML(root, gen = startDrawing()) {
   for (const block of ownPlantUMLBlocks(root)) {
     const rendered = block.querySelector(".plantuml-rendered");
-    if (!rendered) continue;
+    // **編集欄を開いているブロックは飛ばす**（FR-140 の表の「保ったまま」。IMP-264。取り消したら codeedit.js が描き直す）
+    if (!rendered || block.classList.contains("is-code-editing")) continue;
 
     holdHeight(block);
     rendered.replaceWith(sourceElement(block));
@@ -162,6 +163,8 @@ async function drawOnePlantUML(pre, gen) {
   const holder = document.createElement("div");
   holder.className = "plantuml-rendered";
   holder.id = id;
+  // 編集欄を開いている間に描いたら、置き換える原文と同じく隠したままにする（IMP-264。取り消したら戻す）
+  holder.hidden = pre.hidden;
   pre.replaceWith(holder);
 
   // **原文はここで DOM から外れる**（描き終えるまで 1 秒近くかかりうる）。その間も件数を
@@ -283,8 +286,12 @@ function markRejected(root) {
 }
 
 // restorePlantUML は描けなかったブロックをソース表示へ戻し、理由を添える。
+//
+// **編集欄を開いている間（IMP-264）は、戻した原文も隠したままにする**（描いていた器の hidden を引き継ぐ）。
 function restorePlantUML(block, holder, reason) {
-  holder.replaceWith(sourceElement(block));
+  const pre = sourceElement(block);
+  pre.hidden = holder.hidden;
+  holder.replaceWith(pre);
   showPlantUMLError(block, reason);
 }
 
@@ -317,5 +324,7 @@ function showPlantUMLError(block, reason) {
   const line = document.createElement("p");
   line.className = "plantuml-error";
   line.textContent = reason;
+  // 編集欄を開いている間は隠す（取り消したときに codeedit.js が見せる。IMP-264）
+  line.hidden = block.classList.contains("is-code-editing");
   block.insertBefore(line, block.firstChild);
 }

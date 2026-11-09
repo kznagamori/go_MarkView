@@ -25,7 +25,14 @@ const CURRENT = "search-hit-current";
 //
 // どちらも「Go が出力した本文」ではなく、フロントエンドが後から描いたもので
 // ある。原文は data-source と TeX ソースとして別に残っている。
-const EXCLUDED = "svg, .katex, script, style";
+//
+//   p.no-diagrams … 図のファイルの No diagrams found.（IMP-220 の 1a）。UI の文言であり、文書の文字ではない
+//                   （4.75.0）
+//   .edit-actions … 編集欄の Save / Cancel（IMP-262, IMP-264）。同じく UI の文言（4.75.0）
+//   .plantuml-error / .mermaid-error … 描けなかった図に併記した理由とエラー内容（IMP-231, IMP-233。4.81.0）
+//   .is-code-editing [hidden] … コードブロックの編集欄を開いている間、隠した元の中身（4.76.0）。数えると、
+//                   移っても見えないヒットが件数に残る（BUG-004 と同じ形）
+const EXCLUDED = "svg, .katex, script, style, p.no-diagrams, .edit-actions, .plantuml-error, .mermaid-error, .is-code-editing [hidden]";
 
 // initSearch は検索バーを組み立てて配線する（IMP-211）。
 //
@@ -150,19 +157,21 @@ export function isSearchOpen() {
 // （移動は利用者の操作＝`jump` でだけ行う）。**現在位置が外れていたら、文書の順でその後ろに
 // 残っている最初のヒットへ移す**（利用者の判断。2026-09-18）。末尾だったときは先頭へ回る。
 //
+// **編集欄の開閉と確定でも呼ぶ**（IMP-264, IMP-262）。**走査から外れたヒット（隠した中身の中）も落とし**、探し直す前に
+// そのブロックに残る古い <mark> を解く（解かずに探すと二重に包む）。**件数が 0 でも戻らない**（0 件になった中身が戻る）。
 // root は描き終えたブロック（省略時は本文の全体）。
 export function syncHits(root) {
   const { open, query, hits, index } = state.search;
-  if (!open || !query || hits.length === 0) return;
+  if (!open || !query) return;
 
   const current = index >= 0 ? hits[index] : null;
-  const dropped = Boolean(current) && !current.isConnected;
+  const dropped = Boolean(current) && gone(current);
 
   // 1. DOM から外れたヒットを落とす。現在位置が外れていたら、その後ろで生きている最初のものを覚える。
   const kept = [];
   let next = null;
   hits.forEach((mark, at) => {
-    if (!mark.isConnected) return;
+    if (gone(mark)) return;
 
     kept.push(mark);
     if (next === null && dropped && at > index) next = mark;
@@ -173,6 +182,7 @@ export function syncHits(root) {
   const area = root && root.isConnected ? root : null;
   const added = [];
   if (area && !kept.some((mark) => area.contains(mark))) {
+    clearHighlights(area);
     for (const node of textNodes(area)) {
       for (const mark of wrap(node, query.toLowerCase())) added.push(mark);
     }
@@ -188,6 +198,11 @@ export function syncHits(root) {
   state.search.index = target ? merged.indexOf(target) : -1;
 
   updateCount();
+}
+
+// gone は、ヒットが DOM から外れたか、走査から外れた（隠した元の中身の中など）かを返す（IMP-241）。
+function gone(mark) {
+  return !mark.isConnected || Boolean(mark.parentElement && mark.parentElement.closest(EXCLUDED));
 }
 
 // inDocumentOrder は 2 つの要素を文書の順に並べる比較関数（IMP-241）。
@@ -293,9 +308,8 @@ function wrap(node, needle) {
   return marks;
 }
 
-// clearHighlights は包んだ <mark> を解いて元へ戻す（IMP-241）。
-function clearHighlights() {
-  const root = $("markdown");
+// clearHighlights は root（省略時は本文の全体）の中の包んだ <mark> を解いて元へ戻す（IMP-241）。
+function clearHighlights(root = $("markdown")) {
   const parents = new Set();
 
   for (const mark of root.querySelectorAll(`mark.${HIT}`)) {

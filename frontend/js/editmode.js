@@ -5,29 +5,19 @@
 //
 // **viewer.js / overlay.js / main.js / navigate.js / docswitch.js を import しない**（IMP-250。viewer.js と
 // docswitch.js がこのモジュールを import する）。本文ペインへのフォーカスは main.js が deps で渡す。
-// **目印の鍵を読まない**——照合と値は refs.js に聞く（IMP-260）。**400 行の目安を超えたら、セルの編集欄
-// （IMP-262）を celledit.js へ分ける**（IMP-200）。
-//
-// **セルの文字列の整形（改行・前後の空白・`|` のエスケープ）はしない。** Go 側の PlanCell（IMP-106）が行う。
-// 2 か所で整形すると、見た目と書き込まれる内容が食い違う。
+// **目印の鍵を読まない**——照合と値は refs.js に聞く（IMP-260）。**セルの編集欄（IMP-262）は celledit.js、
+// 編集欄が開いている間の扱い（拒む・保留）は blockedit.js にある**（4.75.0。IMP-200, IMP-264）。
 
+import { isEditBoxFocused, isEditBoxOpen, refuseIfEditing } from "./blockedit.js";
+import { markEditableCells } from "./celledit.js";
+import { markEditableBlocks } from "./codeedit.js";
+import { updateFormatButtons } from "./format.js";
 import { isOwnRef, ownRef } from "./refs.js";
 import { state } from "./state.js";
 import { S } from "./strings.js";
 import { $ } from "./util.js";
 
-// セルの中のボタンと、開いている編集欄。ここでのダブルクリックでは編集を始めない（FR-142）
-const IGNORE_DOUBLE_CLICK = ".sort-btn, .media-actions, .cell-editor";
-const NEWLINES = /\r\n|\r|\n/g;
-
 let deps = { api: null, notify() {}, focusViewer() {} };
-
-// editor は開いているセルの編集欄 { input, cell, ref }。閉じていれば null。**常に 1 つだけ**（IMP-262）
-let editor = null;
-
-// opening はダブルクリックのたびに進める。ソースの応答が、後のダブルクリックより遅れて届いたら開かない
-// （先に押したセルの編集欄が、後から押したセルの編集欄を置き換えないため）。
-let opening = 0;
 
 // initEditMode は編集モードを配線する（IMP-260）。given: { api, notify(error), focusViewer() }。
 //   api は api.js（setEditMode / setTask / getCellSource / setCell / undoEdit / redoEdit）。
@@ -39,13 +29,6 @@ export function initEditMode(given) {
   $("markdown").addEventListener("change", onCheckboxChange);
   // ラベルをスクロールバーの内側に置くため、ウィンドウ幅が変わったら測り直す（DSP-126）
   window.addEventListener("resize", measureScrollbar);
-
-  // セルの編集欄はダブルクリックで開く（IMP-262）
-  $("markdown").addEventListener("dblclick", onDoubleClick);
-  // ウィンドウへ戻ったとき、編集欄がまだ開いていてフォーカスがどこにも無ければ戻す（FR-142）
-  window.addEventListener("focus", () => {
-    if (editor && document.activeElement === document.body) editor.input.focus({ preventScroll: true });
-  });
 }
 
 // toggleEditMode はボタンと Ctrl+Shift+M の共通の入口（IMP-260, IMP-244）。何もしなければ false。
@@ -54,6 +37,8 @@ export function initEditMode(given) {
 // （shortcuts.js は false でなければ既定の動作を止める）。結果は届いた時点で写す。
 export function toggleEditMode() {
   if (!state.editable) return false;
+  // **編集欄が開いていれば、終えることを拒む**（FR-140。開くときは編集欄が開いていない）
+  if (state.editMode && refuseIfEditing()) return true;
 
   deps.api
     .setEditMode(!state.editMode)
@@ -95,20 +80,13 @@ export function isEditableCell(element) {
   return Boolean(cell) && isOwnRef(cell, "cell");
 }
 
-// isCellEditing は編集欄が開いているかを返す（IMP-244 の Esc の振り分けの (3)）。
-export function isCellEditing() {
-  return editor !== null;
-}
+// isEditableBlock は、編集モード中で element が鍵の合う図のブロック（Mermaid・PlantUML）の中にあるかを返す
+// （IMP-223 のリンクの捕捉。FR-145）。ダブルクリックの 1 回目で、図の中のリンクから文書が切り替わらないようにする。
+export function isEditableBlock(element) {
+  if (!state.editMode || !(element instanceof Element)) return false;
 
-// cancelCellEdit は開いている編集欄を取り消す（IMP-262）。取り消したら true、開いていなければ false。
-//
-// **何も呼ばず、フォーカスも動かさない。** 本文ペインへ戻すのは呼び出し側が決める（Esc と編集モードの
-// 終了は戻す。フォーカスが外れたことによる取り消しは戻さない。UI-055）。
-export function cancelCellEdit() {
-  if (!editor) return false;
-
-  closeEditor();
-  return true;
+  const block = element.closest(".code-block");
+  return Boolean(block) && (isOwnRef(block, "mermaid") || isOwnRef(block, "plantuml"));
 }
 
 // undoEdit / redoEdit は直前の書き込みを取り消す・やり直す（IMP-263, FR-144）。編集モードでなければ false
@@ -126,6 +104,11 @@ export function redoEdit() {
 
 function sendHistory(call) {
   if (!state.editMode) return false;
+  // **編集欄が開いている間（開きかけを含む）は、ファイルの取り消し・やり直しを受け付けない**（FR-144, FR-140）。
+  // 中にフォーカスがあれば入力欄の扱い（IMP-244。入力欄は shortcuts.js が素通しし、Save / Cancel では何もしない）、
+  // 外なら拒む
+  if (isEditBoxFocused()) return false;
+  if (refuseIfEditing()) return true;
 
   call()
     .then((result) => {
@@ -164,6 +147,9 @@ function render() {
 
   $("viewer-frame").classList.toggle("is-editing", on);
   $("editmode-badge").hidden = !on;
+  // ツールバーの修飾の群は編集モードの間だけ出す（UI-020, IMP-265, IMP-202）。押せるかは選択で決まる
+  $("tb-format").hidden = !on;
+  updateFormatButtons();
   if (on) measureScrollbar();
 
   const markdown = $("markdown");
@@ -173,16 +159,11 @@ function render() {
     input.disabled = !on;
     input.classList.toggle("is-editable", on);
   }
+  // セルの印（IMP-262）。**編集欄が開いている間は、編集モードを終える表示へ移らない**——終えることは拒み、自動で
+  // 終える知らせ（削除・不正なバイト列）は blockedit.js が控えて、閉じた時点で当てる（IMP-260, IMP-264）
   markEditableCells(markdown, on);
-
-  // 編集モードでなくなったら、開いているセルの編集欄を取り消す（FR-142）。**編集欄にフォーカスがあったら
-  // 本文ペインへ移す**——編集欄は DOM から取り除かれ、フォーカスが body に落ちると PageUp / PageDown が
-  // 効かない（BUG-007 と同じ症状）。フォーカスが無ければ動かさない（UI-055）。
-  if (!on && isCellEditing()) {
-    const focused = document.activeElement && document.activeElement.matches(".cell-editor");
-    cancelCellEdit();
-    if (focused) deps.focusViewer();
-  }
+  // コードブロックと図の編集のボタン（IMP-264）
+  markEditableBlocks(markdown, on);
 }
 
 // measureScrollbar は #viewer のスクロールバーの幅を --viewer-scrollbar-width として #viewer-frame に与える
@@ -204,6 +185,12 @@ async function onCheckboxChange(event) {
   const ref = ownRef(input, "task");
   if (ref === null) return;
 
+  // 編集欄が開いていれば（開きかけを含む）、ブラウザが反転した見た目を戻して拒む（FR-140, FR-141。Go を呼ばない）
+  if (refuseIfEditing()) {
+    input.checked = !input.checked;
+    return;
+  }
+
   const checked = input.checked;
   const result = await deps.api.setTask(ref, checked).catch(() => null);
   if (result && result.changed) return;
@@ -213,146 +200,4 @@ async function onCheckboxChange(event) {
   // **戻すのは、その input がまだ画面にある場合だけ**——再描画が先に届いていれば input は差し替わっており、
   // 新しい DOM がファイルの状態を示している。戻り値とイベントのどちらが先でも同じ結果になる（IMP-316）
   if (input.isConnected) input.checked = !checked;
-}
-
-// --- セルの編集欄（IMP-262） ---
-
-// markEditableCells は、鍵の合うセル（見出し行を含む）に is-editable を付ける・外す（IMP-262, DSP-126）。
-//
-// **鍵の合わないセル（生 HTML の表、GFM の規則で補われたセル）には付けない。** CSS は鍵を読めないため、
-// 見分けられること（UI-055）をクラスで伝える。
-function markEditableCells(root, on) {
-  for (const cell of root.querySelectorAll("th, td")) {
-    cell.classList.toggle("is-editable", on && ownRef(cell, "cell") !== null);
-  }
-}
-
-// onDoubleClick は、編集モードの間に鍵の合うセルでダブルクリックされたら編集欄を開く（IMP-262）。
-async function onDoubleClick(event) {
-  if (!state.editMode || !(event.target instanceof Element)) return;
-
-  // ボタンの上と、開いている編集欄の中では何もしない。**選択範囲も消さない**（編集欄の中の語の選択を残す）
-  if (event.target.closest(IGNORE_DOUBLE_CLICK)) return;
-
-  const cell = event.target.closest("th, td");
-  const ref = cell ? ownRef(cell, "cell") : null;
-  if (ref === null) return;
-
-  // 既定のダブルクリックによる語の選択を消す
-  getSelection().removeAllRanges();
-
-  const token = ++opening;
-  const result = await deps.api.getCellSource(ref).catch(() => null);
-
-  // 応答を待つ間に、再描画でセルが消えた・編集モードが終わった・別のセルをダブルクリックした
-  if (token !== opening || !cell.isConnected || !state.editMode) return;
-  if (!result || result.stale) return;
-  if (result.error) {
-    // edit-conflict のときは Go 側が読み直しを送っている（IMP-195）
-    deps.notify(result.error);
-    return;
-  }
-
-  openEditor(cell, ref, result.text);
-}
-
-// openEditor は編集欄をセルの中に置き、フォーカスを移してカーソルを末尾へ置く（IMP-262, DSP-127）。
-function openEditor(cell, ref, text) {
-  cancelCellEdit();
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "cell-editor";
-  input.value = text;
-  input.addEventListener("keydown", onEditorKey);
-  input.addEventListener("paste", onEditorPaste);
-  input.addEventListener("blur", onEditorBlur);
-
-  cell.classList.add("is-cell-editing");
-  cell.appendChild(input);
-  editor = { input, cell, ref };
-
-  // 押したセルは見えている。フォーカスの移動で本文や表を動かさない（DSP-350）
-  input.focus({ preventScroll: true });
-  input.setSelectionRange(text.length, text.length);
-}
-
-// onEditorKey は Enter で確定する（IMP-262）。**Esc はここで扱わない**（IMP-244 の振り分けの (3)）。
-//
-// **IME の変換中は何もしない**（FR-142）。isComposing に加えて keyCode 229 も見る——変換を確定する Enter を
-// isComposing が偽の keydown として届けるエンジンがある（NFR-061。実機で見る）。
-function onEditorKey(event) {
-  if (event.isComposing || event.keyCode === 229 || event.key !== "Enter") return;
-
-  // 検索の移動（IMP-244 の searchNext）へ届かせない
-  event.preventDefault();
-  event.stopPropagation();
-  commitCellEdit();
-}
-
-// onEditorPaste は貼り付ける文字列の改行を半角空白へ置き換えて入れる（FR-142）。
-//
-// **既定の貼り付けに任せない。** input type="text" は改行を黙って取り除き、語が連結される。
-// 右クリックメニューの Paste も同じ置き換えを行う（IMP-249）。
-function onEditorPaste(event) {
-  event.preventDefault();
-
-  const input = event.currentTarget;
-  const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
-  input.setRangeText(text.replace(NEWLINES, " "), input.selectionStart, input.selectionEnd, "end");
-}
-
-// onEditorBlur はフォーカスが外れたら取り消す（FR-142）。**フォーカスは動かさない**（UI-055）。
-//
-// 次の 2 つは「外れた」に数えない。右クリックメニューを開いた（フォーカスがメニューへ移る）ときと、
-// ウィンドウ自体がフォーカスを失ったときである。**数えると、Paste を選ぶ前に編集欄が消える。**
-// メニューの外をクリックして閉じたときの取り消しは contextmenu.js が cancelCellEdit を呼ぶ（IMP-249）。
-function onEditorBlur(event) {
-  if (!editor || event.currentTarget !== editor.input) return;
-
-  const next = event.relatedTarget;
-  if (next instanceof Node && $("contextmenu").contains(next)) return;
-  if (!document.hasFocus()) return;
-
-  cancelCellEdit();
-}
-
-// commitCellEdit は確定する（IMP-262 の「確定」）。
-//
-// **見た目を先に変える**（NFR-012, DSP-321）。セルの直接の子のうち並べ替えのボタン以外を退避し、入力された
-// 文字列をそのまま文字として出す（記法は描かない）。表示は document:changed の再描画で整う（IMP-316）。
-async function commitCellEdit() {
-  const { input, cell, ref } = editor;
-  const value = input.value;
-  closeEditor();
-
-  const saved = document.createDocumentFragment();
-  for (const node of [...cell.childNodes]) {
-    if (!(node instanceof Element && node.classList.contains("sort-btn"))) saved.appendChild(node);
-  }
-  const pending = document.createElement("span");
-  pending.className = "cell-pending";
-  // **innerHTML を使わない**（IMP-220）
-  pending.textContent = value;
-  cell.insertBefore(pending, cell.firstChild);
-
-  // Enter で確定した後は本文ペインへ戻す（UI-055）
-  deps.focusViewer();
-
-  const result = await deps.api.setCell(ref, value).catch(() => null);
-  if (result && result.changed) return;
-  if (result && result.error) deps.notify(result.error);
-
-  // 変わらなかった・古い指示だった・書き込めなかった。**戻すのはセルがまだ画面にある場合だけ**——再描画が
-  // 先に届いていれば、画面は既にファイルの状態を示している（DSP-321）
-  if (pending.isConnected) pending.replaceWith(saved);
-}
-
-// closeEditor は編集欄を取り除く。**先に editor を空にする**——取り除いたときに blur を出すエンジンでも、
-// onEditorBlur が取り消しをもう一度行わない。
-function closeEditor() {
-  const { input, cell } = editor;
-  editor = null;
-  cell.classList.remove("is-cell-editing");
-  input.remove();
 }

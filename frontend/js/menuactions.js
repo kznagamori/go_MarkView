@@ -9,8 +9,18 @@ import { $ } from "./util.js";
 
 const CELL_EDITOR = "input.cell-editor";
 
+// 修飾の項目（Strikethrough と色。IMP-265）は、**控えた選択範囲を当て直してから** deps.format を呼ぶ（BUG-019 と
+// 同じ理由。run() は先に closeContextMenu() で開く前のフォーカス要素へ戻しており、WebKit ではそこで選択が解除される）。
 const ACTIONS = {
   copyLink: (current, deps) => store(current.link, deps),
+  strike: (current, deps) => {
+    restoreRange(current);
+    deps.format.toggleStrike();
+  },
+  color: (current, deps, value) => {
+    restoreRange(current);
+    deps.format.applyColor(value);
+  },
   copy: (current, deps) => (current.kind === "input" ? inputCommand(current, "copy", deps) : copySelection(current, deps)),
   cut: (current, deps) => inputCommand(current, "cut", deps),
   paste: (current) => paste(current),
@@ -22,9 +32,9 @@ export function hasAction(action) {
   return Object.hasOwn(ACTIONS, action);
 }
 
-// runAction は項目を実行する（contextmenu.js の run から呼ぶ）。
-export function runAction(action, current, deps) {
-  return ACTIONS[action](current, deps);
+// runAction は項目を実行する（contextmenu.js の run から呼ぶ）。value は項目の値（文字色の名前）。
+export function runAction(action, current, deps, value) {
+  return ACTIONS[action](current, deps, value);
 }
 
 // restoreRange は控えた選択範囲を当て直す（BUG-019）。控えが無ければ何もしない。
@@ -86,6 +96,7 @@ async function inputCommand(current, name, deps) {
 
 // paste は控えた文字列を、入力欄の控えた範囲へ入れる。**書式は持ち込まない**（FR-063）。
 // **セルの編集欄では改行を半角空白へ置き換える**（FR-142。編集欄の paste と同じ置き換え。IMP-262）。
+// **コードブロックの編集欄では改行をそのまま入れる**（FR-145）。
 function paste(current) {
   const input = current.place;
   const text = input.matches(CELL_EDITOR) ? current.pasteText.replace(/\r\n|\r|\n/g, " ") : current.pasteText;

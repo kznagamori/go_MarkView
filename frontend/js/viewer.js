@@ -13,7 +13,8 @@ import { S, warningText } from "./strings.js";
 import { hideStateScreen, isAboutOpen, isEditorsOpen } from "./overlay.js";
 import { isExpandOpen } from "./expand.js";
 import { closeContextMenu } from "./contextmenu.js";
-import { applyEditMode, cancelCellEdit, isEditableCell } from "./editmode.js";
+import { applyEditMode, isEditableBlock, isEditableCell } from "./editmode.js";
+import { restoreSelection } from "./format.js";
 import { renderOutline, observeHeadings, syncActive } from "./outline.js";
 import { attachCopyButtons } from "./copy.js";
 import { drawDiagrams, drawMath, startDrawing } from "./lazy.js";
@@ -68,9 +69,9 @@ function onLinkClick(event) {
   // （2.46 より前）は、中ボタンでも click を出す。既定の動作は上で止めてある
   if (event.button !== 0) return;
 
-  // **編集モードの間は、編集できるセルの中のリンクで遷移しない**（FR-142, FR-050 の例外）。ダブルクリックの
-  // 1 回目で文書が切り替わり、編集を始める前に編集モードが終わるためである。鍵は isEditableCell が照合する
-  if (isEditableCell(anchor)) return;
+  // **編集モードの間は、編集できるセルと図の中のリンクで遷移しない**（FR-142, FR-145, FR-050 の例外）。ダブルクリックの
+  // 1 回目で文書が切り替わり、編集を始める前に編集モードが終わるためである。鍵は isEditableCell / isEditableBlock が照合する
+  if (isEditableCell(anchor) || isEditableBlock(anchor)) return;
 
   // 同一文書内のアンカーだけはフロントエンドで処理する（IMP-223）。
   if (href.startsWith("#")) {
@@ -123,11 +124,10 @@ export function renderDocument(doc) {
 
   // 0a. 引き継ぐ状態を控える、または解除する（DSP-352）。
   //     **ここはまだ前の描画の鍵（state.doc.refKey）で照合する**——0b より前に置く。
-  //     **右クリックメニューとセルの編集欄はどちらの場合も閉じる**（IMP-249, IMP-262。メニューが指していた
-  //     リンクや選択範囲と、編集していたセルが無くなる）。**控えるより前に閉じる**——開く前のフォーカス
-  //     （チェックボックス）へ戻してから、その順番を控える。
+  //     **右クリックメニューはどちらの場合も閉じる**（IMP-249。メニューが指していたリンクや選択範囲が無くなる）。
+  //     **控えるより前に閉じる**——開く前のフォーカス（チェックボックス）へ戻してから、その順番を控える。
+  //     **編集欄はここでは開いていない**（4.75.0）——開いている間は再描画を blockedit.js が控える（IMP-264）。
   closeContextMenu();
-  cancelCellEdit();
   const kept = doc.sameDocument ? captureRedraw(markdown) : null;
   if (!doc.sameDocument) leaveDocument();
 
@@ -144,6 +144,18 @@ export function renderDocument(doc) {
 
   // 1. 一度に挿入する。分割挿入や逐次追加を行わない（AR-052）。
   markdown.innerHTML = doc.html;
+
+  // 1a. 文書の種類を本文の器に写す（4.75.0）。画像ファイルなら is-image-file（市松模様と中央への配置。DSP-129）。
+  //     **判断は doc.kind で行い、HTML の class を見ない**——生 HTML でも .image-file を書ける（IMP-128, IMP-302）。
+  markdown.classList.toggle("is-image-file", doc.kind === "image");
+  //     図のファイルで図が 1 つも無ければ、本文の先頭に No diagrams found. を差し込む（FR-025, FR-026, DSP-273）。
+  //     **文言はここで textContent で入れる**——UI 文言を Go に書かない（IMP-290）。Go は noDiagrams だけを渡す
+  if ((doc.kind === "plantuml" || doc.kind === "mermaid") && doc.noDiagrams) {
+    const note = document.createElement("p");
+    note.className = "no-diagrams";
+    note.textContent = S.noDiagrams;
+    markdown.insertBefore(note, markdown.firstChild);
+  }
 
   // 2. 状態画面を隠す。
   hideStateScreen();
@@ -182,6 +194,9 @@ export function renderDocument(doc) {
   // 6d. 編集モードの状態を画面へ写す（IMP-260）。**新しい鍵で照合する**（0b の後）。チェックボックスの
   //     有効化とセルの印は差し替えた本文に付け直す。6c の並べ替えのボタンより後に置く（セルの子を数えない）。
   applyEditMode(doc);
+  //     自分の修飾の書き込みの直後（trigger が edit）なら、控えた選択を同じ文字に当て直す（IMP-265, FR-146）。
+  //     それ以外の再描画では控えを捨てる（DSP-352）
+  restoreSelection(doc.trigger);
 
   // 7. スクロール連動の監視対象を作り直す（IMP-222）。
   observeHeadings(markdown, doc.headings);

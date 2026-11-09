@@ -10,6 +10,7 @@
 // **viewer.js / overlay.js / main.js / navigate.js / docswitch.js を import しない**（IMP-250。docswitch.js
 // から呼ばれるため、循環する）。
 
+import { refuseIfEditing } from "./blockedit.js";
 import { isOwnRef } from "./refs.js";
 import { S } from "./strings.js";
 import { icon } from "./util.js";
@@ -181,6 +182,9 @@ function sortButton() {
 // cycle はボタンの押下で、その列を 昇順 → 降順 → 元の順 と巡回する（FR-130）。
 // 別の列のボタンでは、その列の昇順から始める。
 function cycle(number, table, col) {
+  // 編集欄が開いている間は並べ替えない（FR-140 の表。編集欄の位置がずれる。IMP-264）
+  if (refuseIfEditing()) return;
+
   const current = sorts.get(number);
   let dir = ASC;
   if (current && current.col === col) dir = current.dir === ASC ? DESC : null;
