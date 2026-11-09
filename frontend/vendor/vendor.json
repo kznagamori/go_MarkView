@@ -1,27 +1,27 @@
 [
   {
     "name": "Mermaid",
-    "version": "12.1.0",
+    "version": "12.3.0",
     "spdx": "MIT",
     "license": "mermaid/LICENSE",
-    "source": "https://registry.npmjs.org/mermaid/-/mermaid-12.1.0.tgz",
-    "fetched": "2026-10-04"
+    "source": "https://registry.npmjs.org/mermaid/-/mermaid-12.3.0.tgz",
+    "fetched": "2026-11-09"
   },
   {
     "name": "KaTeX",
-    "version": "0.19.0",
+    "version": "0.19.1",
     "spdx": "MIT",
     "license": "katex/LICENSE",
-    "source": "https://registry.npmjs.org/katex/-/katex-0.19.0.tgz",
-    "fetched": "2026-10-04"
+    "source": "https://registry.npmjs.org/katex/-/katex-0.19.1.tgz",
+    "fetched": "2026-11-09"
   },
   {
     "name": "PlantUML",
-    "version": "1.2026.8",
+    "version": "1.2026.9",
     "spdx": "MIT",
     "license": "plantuml/LICENSE",
-    "source": "https://registry.npmjs.org/@plantuml/core/-/core-1.2026.8.tgz",
-    "fetched": "2026-10-04"
+    "source": "https://registry.npmjs.org/@plantuml/core/-/core-1.2026.9.tgz",
+    "fetched": "2026-11-09"
   },
   {
     "name": "Viz.js",
