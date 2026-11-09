@@ -128,7 +128,10 @@ go_MarkView/
 │   │   ├── edit.go            書き換え位置と元のバイト列の対応（FR-141, FR-142）
 │   │   ├── editcell.go        表のセルの書き換え（FR-142）
 │   │   ├── editcode.go        コードブロックと図の書き換え（FR-145）
+│   │   ├── editdiagram.go     図のファイルの書き換え（FR-145）
 │   │   ├── editformat.go      選んだ文字の修飾（FR-146, FR-147）
+│   │   ├── editformatpos.go   修飾を差し込む位置の決め方（FR-146, FR-147）
+│   │   ├── editformatpatch.go 修飾の書き換えのまとめと確かめ（FR-146, FR-147）
 │   │   ├── write.go           一時ファイル + リネームによる書き込み（FR-143）
 │   │   ├── editlog.go         取り消し履歴（FR-144）
 │   │   └── editsession.go     編集モードの状態と判断（FR-140。IMP-109）

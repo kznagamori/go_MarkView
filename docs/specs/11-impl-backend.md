@@ -632,7 +632,7 @@ func PlanCode(r *renderer.Renderer, raw []byte, kind mdfile.Kind, ref Ref, text 
 
 ### IMP-124: 修飾の書き込み **MUST**
 
-FR-146 / FR-147 を実装する（4.75.0）。配置は `internal/document/editformat.go`（**差し込み位置の決め方は `editformatpos.go`**。400 行の目安（IMP-011）により分けた。4.87.0）。**書くのは `<del>` と決めた色の `<span>` を差し込む・取り除くことだけであり、既存の記法を組み立て直さない**（2.14 の IMPORTANT の 4）。見える文字とソースの対応は `renderer` が求める（IMP-123）。
+FR-146 / FR-147 を実装する（4.75.0）。配置は `internal/document/editformat.go`（**差し込み位置の決め方は `editformatpos.go`**。400 行の目安（IMP-011）により分けた。4.87.0。**Patch へのまとめと解き直しての確かめ（下の手順の 8・9）は `editformatpatch.go`**。同じく 400 行の目安により分けた。4.94.0）。**書くのは `<del>` と決めた色の `<span>` を差し込む・取り除くことだけであり、既存の記法を組み立て直さない**（2.14 の IMPORTANT の 4）。見える文字とソースの対応は `renderer` が求める（IMP-123）。
 
 ```go
 // FormatStyle は修飾の操作。Strike と Color のどちらか一方だけを使う。

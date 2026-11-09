@@ -81,7 +81,10 @@ go_MarkView/
 │   │   ├── edit.go             書き換え位置と生バイト列の対応、Patch（IMP-106）
 │   │   ├── editcell.go         表のセルの書き換え（PlanCell / CellSource）と、書いた後の表の形の確かめ（IMP-106）
 │   │   ├── editcode.go         コードブロックと図の書き換え（PlanCode / CodeSource）と確かめ（IMP-122）
-│   │   ├── editformat.go       修飾のタグの差し込み・取り除き（PlanFormat）と確かめ（IMP-124）
+│   │   ├── editdiagram.go      図のファイル（PlantUML ファイル・Mermaid ファイル）の書き換え（IMP-122。4.87.0）
+│   │   ├── editformat.go       修飾の入口（PlanFormat）と選択の整え方・色と取り消し線の読み取り（IMP-124）
+│   │   ├── editformatpos.go    修飾のタグの差し込み・取り除きの位置の決め方（IMP-124 の 4〜7。4.87.0）
+│   │   ├── editformatpatch.go  差し込みと取り除きの Patch へのまとめと、解き直しての確かめ（IMP-124 の 8・9。4.94.0）
 │   │   ├── write.go            一時ファイル + リネームによる置き換え（IMP-107）
 │   │   ├── editlog.go          取り消し履歴（IMP-108）
 │   │   ├── editsession.go      編集モードの状態と判断（IMP-109）
