@@ -1,6 +1,7 @@
 package main
 
-// edit.go — `-edit`: generated/edit/ の中身を作り直す（E2E-012, G18）。
+// edit.go — `-edit`: generated/edit/ の中身を作り直す（E2E-012。G18・G20 と、ファイルを書き換える手順を
+// 持つケース。E2E-206）。
 //
 // **ディレクトリそのものは消さず、中身だけを作り直す。** MarkView が generated/edit/ の中の文書を
 // 表示したまま -edit を実行する手順がある（E2E-381 の手順 10、E2E-386 の手順 6）。ディレクトリごと
@@ -30,7 +31,7 @@ type editFile struct {
 }
 
 // editFiles は generated/edit/ に置くファイルの一覧を返す（E2E-012 の表の順）。
-func editFiles() []editFile {
+func editFiles() ([]editFile, error) {
 	files := []editFile{
 		{path: "tasks-lf.md", content: tasksLF()},
 		{path: "table.md", content: tableMD()},
@@ -48,6 +49,15 @@ func editFiles() []editFile {
 		{path: "bytes/tasks-cr.md", content: withNewlines(frontMatter+tasksBytes+japaneseNote, "\r", false, true)},
 		{path: "bytes/table-crlf.md", content: withNewlines(tableGFM+japaneseNote, "\r\n", false, true)},
 
+		// G20: コードブロックと図の書き換え（editcode.go）と、選んだ文字の修飾（editformat.go）
+		{path: "code.md", content: codeMD()},
+		{path: "bytes/code-crlf.md", content: withNewlines(codeCRLFSource, "\r\n", true, false)},
+		{path: "diagram.puml", content: diagramPUML},
+		{path: "flow.mmd", content: flowMMD},
+		{path: "format-strike.md", content: formatStrikeMD},
+		{path: "format-color.md", content: formatColorMD},
+		{path: "format-visible.md", content: formatVisibleMD},
+
 		// E2E-383 / E2E-384: 脚注の中のタスクと表（BUG-027。editbugs.go）
 		{path: "footnote-task.md", content: footnoteTaskMD},
 		{path: "footnote-table.md", content: footnoteTableMD},
@@ -56,6 +66,21 @@ func editFiles() []editFile {
 	// E2E-262: 見出しの無い 1 行の文書を 4 つ（BUG-023。editbugs.go）
 	files = append(files, historyFiles()...)
 
+	// E2E-236 / E2E-394: 画像の差し替え（BUG-026）と、E2E-352 / E2E-354 / E2E-362: コミットされたファイルの写し
+	// （editwork.go）
+	swap, err := swapFiles()
+	if err != nil {
+		return nil, err
+	}
+
+	work, err := workFiles()
+	if err != nil {
+		return nil, err
+	}
+
+	files = append(files, swap...)
+	files = append(files, work...)
+
 	files = append(files,
 		// E2E-385 の手順 1〜3 をした後の内容と、E2E-387 の元の内容（人が書いたリテラル）
 		editFile{path: "expected/tasks-crlf-bom.md", content: withNewlines(tasksBytesExpected+japaneseNote, "\r\n", true, false)},
@@ -63,6 +88,15 @@ func editFiles() []editFile {
 		editFile{path: "expected/tasks-cr.md", content: withNewlines(frontMatter+tasksBytesExpected+japaneseNote, "\r", false, true)},
 		editFile{path: "expected/table-crlf.md", content: withNewlines(tableCRLFExpected+japaneseNote, "\r\n", false, true)},
 		editFile{path: "expected/undo-original.md", content: undoMD},
+
+		// E2E-402 の手順 1〜6・8〜11 をした後の内容（人が書いたリテラル。editcode.go）
+		editFile{path: "expected/code-crlf.md", content: withNewlines(codeCRLFExpected, "\r\n", true, false)},
+		editFile{path: "expected/diagram.puml", content: diagramPUMLExpected},
+		editFile{path: "expected/flow.mmd", content: flowMMDExpected},
+
+		// E2E-404 の手順 3〜14 と E2E-405 の手順 1〜7 をした後の内容（人が書いたリテラル。editformat.go）
+		editFile{path: "expected/format-strike.md", content: formatStrikeExpected},
+		editFile{path: "expected/format-color.md", content: formatColorExpected},
 
 		// E2E-383 の手順 9・10 と E2E-384 の手順 20 をした後の内容（人が書いたリテラル。editbugs.go）
 		editFile{path: "expected/footnote-task.md", content: footnoteTaskExpected},
@@ -77,11 +111,17 @@ func editFiles() []editFile {
 		)
 	}
 
-	return files
+	return files, nil
 }
 
 // generateEdit は dir（generated/edit/）の中身を消して作り直す。
 func generateEdit(dir string) error {
+	// **消す前に、作るものをすべてそろえる**（写しの元が読めないときに、中身を消したまま止まらない）。
+	files, err := editFiles()
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("生成先を作れない: %w", err)
 	}
@@ -92,7 +132,7 @@ func generateEdit(dir string) error {
 
 	fmt.Printf("%-28s %8s  %s\n", "ファイル", "バイト", "")
 
-	for _, file := range editFiles() {
+	for _, file := range files {
 		path := filepath.Join(dir, filepath.FromSlash(file.path))
 		if err := writeEditFile(path, file); err != nil {
 			return err

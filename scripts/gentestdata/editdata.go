@@ -166,11 +166,23 @@ const conflictMD = `# Conflict
 `
 
 // readonlyMD は readonly.md（E2E-386）。作った後に読み取り専用にする。
+//
+// **タスクと GFM の表とフェンス付きのコードブロックを持つ**（4.79.0。E2E-386 の確認内容 1）——セルと
+// コードブロックの編集欄が、書き込めなかったときに入力ごと開き直されることを見る。
 const readonlyMD = `# Read-only
 
-This file is read-only. Checking the box must not change it.
+This file is read-only. Checking the box, editing a cell or editing the code block must not change it.
 
 - [ ] read-only task
+
+| Name | Qty |
+| --- | --- |
+| apple | 1 |
+| banana | 2 |
+
+~~~text
+read-only code
+~~~
 `
 
 // lockedMD は locked/locked.md（E2E-386 の手順 9。L1 でディレクトリの権限を落とす）。
@@ -240,7 +252,8 @@ func filler(topic string, n int) string {
 	for i := 1; i <= n; i++ {
 		fmt.Fprintf(&b,
 			"Paragraph %d of %s. This text exists so that the document can scroll; it contains the word marker "+
-				"so that search has hits. MarkView rewrites only checkboxes and table cells in edit mode.\n\n",
+				"so that search has hits. In edit mode, MarkView rewrites only four kinds of things: checkboxes, "+
+				"table cells, code blocks and diagrams, and strikethrough and text color on selected text.\n\n",
 			i, topic)
 	}
 

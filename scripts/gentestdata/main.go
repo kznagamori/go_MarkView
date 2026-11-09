@@ -2,26 +2,33 @@
 // （E2E-012）。
 //
 //	go run ./scripts/gentestdata          # testdata/e2e/generated/ に作る
-//	go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18 の各ケースの前）
+//	go run ./scripts/gentestdata -edit    # generated/edit/ の中身だけを作り直す（G18・G20 の各ケースと、ファイルを書き換える手順の前）
 //	go run ./scripts/gentestdata -clean   # 消す（generated/edit/ を含む）
 //
 // 巨大ファイルをコミットしないのは、クローンと CI のたびに数十 MB を運ぶ
 // ことになるためである。中身は決まった規則で作れるので、必要なときに
 // 生成すれば足りる。**生成物は .gitignore の対象**。
 //
-// 作るものは 4 つ。
+// 作るものは 9 つ（と、生成物である旨の README.md）。
 //
-//	large-12mb.md   10 MiB 超 50 MiB 以下。確認画面が出る（FR-016, E2E-322）
-//	large-60mb.md   50 MiB 超。上限超過の表示になる（FR-016, E2E-322）
-//	deep-nest.md    1000 段の入れ子リスト（FR-111, E2E-323）
-//	huge-table.md   巨大な表（FR-111, E2E-323）
+//	large-12mb.md     10 MiB 超 50 MiB 以下。確認画面が出る（FR-016, E2E-322）
+//	large-60mb.md     50 MiB 超。上限超過の表示になる（FR-016, E2E-322）
+//	large-1mb.md      約 1 MiB。編集モードを始めたときの描き直しの時間（E2E-381。large1mb.go）
+//	large-12mb.png    10 MiB 超 50 MiB 以下の、画像として読める PNG（FR-027, E2E-395。images.go）
+//	large-60mb.png    50 MiB 超。中身は画像でない（FR-027, E2E-395。images.go）
+//	huge-pixels.png   30000 x 30000 px の 1 色の PNG（FR-027, FR-111, E2E-395。images.go）
+//	deep-nest.md      1000 段の入れ子リスト（FR-111, E2E-323）
+//	huge-table.md     巨大な表（FR-111, E2E-323）
+//	slow-plantuml.md  描き終えるまで十数秒かかる PlantUML（FR-080, E2E-271）
 //
-// 後ろの 2 つは「異常終了しないこと」を確かめるためのもので、**描画が
+// deep-nest.md と huge-table.md は「異常終了しないこと」を確かめるためのもので、**描画が
 // 完了しなくてもよい**。時間がかかったうえで表示されるか、エラー表示に
 // なるか、どちらでも合格である（E2E-323）。
 //
-// **-edit は編集モードの検証用の generated/edit/ だけを作り直す**（edit.go。E2E-381〜E2E-388）。
-// ケースがファイルを書き換えるため、ケースごとに作り直す。大きなファイルは作り直さない。
+// **-edit は、編集モードとファイルを書き換える手順の検証用の generated/edit/ だけを作り直す**
+// （edit.go。G18 の E2E-381〜E2E-388、G20 の E2E-401〜E2E-405 と、E2E-236・E2E-262・E2E-352・
+// E2E-354・E2E-362・E2E-391・E2E-394 ほか。E2E-206）。ケースがファイルを書き換えるため、ケースごとに
+// 作り直す。大きなファイルは作り直さない。
 package main
 
 import (
@@ -87,6 +94,10 @@ func run() error {
 	}{
 		{"large-12mb.md", func(w *bufio.Writer) error { return writeLarge(w, confirmSize, "12 MiB") }},
 		{"large-60mb.md", func(w *bufio.Writer) error { return writeLarge(w, overMaxSize, "60 MiB") }},
+		{"large-1mb.md", writeLarge1MB},
+		{"large-12mb.png", writeLargePNG},
+		{"large-60mb.png", writeOverMaxPNG},
+		{"huge-pixels.png", writeHugePixelsPNG},
 		{"deep-nest.md", writeDeepNest},
 		{"huge-table.md", writeHugeTable},
 		{"slow-plantuml.md", writeSlowPlantUML},
@@ -161,10 +172,14 @@ E2E-012 により、巨大ファイルはリポジトリに含めず検証のた
 | --- | --- |
 | ` + "`large-12mb.md`" + ` | 10 MiB 超 50 MiB 以下。確認画面が出る（FR-016, E2E-322） |
 | ` + "`large-60mb.md`" + ` | 50 MiB 超。上限超過の表示になる（FR-016, E2E-322） |
+| ` + "`large-1mb.md`" + ` | 約 1 MiB。編集モードを始めたときの描き直しの時間を見る（E2E-381） |
+| ` + "`large-12mb.png`" + ` | 10 MiB 超 50 MiB 以下の、画像として読める PNG。確認画面が出る（FR-027, E2E-395） |
+| ` + "`large-60mb.png`" + ` | 50 MiB 超。上限超過の表示になる。中身は画像でない（FR-027, E2E-395） |
+| ` + "`huge-pixels.png`" + ` | 30000 x 30000 px の 1 色の PNG。固まらず落ちないことを見る（FR-027, FR-111, E2E-395） |
 | ` + "`deep-nest.md`" + ` | 1000 段の入れ子リスト（FR-111, E2E-323） |
 | ` + "`huge-table.md`" + ` | 巨大な表（FR-111, E2E-323） |
 | ` + "`slow-plantuml.md`" + ` | 描き終えるまで十数秒かかる PlantUML（FR-080, E2E-271。検索の語は ` + "`zzqpending`" + `） |
-| ` + "`edit/`" + ` | 編集モードの検証用（E2E-381〜E2E-388）。` + "`go run ./scripts/gentestdata -edit`" + ` が中身だけを作り直す |
+| ` + "`edit/`" + ` | 編集モードと、ファイルを書き換える手順の検証用（G18・G20 ほか。E2E-206）。` + "`go run ./scripts/gentestdata -edit`" + ` が中身だけを作り直す。**G18・G20 の各ケースと、ファイルを書き換える手順の前に実行する** |
 
 消すときは ` + "`go run ./scripts/gentestdata -clean`" + ` を実行する。
 `)
@@ -213,7 +228,8 @@ func largeSection(section int) string {
 		fmt.Fprintf(&b,
 			"第 %d 節の第 %d 段落です。marker という語をここに含めています。"+
 				"MarkView は Markdown の閲覧に特化した軽量デスクトップアプリケーションであり、"+
-				"書き換えるのは編集モードのチェックボックスと表のセルだけです。変換とシンタックスハイライトは Go 側で行います。\n\n",
+				"書き換えるのは編集モードのチェックボックス・表のセル・コードブロックと図・選んだ文字の取り消し線と文字色の 4 種類だけです。"+
+				"変換とシンタックスハイライトは Go 側で行います。\n\n",
 			section, paragraph)
 	}
 
