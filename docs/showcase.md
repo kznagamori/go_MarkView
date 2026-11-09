@@ -10,7 +10,8 @@ description: docs/markdown.md に対応する実物の見本。この Front Matt
 
 **MarkView でこのファイルを開いて確かめてください。** GitHub 上でも同じように表示されます。
 違って見える箇所があれば、それは MarkView の不具合です。
-**ただし [PlantUML 図](#plantuml-図) だけは例外です。** GitHub は PlantUML を描画しません。
+**ただし [PlantUML 図](#plantuml-図) と、[生 HTML](#生-html) の文字色だけは例外です。** GitHub は PlantUML を描画せず、
+`style` で付けた文字色を取り除きます。
 また、表の見出しの並べ替えのボタンと、図と画像の右上の原寸表示・拡大画面のボタンは
 MarkView の機能であり、GitHub の表示とは違います（[使い方](./usage.md#図と画像を大きく見る)）。
 
@@ -289,6 +290,25 @@ wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-s -w -X github.com
 > [!SOMETHING]
 > これは Alerts ではなく、ただの引用として表示されます。
 
+**Alerts になるのは、文書の一番外側の引用だけです。** リストの項目や引用の中に書くと、
+GitHub と同じく通常の引用になり、`[!NOTE]` の文字が残ります。こう書くと
+
+```markdown
+- > [!NOTE]
+  > リストの項目の中の引用です。
+
+> > [!WARNING]
+> > 引用の中の引用です。
+```
+
+こう出ます
+
+- > [!NOTE]
+  > リストの項目の中の引用です。
+
+> > [!WARNING]
+> > 引用の中の引用です。
+
 → [対応する Markdown 記法](./markdown.md#github-alerts)
 
 ## 脚注と絵文字
@@ -480,7 +500,7 @@ Alice -> Bob : hi
 ```markdown
 - [同じフォルダの文書へ](./usage.md)（同じウィンドウで開く）
 - [外部サイトへ](https://commonmark.org/)（既定のブラウザで開く）
-- [画像をビューアで開く](./img/sample.png)（OS の既定アプリで開く）
+- [画像を開く](./img/sample.png)（同じウィンドウで、画像のファイルとして開く）
 - <https://github.com/kznagamori/go_MarkView>（自動リンク）
 ```
 
@@ -488,8 +508,10 @@ Alice -> Bob : hi
 
 - [同じフォルダの文書へ](./usage.md)（同じウィンドウで開く）
 - [外部サイトへ](https://commonmark.org/)（既定のブラウザで開く）
-- [画像をビューアで開く](./img/sample.png)（OS の既定アプリで開く）
+- [画像を開く](./img/sample.png)（同じウィンドウで、画像のファイルとして開く）
 - <https://github.com/kznagamori/go_MarkView>（自動リンク）
+
+画像へのリンクは、MarkView では画像のファイルとして開きます（`Alt+←` で戻れます）。GitHub では画像のページが開きます。
 
 画像はこう書くと
 
@@ -523,6 +545,27 @@ H<sub>2</sub>O と E = mc<sup>2</sup>、<mark>強調</mark>、<abbr title="GitHu
 <kbd>Ctrl</kbd> + <kbd>F</kbd> で検索します。
 
 H<sub>2</sub>O と E = mc<sup>2</sup>、<mark>強調</mark>、<abbr title="GitHub Flavored Markdown">GFM</abbr>。
+
+取り消し線はタグでも書けます。こう書くと
+
+```markdown
+<del>del</del>・<s>s</s>・<strike>strike</strike> のタグで取り消し線になります。
+```
+
+こう出ます。**編集モードで付ける取り消し線は `<del>` です。**
+
+<del>del</del>・<s>s</s>・<strike>strike</strike> のタグで取り消し線になります。
+
+文字色は、`span` の `color` に決まった 7 色の値を書いたものだけが付きます。こう書くと
+
+```markdown
+<span style="color: #d1242f">赤</span>・<span style="color: #bc4c00">橙</span>・<span style="color: #9a6700">黄</span>・<span style="color: #1a7f37">緑</span>・<span style="color: #0969da">青</span>・<span style="color: #8250df">紫</span>・<span style="color: #59636e">灰</span>
+```
+
+こう出ます。**Dark テーマでは Dark 向けの色で描きます。GitHub では色が付かず、文字だけが残ります**
+（GitHub は `style` を取り除くため）。
+
+<span style="color: #d1242f">赤</span>・<span style="color: #bc4c00">橙</span>・<span style="color: #9a6700">黄</span>・<span style="color: #1a7f37">緑</span>・<span style="color: #0969da">青</span>・<span style="color: #8250df">紫</span>・<span style="color: #59636e">灰</span>
 
 危険な要素と属性は**黙って取り除きます**。次の 2 行のソースには `<script>` と
 `onclick` 属性が書かれていますが、**表示には何も出ません**（エラーにもなりません）。
