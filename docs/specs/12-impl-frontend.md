@@ -1766,7 +1766,7 @@ export function clearFormatState()      // leaveDocument（IMP-250）から。�
 **送るもの**（`api.applyFormat`。IMP-310, IMP-316）
 
 - `ref`: そのブロックの `ownRef(el, 'text' | 'cell')`
-- `start` / `end`: 選択の両端を、**そのブロックの見える文字（IMP-266）の中の Unicode の符号位置**へ変えたもの（JavaScript の文字列の位置は UTF-16 なので変換する。`visible.js` の `offsetOf`）
+- `start` / `end`: 選択の両端を、**そのブロックの見える文字（IMP-266）の中の Unicode の符号位置**へ変えたもの（JavaScript の文字列の位置は UTF-16 なので変換する。`visible.js` の `offsetOf`。**始まりは `edge` を `start`、終わりは `end` で求める**——部品の中の端は、どちらでも部品を含む側へ寄る。4.92.0）
 - `visible`: そのブロックの見える文字の全体（`visible.js` の `visibleText`）
 - `style`: `{ strike: true }` か `{ color: name }`
 
@@ -1799,7 +1799,7 @@ FR-146 / BR-054 を実装する（4.75.0）。配置は `js/visible.js`（自前
 ```js
 // js/visible.js
 export function visibleText(block)            // ブロックの見える文字（文字列）
-export function offsetOf(block, node, offset) // DOM の位置 → 見える文字の中の符号位置。範囲の外なら -1
+export function offsetOf(block, node, offset, edge) // DOM の位置 → 見える文字の中の符号位置。edge は "start" | "end"（選択の始まりの端か終わりの端か。4.92.0）。範囲の外なら -1
 export function rangeAt(block, start, end)    // 見える文字の符号位置 → DOM の Range（再描画の後の当て直し）
 ```
 
@@ -1818,6 +1818,7 @@ export function rangeAt(block, start, end)    // 見える文字の符号位置 
 | リストの項目（`li`） | **最初のブロック要素（`p` / `ul` / `ol` / `pre` / `div` / `blockquote` / `table` / `details` など）の手前まで**。**その手前の空白だけのテキストと、文字の後ろの改行 1 つは数えない**（変換器が書く。IMP-123 の「入れ子のブロックを持つリストの項目」。4.76.0） |
 
 - 対象のブロックは IMP-265 が決める（`text` / `cell` の目印を持つ要素）。
+- **1 文字と数える部品（数式・画像・壊れた画像・脚注の参照）の中の位置は、`edge` が `start` なら部品の手前、`end` なら部品の後ろとする**——どちらの端でも部品を選択に含める（4.92.0。利用者の判断）。部品には中の位置に当たる符号位置が無い。**IMP-124 の 3 の「部品の一部にかかっていたら全体へ広げる」と同じ向き**であり、選択の終わりが数式の描画の中にあっても、その数式は選んだ範囲に入る。部品の直前・直後（要素の位置）はどちらの端でも同じ値になる。判定は `visible.js` の 1 か所に置く（呼び出し側で部品を見分けない）。4.91.0 までは端の向きが無く、実装（T27-2）は「部品の手前」としていたため、終わりの端が部品の中にあると部品が範囲から外れた。
 - **生 HTML で、上の表の対象と同じ形を作ったもの**（行の中の `<input type="checkbox">`、`a.footnote-ref` を含む `sup` など）も表のとおりに数える。**`visible.js` は鍵を照合しない**ため、Go 側（IMP-123）と食い違い、そのブロックが修飾できないだけで済む（設計どおり。4.78.0）。
 - **脚注の戻りリンクにかかった選択は、そのまま Go へ送る。** 選択から外すのは Go 側である（IMP-124 の 3。4.78.0。利用者の判断）。
 - **1 文字と数える部品は U+FFFC で表す**（4.77.0。利用者の判断。IMP-123 と同じ文字）。見える文字は Go 側と文字列として照合する（IMP-124 の 2、BR-054）ため、**数だけでなく文字もそろえる。** 4.76.0 までは「1 文字」とだけ書いており、どの文字かが決まっていなかった。
