@@ -51,11 +51,17 @@ const (
 	tableRows          = 3000
 
 	// slow-plantuml.md（E2E-271。BUG-017 の確認）。**枚数と線の数が待ち時間である。**
-	// 手元の実測（Chromium）で 1 枚あたり 0.7 秒ほど、最後の図の順番まで 12 秒ほど。
-	slowDiagrams    = 16 // 埋めの図の枚数
-	slowClasses     = 60 // 埋めの図 1 枚のクラスの数
-	slowEdges       = 300
-	tooLargeClasses = 40 // 4096 px を超えるのに必要な数（BUG-010）
+	// v1.1.0（PlantUML 1.2026.8）の実測（Chromium）は 1 枚 0.7 秒ほどで、16 枚で 12 秒ほどだった。**1.2026.9 では
+	// 1 枚 0.15〜0.35 秒ほどに縮み**、16 枚では検索を打つ前に描き終えうるため、60 枚にした（BUG-030 の計測で気づいた。
+	// 40 枚で 6.5 秒だった）。**線は増やさない**——1 枚を描く間はメインスレッドが止まり（BUG-030）、重くすると検索の語を
+	// 打ちにくい。
+	slowDiagrams = 60 // 埋めの図の枚数
+	slowClasses  = 60 // 埋めの図 1 枚のクラスの数
+	slowEdges    = 300
+	// 最後の図（縦に長いシーケンス図）の、区間 1 つあたりの繰り返し（1 回で 4 本）。**上限（100,000 px。MD-083）を
+	// 超える数**——110 で高さ約 116,000 px（Chromium の実測は 100 で 105,960 px。BUG-030）。v1.2.0-rc.1 までは
+	// 4096 px を超える class 図（40 個。BUG-010）だった
+	tooLargeRounds = 110
 )
 
 func main() {
@@ -318,9 +324,10 @@ func writeHugeTable(w *bufio.Writer) error {
 // [BUG-017](../../docs/bugs/2026-09-18-bug-017-search-hits-before-rendering.md) の確認に要る。
 // 手元の実測では、1 枚あたり 0.7 秒ほどで、最後の図の順番は 12 秒ほど後になる。
 //
-// **最後の図は 4096 px を超える**（MD-083）。描かれずに理由とともに原文が戻るため、
-// 「原文の文字は見えているのに、ハイライトだけが消えている」ことを目で確かめられる。
-// **探す語 `zzqpending` は、冒頭の段落と最後の図の `class` の行にだけある。**
+// **最後の図は上限（100,000 px。MD-083）を超える**。描かれずに理由が添えられるため、
+// 「原文の文字は見えているのに、ハイライトだけが消えている」ことが無いかを目で確かめられる。
+// v1.2.0 からは**描いている間も原文が出たまま**である（DSP-272。BUG-030）。
+// **探す語 `zzqpending` は、冒頭の段落と最後の図の最初のメッセージの行にだけある。**
 func writeSlowPlantUML(w *bufio.Writer) error {
 	_, err := fmt.Fprintf(w, `# 描画に時間のかかる PlantUML（検索の確認用）
 
@@ -328,8 +335,8 @@ func writeSlowPlantUML(w *bufio.Writer) error {
 **重い図を %d 枚並べ、最後の図の順番が来るまでに十数秒かかる**ようにしてあります。その間に検索できます。
 
 探す語は zzqpending です。**この文書の中に 2 つだけ**あります——**この段落に 1 つ**と、
-**最後の図のソースに 1 つ**（`+"`class`"+` の行）です。最後の図は 4096 px を超えるため描かれず、
-理由とともにソースが戻ります。**そのとき、ソースの中の語にハイライトが付いているか**を見てください（E2E-271）。
+**最後の図のソースに 1 つ**（最初のメッセージの行）です。最後の図は 100,000 px を超えるため描かれず、
+ソースの上に理由が出ます。**そのとき、ソースの中の語にハイライトが付いているか**を見てください（E2E-271）。
 
 `, slowDiagrams)
 	if err != nil {
@@ -360,29 +367,46 @@ func writeSlowPlantUML(w *bufio.Writer) error {
 		}
 	}
 
-	if _, err := w.WriteString("## 最後の図（4096 px を超えるため描かれない）\n\n```plantuml\n@startuml toolarge\n"); err != nil {
-		return err
-	}
-
-	for class := range tooLargeClasses {
-		if _, err := fmt.Fprintf(w, "class A%d\n", class); err != nil {
-			return err
-		}
-	}
-
-	if _, err := w.WriteString("class zzqpending\n"); err != nil {
-		return err
-	}
-
-	// **1 行に 1 本だけ書く**（BUG-010）。連鎖は class 図の文法違反であり、エラー図になって
-	// 大きさの制限に到達しない。
-	for edge := range tooLargeClasses - 1 {
-		if _, err := fmt.Fprintf(w, "A%d --> A%d\n", edge, edge+1); err != nil {
-			return err
-		}
-	}
-
-	_, err = w.WriteString("@enduml\n```\n")
+	// **繰り返しは処理系の !while で書く**（取り込み指令ではないため拒まれない。MD-084）。メッセージを何千行も
+	// 書かずに、上限を超える高さの図を作れる。Chromium での計算は 1 秒ほどである（BUG-030）。
+	_, err = fmt.Fprintf(w, "## 最後の図（100,000 px を超えるため描かれない）\n\n```plantuml\n%s\n```\n", tallSequence("toolarge", "A -> B : zzqpending\n", tooLargeRounds))
 
 	return err
+}
+
+// tallSequence は縦に長いシーケンス図（参加者 4 人・opt 4 つ）の原文を返す（BUG-030）。rounds は区間 1 つあたりの
+// 繰り返しの数で、1 回で 4 本のメッセージになる。区間は 8 つ（opt の外 4・中 4）。first は最初に置く行。
+func tallSequence(name, first string, rounds int) string {
+	return fmt.Sprintf(`@startuml %[1]s
+participant "ブラウザ" as A
+participant "API サーバ" as B
+participant "認証サービス" as C
+database "データベース" as D
+%[2]s!procedure $calls($n, $tag)
+!$i = 1
+!while $i <= $n
+A -> B : リクエスト $tag-$i
+B -> C : 照会 $tag-$i
+C --> B : 応答 $tag-$i
+B --> A : レスポンス $tag-$i
+!$i = $i + 1
+!endwhile
+!endprocedure
+$calls(%[3]d, "a")
+opt 条件 1
+$calls(%[3]d, "b")
+end
+$calls(%[3]d, "c")
+opt 条件 2
+$calls(%[3]d, "d")
+end
+$calls(%[3]d, "e")
+opt 条件 3
+$calls(%[3]d, "f")
+end
+$calls(%[3]d, "g")
+opt 条件 4
+$calls(%[3]d, "h")
+end
+@enduml`, name, first, rounds)
 }

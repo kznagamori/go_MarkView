@@ -282,7 +282,7 @@ func checkBrokenImages(htmlImages int, got report) []string {
 // （MD-083, MD-084, DSP-272, BUG-010）。
 //
 // **判定は「SVG が得られたか」だけで行う**（DSP-272）。図種別ごとの判定を
-// 持ち込まない。**ただし 6 節（4096 px 超え）だけは期待値を確定できる**
+// 持ち込まない。**ただし 6 節（上限超え）と 9 節（上限のすぐ下）は期待値を確定できる**
 // ——大きさは検証用データ側で決められるためである。
 func checkPlantUMLLimits(got report) []string {
 	var failures []string
@@ -313,18 +313,28 @@ func checkPlantUMLLimits(got report) []string {
 			fmt.Sprintf("@startuml syntaxerror: svg=%d（エラー図が 1 個出るのを期待。FR-024）", block.SVG))
 	}
 
-	// 6 節: 4096 px 超え。**ここが BUG-010 の本体である。**
+	// 6 節: 上限（100,000 px）超え。**ここが BUG-010 の本体である。**
 	if block, ok := findBlock(got.PlantUML, "@startuml toolarge"); !ok {
 		failures = append(failures, "@startuml toolarge: 図が文書に見つからない")
 	} else {
 		if block.SVG != 0 {
 			failures = append(failures,
-				"@startuml toolarge: 図が出てしまった（4096 px の制限に達していない。BUG-010）")
+				"@startuml toolarge: 図が出てしまった（上限の 100,000 px に達していない。BUG-010, BUG-030）")
 		}
 
 		if block.Error == "" {
 			failures = append(failures, "@startuml toolarge: 理由が出ていない（DSP-272）")
 		}
+	}
+
+	// 9 節: 上限のすぐ下（約 9 万 px）。**図が出る**（MD-083。BUG-030）。上限が 4096 px のまま（v1.2.0-rc.1 まで）
+	// なら、ここが理由表示になる。6 節と対で、上限が「100,000 px のあたり」にあることを両側から見る。
+	if block, ok := findBlock(got.PlantUML, "@startuml nearlimit"); !ok {
+		failures = append(failures, "@startuml nearlimit: 図が文書に見つからない")
+	} else if block.SVG != 1 || block.Height < nearLimitMinHeight {
+		failures = append(failures,
+			fmt.Sprintf("@startuml nearlimit: svg=%d 高さ %d（高さ %d px 以上の図が 1 個出るのを期待。上限が 100,000 px になっていない。BUG-030）",
+				block.SVG, block.Height, nearLimitMinHeight))
 	}
 
 	// 7・8 節: salt / ditaa。**どちらでもよいが、空にはならない**（DSP-272）。

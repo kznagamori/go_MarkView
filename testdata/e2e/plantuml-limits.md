@@ -2,7 +2,7 @@
 
 このファイルは **E2E-240（PlantUML の制限）を実施するための検証用データ**です（E2E-012）。
 利用者に見せる文書ではなく、「描けないものが、理由とともに示されるか」を人が確かめるために、
-**失敗する記法だけを集めて**あります。
+**失敗する記法だけを集めて**あります。**描ける図は対照として 2 つだけ**置いています（1 節の小さな図と、9 節の上限のすぐ下の大きな図）。
 
 `showcase.md`（BR-053）と分けているのは、あちらが **GitHub と並べて目視比較する**ための文書
 （MD-002）であり、失敗例を混ぜると比較する側が読みにくくなるためです。
@@ -71,104 +71,57 @@ Rel(user, app, "reads")
 @enduml
 ```
 
-## 6. 4096 px を超える図
+## 6. 上限（100,000 px）を超える図
 
-処理系が描画を拒みます（MD-083）。**Java 版の PlantUML には無い制限**です。
+処理系が描画を拒みます（MD-083）。**Java 版の PlantUML には無い制限**です。上限の値は MarkView が処理系へ渡しており、
+v1.2.0-rc.1 までは 4096 px でした（[BUG-030](../../docs/bugs/2026-11-11-bug-030-plantuml-size-limit.md)）。
 
 > [!IMPORTANT]
-> **このブロックの書き方には理由があります**（[BUG-010](../../docs/bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)）。
+> **このブロックの書き方には理由があります**（[BUG-010](../../docs/bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)、BUG-030）。
 >
-> - **関係は 1 行に 1 本だけ書きます。** `A0 --> A1 --> A2` の**連鎖は class 図の文法違反**であり、
->   その行で解析が止まって**エラー図になります**。大きさの制限には決して到達しません
-> - **クラスは 40 個必要です。** 30 個では 3196 px にしかならず、制限（4096）に届きません
-> - **`skinparam dpi` は使いません。** この移植版では**出力の大きさに影響しません**
->   （40 個の連結で `dpi 300` の有無とも `72x4276`）
+> - **繰り返しは処理系の `!while` と `!procedure` で書きます。** メッセージを何千行も書かずに、上限を超える
+>   高さの図を作れます。どちらも取り込み指令ではないため、拒まれません（MD-084）
+> - **区間あたり 110 回（メッセージ 3,520 本）にしてあります。** 100 回では高さ 105,960 px と上限に近く、
+>   処理系の版でメッセージの間隔が変わると上限に届かなくなるおそれがあるためです
+> - **処理系は配置を計算し終えてから大きさを確かめます。** このブロックは、理由が出るまでに 1 秒ほどかかります
+>   （その間は画面が止まります。BUG-030）
 >
-> **実測値**: `java.lang.RuntimeException: Diagram too large for browser rendering: 72x4276 (max 4096)`
+> **実測値**: `java.lang.RuntimeException: Diagram too large for browser rendering: 419x116520 (max 100000; override via the maxSvgSize option, or set it to 0 to disable this check)`（PlantUML 1.2026.9。Chromium）
 >
 > **`@startuml toolarge` の名前を消さないでください。** 描画スモークテスト（BR-054）が**ブロックを名前で見分けます**。どのブロックも先頭行が `@startuml` のままでは、機械が区別できません。
 
 ```plantuml
 @startuml toolarge
-class A0
-class A1
-class A2
-class A3
-class A4
-class A5
-class A6
-class A7
-class A8
-class A9
-class A10
-class A11
-class A12
-class A13
-class A14
-class A15
-class A16
-class A17
-class A18
-class A19
-class A20
-class A21
-class A22
-class A23
-class A24
-class A25
-class A26
-class A27
-class A28
-class A29
-class A30
-class A31
-class A32
-class A33
-class A34
-class A35
-class A36
-class A37
-class A38
-class A39
-A0 --> A1
-A1 --> A2
-A2 --> A3
-A3 --> A4
-A4 --> A5
-A5 --> A6
-A6 --> A7
-A7 --> A8
-A8 --> A9
-A9 --> A10
-A10 --> A11
-A11 --> A12
-A12 --> A13
-A13 --> A14
-A14 --> A15
-A15 --> A16
-A16 --> A17
-A17 --> A18
-A18 --> A19
-A19 --> A20
-A20 --> A21
-A21 --> A22
-A22 --> A23
-A23 --> A24
-A24 --> A25
-A25 --> A26
-A26 --> A27
-A27 --> A28
-A28 --> A29
-A29 --> A30
-A30 --> A31
-A31 --> A32
-A32 --> A33
-A33 --> A34
-A34 --> A35
-A35 --> A36
-A36 --> A37
-A37 --> A38
-A38 --> A39
+participant "ブラウザ" as A
+participant "API サーバ" as B
+participant "認証サービス" as C
+database "データベース" as D
+!procedure $calls($n, $tag)
+!$i = 1
+!while $i <= $n
+A -> B : リクエスト $tag-$i
+B -> C : 照会 $tag-$i
+C --> B : 応答 $tag-$i
+B --> A : レスポンス $tag-$i
+!$i = $i + 1
+!endwhile
+!endprocedure
+$calls(110, "a")
+opt 条件 1
+$calls(110, "b")
+end
+$calls(110, "c")
+opt 条件 2
+$calls(110, "d")
+end
+$calls(110, "e")
+opt 条件 3
+$calls(110, "f")
+end
+$calls(110, "g")
+opt 条件 4
+$calls(110, "h")
+end
 @enduml
 ```
 
@@ -209,3 +162,51 @@ A38 --> A39
 - 7・8 は、**エラー図が出るか、理由と元のソースが出るかのどちらか**である（判定は「SVG が得られたか」だけで行うため。DSP-272）。**どちらであっても空白にならない**
 - 描けなかったブロックのコピーボタンから、**元の PlantUML ソース**が取れる
 - **待たされる箇所がない**（外部への接続試行がない。NFR-032）
+
+## 9. 上限のすぐ下の図（描ける。6 節の対照）
+
+**この図は描けます。** 縦に長いシーケンス図（参加者 4 人・`opt` 4 つ）で、高さは約 90,000 px です。
+上限（100,000 px）のすぐ下の大きさでも描けることと（MD-083。[BUG-030](../../docs/bugs/2026-11-11-bug-030-plantuml-size-limit.md)）、
+**描いている間も元のソースが出ていて、図の場所が空白にならないこと**（DSP-272）を確かめるために置いています。
+
+> [!IMPORTANT]
+> **区間あたり 85 回（メッセージ 2,720 本）で、高さ 90,120 px です**（実測。PlantUML 1.2026.9。Chromium）。
+> 上限との間に 1 割ほどの余裕を残しています。処理系の版でメッセージの間隔が変わっても、上限を超えないためです。
+>
+> **`@startuml nearlimit` の名前を消さないでください。** 描画スモークテスト（BR-054）が、この図が描けたこと（上限が
+> 4096 px のままになっていないこと）を名前で見分けて確かめます。
+
+```plantuml
+@startuml nearlimit
+participant "ブラウザ" as A
+participant "API サーバ" as B
+participant "認証サービス" as C
+database "データベース" as D
+!procedure $calls($n, $tag)
+!$i = 1
+!while $i <= $n
+A -> B : リクエスト $tag-$i
+B -> C : 照会 $tag-$i
+C --> B : 応答 $tag-$i
+B --> A : レスポンス $tag-$i
+!$i = $i + 1
+!endwhile
+!endprocedure
+$calls(85, "a")
+opt 条件 1
+$calls(85, "b")
+end
+$calls(85, "c")
+opt 条件 2
+$calls(85, "d")
+end
+$calls(85, "e")
+opt 条件 3
+$calls(85, "f")
+end
+$calls(85, "g")
+opt 条件 4
+$calls(85, "h")
+end
+@enduml
+```

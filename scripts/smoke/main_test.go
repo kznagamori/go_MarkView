@@ -187,17 +187,21 @@ func drawn(head string, svg, width, height int, reason string) diagramBlock {
 //
 //	normal       図が出る
 //	syntaxerror  エラー図が出る（FR-024。**失敗ではない**）
-//	toolarge     図が出ず、理由が出る（4096 px の制限）
+//	toolarge     図が出ず、理由が出る（上限の 100,000 px を超える。BUG-030）
 //	salt         実測では図が出た
 //	ditaa        実測では理由が出た
+//	nearlimit    図が出る（上限のすぐ下。高さ 90,120 px。BUG-030）
 func limitsOK() report {
+	const unsupported = "PlantUML could not render this diagram. It may be unsupported or larger than 100,000 px."
+
 	return report{
 		PlantUML: []diagramBlock{
 			drawn("@startuml normal", 1, 112, 164, ""),
 			drawn("@startuml syntaxerror", 1, 430, 160, ""),
-			drawn("@startuml toolarge", 0, 0, 0, "PlantUML could not render this diagram."),
+			drawn("@startuml toolarge", 0, 0, 0, unsupported),
 			drawn("@startsalt", 1, 353, 231, ""),
-			drawn("@startditaa", 0, 0, 0, "PlantUML could not render this diagram."),
+			drawn("@startditaa", 0, 0, 0, unsupported),
+			drawn("@startuml nearlimit", 1, 413, 90120, ""),
 		},
 		PlantUMLRejected: []diagramBlock{
 			drawn("@startuml include", 0, 0, 0, "Include directives are not supported."),
@@ -220,7 +224,7 @@ func TestCheckPlantUMLLimits(t *testing.T) {
 		{
 			name: "salt も ditaa も理由表示でよい（過検出の検査）",
 			mutate: func(r *report) {
-				r.PlantUML[3] = drawn("@startsalt", 0, 0, 0, "PlantUML could not render this diagram.")
+				r.PlantUML[3] = drawn("@startsalt", 0, 0, 0, "PlantUML could not render this diagram. It may be unsupported or larger than 100,000 px.")
 			},
 		},
 		{
@@ -230,14 +234,35 @@ func TestCheckPlantUMLLimits(t *testing.T) {
 			},
 		},
 		{
-			name: "4096 px 超えのブロックに図が出たら落ちる（BUG-010 そのもの）",
+			name: "上限超えのブロックに図が出たら落ちる（BUG-010 そのもの）",
 			mutate: func(r *report) {
-				r.PlantUML[2] = drawn("@startuml toolarge", 1, 430, 560, "")
+				r.PlantUML[2] = drawn("@startuml toolarge", 1, 419, 116520, "")
 			},
-			want: []string{"4096 px の制限に達していない"},
+			want: []string{"上限の 100,000 px に達していない"},
 		},
 		{
-			name: "4096 px 超えのブロックに理由が出ていないと落ちる",
+			name: "上限のすぐ下のブロックが理由表示になったら落ちる（上限が 4096 px のまま。BUG-030 そのもの）",
+			mutate: func(r *report) {
+				r.PlantUML[5] = drawn("@startuml nearlimit", 0, 0, 0, "PlantUML could not render this diagram.")
+			},
+			want: []string{"@startuml nearlimit", "上限が 100,000 px になっていない"},
+		},
+		{
+			name: "上限のすぐ下のブロックの図が低いと落ちる（検証用データが小さくなった）",
+			mutate: func(r *report) {
+				r.PlantUML[5] = drawn("@startuml nearlimit", 1, 413, 4000, "")
+			},
+			want: []string{"高さ 4000"},
+		},
+		{
+			name: "上限のすぐ下のブロックが文書に無いと落ちる",
+			mutate: func(r *report) {
+				r.PlantUML = r.PlantUML[:5]
+			},
+			want: []string{"描画対象の PlantUML ブロックが 5 件", "@startuml nearlimit: 図が文書に見つからない"},
+		},
+		{
+			name: "上限超えのブロックに理由が出ていないと落ちる",
 			mutate: func(r *report) {
 				r.PlantUML[2] = drawn("@startuml toolarge", 0, 0, 0, "")
 			},
@@ -281,7 +306,7 @@ func TestCheckPlantUMLLimits(t *testing.T) {
 		{
 			name: "ブロック名が変わると落ちる（testdata と検査の食い違い）",
 			mutate: func(r *report) {
-				r.PlantUML[2] = drawn("@startuml", 0, 0, 0, "PlantUML could not render this diagram.")
+				r.PlantUML[2] = drawn("@startuml", 0, 0, 0, "PlantUML could not render this diagram. It may be unsupported or larger than 100,000 px.")
 			},
 			want: []string{"@startuml toolarge: 図が文書に見つからない"},
 		},
