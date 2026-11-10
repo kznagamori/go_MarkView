@@ -41,12 +41,17 @@ const PLANTUML_TIMEOUT_MS = 10000;
 // 早合点しないためである。
 const PLANTUML_SETTLE_MS = 400;
 
-// 描く図の大きさの上限（px。MD-083, IMP-233）。**render() に必ず明示して渡す。**
+// 描く図の大きさの上限（px。幅と高さのそれぞれ。MD-083, IMP-233）。**render() に必ず明示して渡す。**
 //
 // 上限は処理系が持つ。1.2026.7 までは 4096 px の固定で、この指定は無視される。**1.2026.8 から既定が
 // 8192 px になり、この指定で変えられる**（0 で検査を外す）。省くと、同梱資産の更新（BR-043）だけで
 // 描ける図の大きさが黙って変わり、plantuml-limits.md の検証（E2E-240, BUG-010）も崩れる。
-const PLANTUML_MAX_SVG_SIZE = 4096;
+//
+// **値は「描いた図を画面に出す手間」で決めた**（BUG-030。4.96.0）。**処理系は配置を計算し終えてから大きさを
+// 確かめる**ため、上限を下げても描画の待ち時間（その間メインスレッドは止まる）は減らず、待った末に描けなかったと
+// 出るだけになる。約 10 万 px の図でも、表示・拡大画面・原寸表示・スクロールはそれぞれ 0.12 秒以内だった（実測）。
+// v1.2.0-rc.1 までの 4096 px は、参加者 4 人・メッセージ 100 本ほどのシーケンス図で超えていた。
+const PLANTUML_MAX_SVG_SIZE = 100000;
 
 // plantuml.js の名前空間。ensurePlantUML が成功したときだけ入る。
 let plantuml = null;
@@ -143,6 +148,13 @@ export async function redrawPlantUML(root, gen = startDrawing()) {
     // **編集欄を開いているブロックは飛ばす**（FR-140 の表の「保ったまま」。IMP-264。取り消したら codeedit.js が描き直す）
     if (!rendered || block.classList.contains("is-code-editing")) continue;
 
+    // **描きかけ（原文がまだ出ている）なら、描かせていた器だけを外す**（DSP-272。BUG-030）。原文はそのまま描き直す。
+    // 器を原文に置き換えると、原文が 2 つ並ぶ
+    if (block.querySelector(":scope > pre.plantuml-source")) {
+      rendered.remove();
+      continue;
+    }
+
     holdHeight(block);
     rendered.replaceWith(sourceElement(block));
   }
@@ -160,16 +172,16 @@ async function drawOnePlantUML(pre, gen) {
   // **文書を切り替えても衝突しない値にする**（IMP-233 の 2）。
   const id = nextDiagramId("plantuml");
 
+  // **描き終えるまで原文を出しておく**（DSP-272 の「描画前」。BUG-030）。器は隠して原文の後ろに置き、処理系には
+  // そこへ描かせる。図が得られたら原文と入れ替える。v1.2.0-rc.1 までは先に原文を器へ置き換えており、処理系が
+  // 細切れに動く間（Graphviz の図）は図の場所が空になっていた。大きな図は数秒かかる。
+  // **隠した器へ描かせても、得られる図は変わらない**（8 種類の図で大きさと時間が同じだった。実測）。
+  // 原文は描き終えるまで DOM に残るため、その中の検索のヒットも残る（入れ替えた後に settleDiagram が合わせる。BUG-017）。
   const holder = document.createElement("div");
   holder.className = "plantuml-rendered";
   holder.id = id;
-  // 編集欄を開いている間に描いたら、置き換える原文と同じく隠したままにする（IMP-264。取り消したら戻す）
-  holder.hidden = pre.hidden;
-  pre.replaceWith(holder);
-
-  // **原文はここで DOM から外れる**（描き終えるまで 1 秒近くかかりうる）。その間も件数を
-  // 実際のハイライトに合わせる（IMP-241, BUG-017）。
-  syncHits(block);
+  holder.hidden = true;
+  pre.after(holder);
 
   const waiting = waitForPlantUML(holder);
 
@@ -184,34 +196,46 @@ async function drawOnePlantUML(pre, gen) {
   } catch {
     // 処理系が例外を投げた場合の受け皿。
     //
-    // **4096 px 超えはここへ来ない**（IMP-233, BUG-010）。制限に達したとき
+    // **上限を超えた図はここへ来ない**（IMP-233, BUG-010）。制限に達したとき
     // render() は正常に戻り、**出力先の要素へ例外のテキストが書き込まれる**
-    // （Diagram too large for browser rendering: <幅>x<高さ> (max 4096 …)。後ろは版で違う）。
+    // （Diagram too large for browser rendering: <幅>x<高さ> (max <上限> …)。後ろは版で違う）。
     // それは下の waitForPlantUML が "other" と判定する経路で拾う。
     // **表示はどちらの経路でも pumlUnsupported であり、利用者から見た違いは無い。**
     //
     // **例外のテキストを本文へ出さない。** 文言は strings.js が持つ（IMP-290）。
-    restorePlantUML(block, holder, S.pumlUnsupported);
+    holder.remove();
+    showPlantUMLError(block, S.pumlUnsupported(PLANTUML_MAX_SVG_SIZE));
     settleDiagram(block);
     return;
   }
 
   const outcome = await waiting;
 
-  // **待っている間に世代が変わっていれば、結果を DOM へ反映しない**（IMP-230）。描き直し
-  // （テーマの切り替え）がこの器をソースへ戻して描き直している最中に、失敗の理由を書き込まない。
-  if (!isCurrentDrawing(gen)) return;
+  // **待っている間に世代が変わっていれば、結果を DOM へ反映しない**（IMP-230）。描き直し（テーマの切り替え）や
+  // 文書の切り替えが始まっている。描かせていた器だけを外し、原文は新しい描画に任せる（redrawPlantUML も外す）。
+  // **失敗の理由を書き込まない。**
+  if (!isCurrentDrawing(gen) || !pre.isConnected) {
+    holder.remove();
+    return;
+  }
 
   if (outcome === "svg") {
     // **構文エラーは失敗ではない**（FR-024, DSP-272）。PlantUML が行番号付きの
     // エラー図を返しているので、そのまま図として見せる。
+    //
+    // 原文と入れ替える。**編集欄を開いている間（IMP-264）は、図も原文と同じく隠したままにする**
+    // （原文の hidden を引き継ぐ。取り消したら codeedit.js が見せる）。
+    holder.hidden = pre.hidden;
+    pre.replaceWith(holder);
     const stale = block.querySelector(".plantuml-error");
     if (stale) stale.remove();
     settleDiagram(block);
     return;
   }
 
-  restorePlantUML(block, holder, outcome === "other" ? S.pumlUnsupported : S.pumlFailed);
+  // 描けなかった。原文は出したままなので、器を外して理由を添えるだけでよい。
+  holder.remove();
+  showPlantUMLError(block, outcome === "other" ? S.pumlUnsupported(PLANTUML_MAX_SVG_SIZE) : S.pumlFailed);
   // 描けなかった図も知らせる（IMP-230）。原寸表示と拡大画面の対象にはならない（FR-120）
   settleDiagram(block);
 }
@@ -283,16 +307,6 @@ function markRejected(root) {
     // 描画しなかった図も知らせる（IMP-230）。番号は数える（FR-120）が、対象にはならない
     onDiagramSettled(block);
   }
-}
-
-// restorePlantUML は描けなかったブロックをソース表示へ戻し、理由を添える。
-//
-// **編集欄を開いている間（IMP-264）は、戻した原文も隠したままにする**（描いていた器の hidden を引き継ぐ）。
-function restorePlantUML(block, holder, reason) {
-  const pre = sourceElement(block);
-  pre.hidden = holder.hidden;
-  holder.replaceWith(pre);
-  showPlantUMLError(block, reason);
 }
 
 // sourceElement は原文（ownSource）から元のソース表示を作り直す（IMP-119）。

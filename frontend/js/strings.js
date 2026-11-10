@@ -184,7 +184,10 @@ export const S = {
   // **図が出ていない**ときにだけ添える。構文エラーは PlantUML 自身が
   // 行番号付きのエラー図を返すため、こちらでは何も書かない（FR-024）。
   pumlInclude: "Include directives are not supported.",
-  pumlUnsupported: "PlantUML could not render this diagram.",
+  // 図種別に対応していないか、上限（MD-083）を超えた。**どちらかは区別しない**——処理系の英文で
+  // 見分けることになり、その文言は版で変わる（IMP-233）。上限の値は puml.js の定数を渡す（BUG-030）
+  pumlUnsupported: (maxPx) =>
+    `PlantUML could not render this diagram. It may be unsupported or larger than ${maxPx.toLocaleString("en-US")} px.`,
   pumlFailed: "PlantUML rendering did not complete.",
 
   errEditorFailed: "Failed to start the editor.",
