@@ -884,7 +884,7 @@ FR-024 / MD-083 / MD-084 を実装する。**Mermaid とは API の形が違う�
 await load("vendor/plantuml/viz-global.js");   // 1
 const puml = await import("vendor/plantuml/plantuml.js");  // 2
 
-puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark", maxSvgSize: 4096 });
+puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark", maxSvgSize: 100000 });
 ```
 
 **実装で押さえる点は 5 つある。**
@@ -902,8 +902,10 @@ puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark
 - 描画に失敗したブロックは、元のソースをコードブロックとして残し、理由を併記する。**1 つの失敗が他のブロックの描画を止めない**（IMP-231 と同じ）。
 - **取り込み指令で拒まれたブロックの理由は、資産を読まずに表示する**（IMP-119, DSP-272）。それらは `needsPlantUML` を立てないため、**`needsPlantUML` を条件に描画関数を呼ぶと理由が出ない。** 描画関数を「描くものが無ければ資産を読まずに戻る」形にし、**条件を付けずに呼ぶ**。NFR-013 は早期の戻りで保たれる。**「描くもの」は鍵の合うブロックで数える**——生 HTML の偽のブロックで資産を読まない（IMP-230, BUG-014）。
 - **構文エラーは失敗ではない。** PlantUML はエラーを描いた SVG を返すので、**そのまま出す**（FR-024）。行番号と該当行を含むため、こちらで書き直すより情報量が多い。
-- **図の大きさの上限は `maxSvgSize: 4096` で必ず明示する（省かない）**（MD-083。4.64.0）。1.2026.8 から処理系の既定が 8192 px になり、省くと同梱資産の更新だけで描ける大きさが変わる。**1.2026.7 以前はこの指定を無視する**（4096 px の固定）ため、どちらの版でも同じ振る舞いになる。値は `puml.js` の定数に置く（UI 文言ではない）。
-- **4096 px を超える図は SVG ではなく例外のテキストが返る**（`Diagram too large for browser rendering: <幅>x<高さ> (max 4096)`。1.2026.8 では `(max 4096; override via the maxSvgSize option, or set it to 0 to disable this check)`。**文言で判定しない**）。これを検知して FR-110 の表示に回す。テキストをそのまま本文へ出さない（UI 文言は `strings.js`。IMP-290）。**`render()` は例外を投げない。** 正常に戻ったうえで、**出力先の要素へ例外のテキストが書き込まれる。** したがってこれは `try` / `catch` ではなく、**上の 1 の完了検知が「SVG 以外が入った」と判定する経路**で拾う（実測。[BUG-010](../bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)）。**表示はどちらの経路でも `pumlUnsupported` であり、利用者から見た違いは無い**（DSP-272）。
+- **図の大きさの上限は `maxSvgSize` で必ず明示する（省かない）**（MD-083。4.64.0）。**値は 100000**（4.96.0。v1.2.0-rc.1 までは 4096。[BUG-030](../bugs/2026-11-11-bug-030-plantuml-size-limit.md)）。1.2026.8 から処理系の既定が 8192 px になり、省くと同梱資産の更新だけで描ける大きさが変わる。**1.2026.7 以前はこの指定を無視する**（4096 px の固定）。値は `puml.js` の定数に置き（UI 文言ではない）、理由の文言（`pumlUnsupported`）へも渡す（IMP-290）。
+- **処理系は配置を計算し終えてから大きさを確かめる**（実測。BUG-030）。上限を超える図も、描ける図と同じだけ計算に時間がかかる（JSON 26,983 px で、拒むまで 5,532 ms・描くまで 5,595 ms）。**上限は描画の待ち時間を縛らず、計算した図を画面に出すかだけを決める**——値は画面に出す手間で決めた（MD-083）。**計算の間はメインスレッドが止まる**（Graphviz を使わない図は全体が 1 つのタスク。NFR-012 の例外）。
+- **描き終えるまで原文を出しておく**（DSP-272。4.96.0。BUG-030）。器（`.plantuml-rendered`）は `hidden` にして原文の `<pre>` の後ろに置き、処理系にはそこへ描かせる。**SVG が入ったら原文と入れ替える**（器の `hidden` は原文の `hidden` を引き継ぐ。編集欄を開いている間は隠したまま。IMP-264）。**描けなければ器を外して理由を添える**（原文はそのまま。中の検索のヒットも残る。IMP-241）。描き直し（IMP-243）が描きかけのブロック（原文がまだある）に当たったら、器だけを外して原文から描き直す。待っている間に世代が変わったら、器を外して何も書かない。**隠した器へ描かせても、得られる図は変わらない**（8 種類の図で大きさと時間が同じだった。実測）。v1.2.0-rc.1 までは描き始めに原文を器へ置き換えており、処理系が細切れに動く間（Graphviz の図）は図の場所が空になっていた（線 1,000 本の class 図で 3 フレーム。直した後は 0）。Mermaid（IMP-231）は前から描き終えるまで原文を残している。
+- **上限を超える図は SVG ではなく例外のテキストが返る**（1.2026.7 は `Diagram too large for browser rendering: <幅>x<高さ> (max 4096)`。1.2026.8 からは `(max <上限>; override via the maxSvgSize option, or set it to 0 to disable this check)`。**文言で判定しない**）。これを検知して FR-110 の表示に回す。テキストをそのまま本文へ出さない（UI 文言は `strings.js`。IMP-290）。**`render()` は例外を投げない。** 正常に戻ったうえで、**出力先の要素へ例外のテキストが書き込まれる。** したがってこれは `try` / `catch` ではなく、**上の 1 の完了検知が「SVG 以外が入った」と判定する経路**で拾う（実測。[BUG-010](../bugs/2026-09-06-bug-010-plantuml-4096-testdata.md)）。**表示はどちらの経路でも `pumlUnsupported` であり、利用者から見た違いは無い**（DSP-272）。
 - テーマ切り替え時は、`ownSource(block)`（保存しておいた `data-source`）から `{ dark: ... }` を変えて**描き直す**（FR-070, IMP-243）。**資産の読み込みが済んでいるかを条件にせず、描き直す図のブロックの高さを描き終えるまで固定し、描けなかった図は描き直さない**（IMP-231 と同じ）。
 - **フロントエンドが図のソースから独自に HTML を組み立てて挿入しない**（IMP-220, MD-084）。DOM へ書くのは処理系であり、こちらは対象要素を用意して id を渡すだけにする。
 
@@ -918,7 +920,7 @@ puml.render(lines /* string[] */, targetElementId, { dark: state.theme === "dark
 > 猶予を 0 にしない。処理系が入れ物を先に置いてから SVG を入れる場合に早合点するため。
 
 > [!IMPORTANT]
-> **描画は逐次行う。** Graphviz を要する図は 1 枚 400〜700 ms かかる（NFR-011）。全部を一気に投げても処理系はコルーチンで細切れに実行するため UI は固まらないが（メインスレッドの最大停止は 4 ms）、**完了検知の監視対象が図の数だけ同時に存在する状態を作らない**。
+> **描画は逐次行う。** Graphviz を要する図は 1 枚 400〜700 ms かかる（NFR-011）。**完了検知の監視対象が図の数だけ同時に存在する状態を作らない**。逐次であれば、図と図の間では操作が効く（処理系は図 1 枚の計算の間メインスレッドを止める。NFR-012 の例外。4.95.0 までは「コルーチンで細切れに実行するため UI は固まらない（最大停止 4 ms）」としていた。BUG-030）。
 
 ## 12.5 操作（IMP-240 系）
 
@@ -2025,7 +2027,7 @@ export const S = {
 
   // PlantUML の図を描かなかった理由（FR-024, DSP-272）。図の代わりに本文中へ併記する
   pumlInclude:     'Include directives are not supported.',
-  pumlUnsupported: 'PlantUML could not render this diagram.',
+  pumlUnsupported: (maxPx) => `PlantUML could not render this diagram. It may be unsupported or larger than ${maxPx.toLocaleString("en-US")} px.`, // 上限は puml.js の定数（4.96.0。BUG-030）
   pumlFailed:      'PlantUML rendering did not complete.',
 
   // 情報ダイアログ（DSP-171）
