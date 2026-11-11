@@ -118,7 +118,7 @@ flowchart LR
 | FR-061 | コピー動作 | IMP-221, IMP-310, IMP-115, IMP-116, IMP-119, IMP-120, IMP-260, IMP-230, IMP-233 | DSP-252 |
 | FR-062 | 選択範囲のコピー | IMP-244 | — |
 | FR-063 | 右クリックメニュー | IMP-249, IMP-120, IMP-116, IMP-310, IMP-193, IMP-260, IMP-315, IMP-251, IMP-220, IMP-102, IMP-202, IMP-265, IMP-270 | DSP-140, DSP-015, DSP-352, DSP-141, DSP-350 |
-| FR-070 | テーマの切り替え | IMP-243, IMP-231 | DSP-011, DSP-370, DSP-041 |
+| FR-070 | テーマの切り替え | IMP-243, IMP-231, IMP-151, IMP-303 | DSP-011, DSP-370, DSP-041 |
 | FR-071 | 初回起動時のテーマ | IMP-151, IMP-175, IMP-303 | DSP-011 |
 | FR-080 | 文書内検索 | IMP-241, IMP-321, IMP-229 | DSP-160, DSP-161, DSP-360, DSP-361, DSP-352 |
 | FR-081 | 表示倍率の変更 | IMP-242 | DSP-021, DSP-350 |
@@ -184,7 +184,7 @@ flowchart LR
 | UI-112 | 設定の保存先 | IMP-152, IMP-193 | — |
 | UI-113 | 設定が存在しない・破損している場合 | IMP-151, IMP-153 | — |
 | UI-114 | 保存の契機 | IMP-194, IMP-240, IMP-310 | — |
-| UI-115 | 多重起動 | IMP-150, IMP-152, IMP-194, IMP-195 | — |
+| UI-115 | 多重起動 | IMP-150, IMP-151, IMP-152, IMP-194, IMP-195 | — |
 | UI-116 | エディタ指定の保存 | IMP-150, IMP-151, IMP-153, IMP-171 | — |
 
 ### 90.3.3 Markdown 描画要求（MD）
@@ -370,7 +370,7 @@ flowchart LR
 | IMP-141 | 監視方式 | FR-014, AR-070 |
 | IMP-142 | デバウンス | FR-014, NFR-022 |
 | IMP-150 | config 型定義 | UI-110, UI-111, UI-115, UI-116, NFR-042, FR-140, FR-037 |
-| IMP-151 | 読み書き | UI-113, FR-071, NFR-050, UI-116, FR-037, UI-110 |
+| IMP-151 | 読み書き | UI-113, FR-071, NFR-050, UI-116, FR-037, UI-110, UI-115, FR-070 |
 | IMP-152 | 保存先の解決 | UI-112, UI-115, NFR-033 |
 | IMP-153 | 値の範囲 | UI-113, UI-116, NFR-035 |
 | IMP-160 | アセットサーバのハンドラ | FR-022, UI-025, AR-040, NFR-032, FR-027, AR-041 |
@@ -438,7 +438,7 @@ flowchart LR
 | IMP-300 | 設計原則 | AR-061 |
 | IMP-301 | 命名と型 | AR-061 |
 | IMP-302 | DocumentDTO | UI-013, UI-060, FR-052, AR-021, FR-140, FR-014, AR-053, FR-121, FR-122, FR-130, FR-025, FR-026, FR-027 |
-| IMP-303 | InitialStateDTO | FR-071, UI-110, UI-111, FR-037, UI-033, FR-051 |
+| IMP-303 | InitialStateDTO | FR-071, UI-110, UI-111, FR-037, UI-033, FR-051, FR-070 |
 | IMP-304 | TreeNodeDTO | FR-032, FR-031, UI-030 |
 | IMP-305 | LinkResultDTO | FR-050, FR-053 |
 | IMP-306 | AboutDTO | FR-100, FR-101 |

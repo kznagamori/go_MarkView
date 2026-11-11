@@ -143,9 +143,11 @@ type ExtensionsDTO struct {
 | --- | --- | --- |
 | 往路 | `light` / `dark` | 解決済み。そのまま画面へ適用する |
 | 復路 | `light` / `dark` | 利用者が明示的に切り替えた |
-| 復路 | 空文字 | 利用者はまだ選んでいない。OS 設定への追従を保つ |
+| 復路 | 空文字 | 利用者は**このウィンドウでは**まだ選んでいない。**Go 側は保存値を変えない**（`config.ThemeFromPatch`。IMP-151。4.97.0）。設定が無ければ空文字のまま残り、OS 設定への追従を保つ |
 
-復路で解決済みの値を常に返すと、**ペインを開閉しただけで `config.Config.Theme` が空文字から `light` へ書き換わり、初回起動の OS 追従が最初の保存で失われる。** フロントエンドは「利用者が自分で切り替えたか」を別に持ち（IMP-210 の `state.themeExplicit`）、切り替えるまでは空文字を送る。Go 側の `Normalize`（IMP-153）は空文字を既定値（＝空文字）のまま保つため、追加の処理は要らない。
+復路で解決済みの値を常に返すと、**ペインを開閉しただけで `config.Config.Theme` が空文字から `light` へ書き換わり、初回起動の OS 追従が最初の保存で失われる。** フロントエンドは「利用者が自分で切り替えたか」を別に持ち（IMP-210 の `state.themeExplicit`）、切り替えるまでは空文字を送る。
+
+**Go 側は、空文字を受け取っても `App.cfg.Theme` を変えない**（`UpdateConfig`。`config.ThemeFromPatch`。4.97.0）。**往路の `Theme` は解決済みの値だけで、保存値が利用者の選んだものか（空文字か）を運ばない**ため、起動時に保存値を当てても `state.themeExplicit` は立たない。`v1.2.0-rc.1` までは Go 側が空文字をそのまま写しており、**保存したテーマのあるウィンドウで、テーマに触れずにペインを開閉する・ペインの境界を押して離す・ツリーのフィルターを変えると、テーマが空文字（OS 設定への追従）へ戻った**（[BUG-031](../bugs/2026-11-12-bug-031-theme-reset.md)。v1.0.0 から。そのウィンドウは選んだテーマのまま残り、次に開くウィンドウが OS のテーマで出る）。**この表は初回起動の OS 追従だけを考え、保存値がある場合を考えていなかった**——ツリーのフィルターで起きた「写さないと最初の保存で保存値を上書きする」（IMP-211。4.76.0）と同じ形である。テーマを OS 設定への追従へ戻す操作は無い（FR-070 は Light と Dark の切り替えだけ）ため、空文字で保存値を消す経路は要らない。
 
 **ツリーのフィルター（`TreeShowDiagrams` / `TreeShowImages`）は往路も復路も同じ意味である**（4.75.0）。切り替えたら、フロントエンドは `saveConfig`（IMP-210）の送信が終わるのを待ってから `ReadDir` を呼ぶ（IMP-271）。**Go 側は `UpdateConfig` で受け取った値をすぐに `App.cfg` に写し**（保存は UI-114 の契機）、以後の `ReadDir` とツリーの操作の検査がその値で絞る（IMP-134, IMP-196）。
 
@@ -318,7 +320,7 @@ type EditorResultDTO struct {
 | `CopyTreePath(path string)` | 絶対パス | `TreeActionDTO` | FR-036 |
 | `GetTreeRoot()` | — | `string`（フロントエンドは呼ばない。ツリールートは `InitialStateDTO.TreeRoot`・`tree:root-changed`・`TreeActionDTO` で受け取る） | FR-030 |
 | `SetScrollTop(top int)` | 現在のスクロール位置 | — | FR-051 |
-| `UpdateConfig(patch ConfigDTO)` | 変更後の設定 | — | UI-110, UI-114 |
+| `UpdateConfig(patch ConfigDTO)` | 変更後の設定（テーマは light / dark のときだけ受け取る。IMP-303） | — | UI-110, UI-114 |
 | `CopyToClipboard(text string)` | コピー対象 | `error` | FR-061, FR-063, AR-062 |
 | `ReadClipboard()` | — | `(string, error)` | FR-063, AR-062 |
 | `SetEditMode(on bool)` | 開始なら真 | `EditModeDTO` | FR-140 |
