@@ -669,7 +669,7 @@ flowchart LR
 > | 固有の大きさを持たない SVG を画像ファイルとして開き、版の変わらない再描画（`F5`）をしても、壊れた画像の表示にならない（失敗の判定を `naturalWidth` から `decode()` へ改めた） | W1 / L1 で `width` / `height` の無い SVG を開いて `F5` を押す | IMP-226, IMP-228 | E2E-393 の確認内容 8 |
 > | ~~固有の大きさを持たない SVG で、WebView が `naturalWidth` を 0 と返す（ステータス領域に寸法を出さない判定の前提。4.80.0）~~ → **Chromium（W1）では成り立たなかった**（ヘッドレスの Edge 157 で 300 と測った。v1.2.0 の T28-1。4.91.0）。**大きさを持たない画像は、`naturalWidth` が 0 か、ボタンの器の中で幅 0 に縮んだもので見分ける**（IMP-228。[BUG-029](../bugs/2026-11-09-bug-029-svg-no-size-collapsed.md)）。**その見分けが W1 / L1 とも働き、本文の幅いっぱいに描かれ、寸法が出ない** | W1 / L1 で `width` / `height` の無い SVG を開き、本文とステータス領域を見る。Markdown に埋め込んだものも見る | IMP-228, UI-060, DSP-124 | E2E-393 の確認内容 8、E2E-236 の確認内容 13 |
 > | 固有の大きさを持たない SVG の画像ファイルを拡大画面で開くと、中身が見える（`naturalWidth` が 0 なら本文で描いている大きさを使う。4.76.0） | W1 / L1 で `width` / `height` の無い SVG を開き、拡大画面のボタンを押す | IMP-228, DSP-173 | E2E-393 の確認内容 8 |
-> | **PlantUML の上限のすぐ下の大きな図（高さ約 9 万 px）が、L1（WebKitGTK）でも描け、拡大画面で見られる**（上限を 100,000 px にした。Chromium では 47 万 px まで表示でき、10 万 px の図の表示・拡大画面・原寸表示・スクロールは各 0.12 秒以内だった。WebKitGTK は未確認。4.96.0。[BUG-030](../bugs/2026-11-11-bug-030-plantuml-size-limit.md)） | W1 / L1 で `testdata/e2e/plantuml-limits.md` の 9 節を開き、拡大画面で拡大・縮小する | MD-083, IMP-233, NFR-061 | E2E-239 の確認内容 8〜10 |
+> | **PlantUML の上限のすぐ下の大きな図（高さ約 8〜9 万 px。Linux の CI の Chrome では 79,212 px）が、L1（WebKitGTK）でも描け、拡大画面で見られる**（上限を 100,000 px にした。Chromium では 47 万 px まで表示でき、10 万 px の図の表示・拡大画面・原寸表示・スクロールは各 0.12 秒以内だった。WebKitGTK は未確認。4.96.0。[BUG-030](../bugs/2026-11-11-bug-030-plantuml-size-limit.md)） | W1 / L1 で `testdata/e2e/plantuml-limits.md` の 9 節を開き、拡大画面で拡大・縮小する | MD-083, IMP-233, NFR-061 | E2E-239 の確認内容 8〜10 |
 >
 > **以下は `v1.1.0` の記録である。**
 
