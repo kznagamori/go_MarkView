@@ -5,6 +5,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/kznagamori/go_MarkView/internal/config"
 	"github.com/kznagamori/go_MarkView/internal/ostheme"
 	"github.com/kznagamori/go_MarkView/internal/session"
 )
@@ -238,7 +239,10 @@ func (a *App) UpdateConfig(patch ConfigDTO) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.cfg.Theme = patch.Theme
+	// **テーマは、このウィンドウで利用者が選んだとき（light / dark）だけ受け取る**（FR-071, IMP-303）。
+	// フロントエンドは切り替えるまで空文字を送る。空文字で保存値を書き換えると、保存したテーマのある
+	// ウィンドウでペインを開閉しただけで、テーマが OS の設定への追従へ戻る（v1.2.0-rc.1 まで。BUG-031）。
+	a.cfg.Theme = config.ThemeFromPatch(a.cfg.Theme, patch.Theme)
 	a.cfg.OutlineVisible = patch.OutlineVisible
 	a.cfg.FileTreeVisible = patch.FileTreeVisible
 	a.cfg.OutlineWidth = patch.OutlineWidth

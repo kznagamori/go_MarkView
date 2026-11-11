@@ -119,16 +119,29 @@ func (a *App) saveConfig() {
 	a.persistConfig()
 }
 
-// persistConfig は現在の設定をディスクへ書く（UI-112, IMP-152）。
+// persistConfig は現在の設定をディスクへ書く（UI-112, UI-115, IMP-152, IMP-194）。
+//
+// **このインスタンスが前回の保存（起動時の読み込み）から変えた項目だけを書く**（config.SaveChanges。
+// 4.97.0）。保存の直前にファイルを読み直し、変えていない項目は他のインスタンスが書いた値を残す。
+// 読み直した値は cfg へ反映しない（実行中に他のインスタンスへ追従しない。UI-115）。v1.2.0-rc.1 までは
+// cfg をまるごと書いており、Light を選ぶ前から開いていたウィンドウを選んだ後に閉じると、テーマが
+// 戻った（BUG-031）。
 //
 // 履歴・表示中パス・ツリールートは保存しない（NFR-042）。構造体にフィールドが
 // 存在しないため、ここで気をつける必要はない（IMP-150）。
 func (a *App) persistConfig() {
 	a.mu.Lock()
-	cfg := a.cfg
+	cur, base := a.cfg, a.savedCfg
 	a.mu.Unlock()
 
-	_ = config.Save(cfg)
+	// 失敗しても動作は続ける（UI-113）。base を残し、次の保存で書き直す。
+	if config.SaveChanges(base, cur) != nil {
+		return
+	}
+
+	a.mu.Lock()
+	a.savedCfg = cur
+	a.mu.Unlock()
 }
 
 // captureWindowState はウィンドウの大きさを設定へ取り込む（IMP-194, UI-110）。

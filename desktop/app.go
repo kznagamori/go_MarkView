@@ -45,6 +45,14 @@ type App struct {
 	cfg      config.Config
 	licenses string // OSS ライセンス一覧（FR-101）。main.go が埋め込んだものを受け取る
 
+	// savedCfg は、このインスタンスが前回設定ファイルとそろえた値（起動時に読んだ値か、前回保存した値）
+	// （UI-115, IMP-194。4.97.0）。
+	//
+	// 保存のときは、cfg がこれと違う項目だけをファイルへ書き、他の項目は他のインスタンスが書いた値を残す
+	// （config.SaveChanges）。**保存に成功したら cfg に置き換える。** v1.2.0-rc.1 までは cfg をまるごと
+	// 書いており、テーマに触れていないウィンドウも、起動時に読んだ古いテーマを書き戻した（BUG-031）。
+	savedCfg config.Config
+
 	treeRoot string             // ツリールートの絶対パス（FR-030）
 	current  *document.Document // 表示中の文書。未表示なら nil
 	history  *session.History   // 表示履歴（IMP-191）
@@ -179,6 +187,7 @@ func NewApp(startup session.Startup, startupErr error, cfg config.Config, licens
 		startup:    startup,
 		startupErr: startupErr,
 		cfg:        cfg,
+		savedCfg:   cfg,
 		licenses:   licenses,
 		renderer:   renderer.New(),
 		history:    session.NewHistory(),
