@@ -32,7 +32,7 @@ the bundled assets are the JavaScript, CSS, font and icon files shipped inside t
 | gopkg.in/yaml.v2 | v2.3.0 | Apache-2.0 |
 | Mermaid | 12.3.0 | MIT |
 | KaTeX | 0.19.1 | MIT |
-| PlantUML | 1.2026.9 | MIT |
+| PlantUML | 1.2026.10 | MIT |
 | Viz.js | 3.24.0 | MIT |
 | Graphviz | bundled in PlantUML | EPL-2.0 |
 | Expat | bundled in PlantUML | MIT |
@@ -881,7 +881,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-### PlantUML 1.2026.9 (MIT)
+### PlantUML 1.2026.10 (MIT)
 
 /* +=======================================================================
  * |
