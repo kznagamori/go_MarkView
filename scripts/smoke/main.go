@@ -125,10 +125,12 @@ var (
 	}
 )
 
-// nearLimitMinHeight は 9 節（@startuml nearlimit）の図に期待する高さの下限（px）。実測は 90,120 px
-// （PlantUML 1.2026.9）。**上限が 4096 px や処理系の既定の 8192 px のままなら、この図は描かれない**（BUG-030）。
-// 処理系の版でメッセージの間隔が少し変わっても落ちないよう、実測より低く置く。
-const nearLimitMinHeight = 80000
+// nearLimitMinHeight は 9 節（@startuml nearlimit）の図に期待する高さの下限（px）。実測は Windows の Chromium で
+// 90,120 px、**Linux の CI の Chrome で 79,212 px**（PlantUML 1.2026.9。図の高さはフォントで変わる）。**上限が
+// 4096 px や処理系の既定の 8192 px のままなら、この図は描かれない**（BUG-030）。どちらの環境でも、処理系の版で
+// メッセージの間隔が少し変わっても落ちないよう、実測より 2 割以上低く置く（v1.2.0-rc.2 の前に 80,000 から下げた。
+// 80,000 は Windows の実測だけで決めており、Linux の CI で落ちた）。
+const nearLimitMinHeight = 60000
 
 // pass は 1 部ぶんの検証。**文書ごとに問いが違うため、検査も分ける。**
 //

@@ -190,7 +190,7 @@ func drawn(head string, svg, width, height int, reason string) diagramBlock {
 //	toolarge     図が出ず、理由が出る（上限の 100,000 px を超える。BUG-030）
 //	salt         実測では図が出た
 //	ditaa        実測では理由が出た
-//	nearlimit    図が出る（上限のすぐ下。高さ 90,120 px。BUG-030）
+//	nearlimit    図が出る（上限のすぐ下。高さは Windows の Chromium で 90,120 px、Linux の CI の Chrome で 79,212 px。BUG-030）
 func limitsOK() report {
 	const unsupported = "PlantUML could not render this diagram. It may be unsupported or larger than 100,000 px."
 
@@ -253,6 +253,29 @@ func TestCheckPlantUMLLimits(t *testing.T) {
 				r.PlantUML[5] = drawn("@startuml nearlimit", 1, 413, 4000, "")
 			},
 			want: []string{"高さ 4000"},
+		},
+		{
+			// UT-812 ケース 15: Linux の CI の Chrome の実測（フォントの違いで Windows より 1 割ほど低い）。
+			// 閾値が 80,000 のときは、これで落ちた（v1.2.0-rc.2 の前の CI）
+			name: "上限のすぐ下のブロックの Linux の実測（343×79,212）は合格する",
+			mutate: func(r *report) {
+				r.PlantUML[5] = drawn("@startuml nearlimit", 1, 343, 79212, "")
+			},
+		},
+		{
+			// UT-812 ケース 16: 閾値ちょうどは合格する（UT-013）
+			name: "上限のすぐ下のブロックの高さが閾値ちょうど（60,000）なら合格する",
+			mutate: func(r *report) {
+				r.PlantUML[5] = drawn("@startuml nearlimit", 1, 343, 60000, "")
+			},
+		},
+		{
+			// UT-812 ケース 17: 閾値より 1 px 低いと落ちる（UT-013）
+			name: "上限のすぐ下のブロックの高さが閾値より 1 px 低い（59,999）と落ちる",
+			mutate: func(r *report) {
+				r.PlantUML[5] = drawn("@startuml nearlimit", 1, 343, 59999, "")
+			},
+			want: []string{"高さ 59999"},
 		},
 		{
 			name: "上限のすぐ下のブロックが文書に無いと落ちる",

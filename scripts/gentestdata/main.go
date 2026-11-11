@@ -59,9 +59,10 @@ const (
 	slowClasses  = 60 // 埋めの図 1 枚のクラスの数
 	slowEdges    = 300
 	// 最後の図（縦に長いシーケンス図）の、区間 1 つあたりの繰り返し（1 回で 4 本）。**上限（100,000 px。MD-083）を
-	// 超える数**——110 で高さ約 116,000 px（Chromium の実測は 100 で 105,960 px。BUG-030）。v1.2.0-rc.1 までは
-	// 4096 px を超える class 図（40 個。BUG-010）だった
-	tooLargeRounds = 110
+	// 超える数**——130 で高さ 137,640 px（Windows の Chromium の実測。BUG-030）。**図の高さはフォントで変わり、
+	// Linux は 1 割ほど低い**ため、110（Windows 116,520 px・Linux 約 102,500 px）から上げた。testdata/e2e/
+	// plantuml-limits.md の 6 節と同じ数にしてある。v1.2.0-rc.1 までは 4096 px を超える class 図（40 個。BUG-010）だった
+	tooLargeRounds = 130
 )
 
 func main() {
